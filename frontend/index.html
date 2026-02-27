@@ -1,0 +1,88 @@
+
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Academic Advising App Design</title>
+      <style>
+        :root {
+          color-scheme: light;
+        }
+
+        body {
+          margin: 0;
+          font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+          background: #0b1220;
+        }
+
+        .boot-loader {
+          position: fixed;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          background: radial-gradient(circle at top, #1a2b4f 0%, #0b1220 55%, #070b13 100%);
+          color: #e5edff;
+          z-index: 9999;
+          transition: opacity 300ms ease, visibility 300ms ease;
+        }
+
+        .boot-loader__content {
+          display: grid;
+          gap: 16px;
+          justify-items: center;
+          text-align: center;
+        }
+
+        .boot-loader__spinner {
+          width: 52px;
+          height: 52px;
+          border-radius: 50%;
+          border: 3px solid rgba(229, 237, 255, 0.2);
+          border-top-color: #78e3ff;
+          animation: spin 900ms linear infinite;
+        }
+
+        .boot-loader__label {
+          font-size: 16px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .boot-loader__sub {
+          font-size: 13px;
+          color: rgba(229, 237, 255, 0.7);
+        }
+
+        .boot-loader--done {
+          opacity: 0;
+          visibility: hidden;
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .boot-loader__spinner {
+            animation: none;
+          }
+        }
+      </style>
+    </head>
+
+    <body>
+      <div id="boot-loader" class="boot-loader" aria-live="polite" aria-busy="true">
+        <div class="boot-loader__content">
+          <div class="boot-loader__spinner" role="progressbar" aria-label="Loading"></div>
+          <div class="boot-loader__label">Preparing your plan</div>
+          <div class="boot-loader__sub">Loading the advising workspace</div>
+        </div>
+      </div>
+      <div id="root"></div>
+      <script type="module" src="/src/main.tsx"></script>
+    </body>
+  </html>
+  
