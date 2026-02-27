@@ -19,7 +19,6 @@ interface AcademicSelection {
   waivedMat1000: boolean;
   waivedEng1000: boolean;
 }
-//pishka
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('welcome');
