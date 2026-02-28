@@ -3894,6 +3894,22 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     });
   }, [plan?.gen_ed_status, genEdCanonicalLabelByNorm]);
 
+  const wicRequirementStatus = useMemo(() => {
+    const uniqueWicCodes = new Set<string>();
+    for (const course of courseObjects) {
+      const code = typeof course.code === 'string' ? course.code.trim() : '';
+      if (!code) continue;
+      if (code === 'ENG 1001' || code === 'ENG 1002') continue;
+      if (catalog.course_meta?.[code]?.wic === true) {
+        uniqueWicCodes.add(code);
+      }
+    }
+    const required = 3;
+    const completed = uniqueWicCodes.size;
+    const need = Math.max(0, required - completed);
+    return { required, completed, need };
+  }, [courseObjects, catalog.course_meta]);
+
   const totalCredits = useMemo(() => {
     const unique = new Set([...effectiveCompleted, ...effectiveInProgress]);
     const completed = Array.from(unique).reduce((sum, code) => {
@@ -5529,7 +5545,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
               </div>
             )}
 
-            {genEdCategoryNeeds.length > 0 && (
+            {(genEdCategoryNeeds.length > 0 || !!plan) && (
               <div
                 className="p-3 rounded-lg border mt-4"
                 style={{ borderColor: 'var(--neutral-border)', background: 'var(--neutral-cream)' }}
@@ -5555,6 +5571,21 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                       </span>
                     </div>
                   ))}
+                  <div key="wic-requirement" className="flex items-center justify-between gap-3">
+                    <span className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                      Writing Intensive Courses (WICs) ({wicRequirementStatus.completed}/{wicRequirementStatus.required})
+                    </span>
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-medium"
+                      style={
+                        wicRequirementStatus.need === 0
+                          ? { background: '#D7F4E6', color: '#0B6E4F' }
+                          : { background: '#FCE8B2', color: '#6A4B00' }
+                      }
+                    >
+                      {wicRequirementStatus.need === 0 ? 'Satisfied' : `Need ${wicRequirementStatus.need}`}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
