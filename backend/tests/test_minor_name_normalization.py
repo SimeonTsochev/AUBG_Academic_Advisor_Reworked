@@ -132,6 +132,40 @@ class MinorNameNormalizationTests(unittest.TestCase):
         self.assertNotIn("Computer Science", [item.get("minor") for item in selected])
         self.assertNotIn("Economics", [item.get("minor") for item in selected])
 
+    def test_compute_minor_suggestions_returns_empty_when_two_minors_are_selected(self):
+        catalog = {
+            "courses": {
+                "AAA 1001": {"name": "AAA 1001", "credits": 3},
+                "BBB 1001": {"name": "BBB 1001", "credits": 3},
+                "CCC 1001": {"name": "CCC 1001", "credits": 3},
+            },
+            "course_meta": {
+                "AAA 1001": {"credits": 3, "prereq_codes": []},
+                "BBB 1001": {"credits": 3, "prereq_codes": []},
+                "CCC 1001": {"credits": 3, "prereq_codes": []},
+            },
+            "majors": {},
+            "minors": {
+                "Minor Alpha": {"required_courses": ["AAA 1001"], "elective_requirements": []},
+                "Minor Beta": {"required_courses": ["BBB 1001"], "elective_requirements": []},
+                "Minor Gamma": {"required_courses": ["CCC 1001"], "elective_requirements": []},
+            },
+            "foundation_courses": [],
+            "gen_ed": {"categories": {}, "rules": {"Dummy": 0}},
+        }
+
+        suggestions = compute_minor_suggestions(
+            catalog=catalog,
+            majors=[],
+            minors=["minor alpha", "Minor Beta"],
+            completed_courses=set(),
+            in_progress_courses=set(),
+            semester_plan=[],
+            top_k=10,
+        )
+
+        self.assertEqual(suggestions, [])
+
 
 if __name__ == "__main__":
     unittest.main()

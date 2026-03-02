@@ -3873,26 +3873,69 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
   }, [plan?.category_progress, plan?.majors, plan?.summary, selection.majors]);
 
   const genEdCategoryNeeds = useMemo(() => {
-    const rowsByNorm = new Map<string, { label: string; need: number }>();
-    const status = plan?.gen_ed_status ?? {};
-    for (const [category, counts] of Object.entries(status)) {
-      const normalized = normGenEd(category);
-      if (!normalized) continue;
-      const label = canonicalGenEdLabel(category) || category;
-      const required = Number(counts?.required ?? 0);
-      const completed = Number(counts?.completed ?? 0);
-      const planned = Number(counts?.planned ?? 0);
-      const need = Math.max(0, required - (completed + planned));
-      const existing = rowsByNorm.get(normalized);
-      if (!existing || need > existing.need) {
-        rowsByNorm.set(normalized, { label, need });
+    const labelByNorm = new Map<string, string>();
+    const requiredByNorm = new Map<string, number>();
+    const courseCodesByCategory = new Map<string, Set<string>>();
+
+    const registerCategory = (raw?: string | null, requiredValue?: number | null) => {
+      const label = canonicalGenEdLabel(raw) || cleanGenEdLabel(raw);
+      const normalized = normGenEd(label);
+      if (!label || !normalized) return;
+      if (!labelByNorm.has(normalized)) {
+        labelByNorm.set(normalized, label);
+      }
+      if (requiredValue !== null && requiredValue !== undefined) {
+        const numericRequired = Math.max(0, Number(requiredValue) || 0);
+        const existing = requiredByNorm.get(normalized) ?? 0;
+        if (numericRequired > existing) {
+          requiredByNorm.set(normalized, numericRequired);
+        }
+      }
+    };
+
+    Object.entries(catalog.gen_ed?.rules ?? {}).forEach(([category, required]) => {
+      registerCategory(category, Number(required ?? 0));
+    });
+    Object.keys(catalog.gen_ed?.categories ?? {}).forEach((category) => {
+      registerCategory(category, null);
+    });
+    Object.entries(plan?.gen_ed_status ?? {}).forEach(([category, counts]) => {
+      registerCategory(category, Number(counts?.required ?? 0));
+    });
+
+    for (const course of courseObjects) {
+      const code = typeof course.code === 'string' ? normalizeCourseCode(course.code) : '';
+      if (!code) continue;
+      const categories = dedupeGenEdLabels([
+        ...extractGenEdFromSatisfies(course.satisfies),
+        ...getCourseGenEdTags(code),
+      ]);
+      for (const category of categories) {
+        const label = canonicalGenEdLabel(category) || category;
+        const normalized = normGenEd(label);
+        if (!normalized) continue;
+        registerCategory(label, null);
+        if (!courseCodesByCategory.has(normalized)) {
+          courseCodesByCategory.set(normalized, new Set<string>());
+        }
+        courseCodesByCategory.get(normalized)?.add(code);
       }
     }
-    return Array.from(rowsByNorm.values()).sort((a, b) => {
-      if (a.need !== b.need) return b.need - a.need;
-      return a.label.localeCompare(b.label);
-    });
-  }, [plan?.gen_ed_status, genEdCanonicalLabelByNorm]);
+
+    return Array.from(labelByNorm.entries())
+      .map(([normalized, label]) => {
+        const required = Math.max(1, requiredByNorm.get(normalized) ?? 1);
+        const actualCount = courseCodesByCategory.get(normalized)?.size ?? 0;
+        return {
+          label,
+          need: Math.max(0, required - actualCount),
+        };
+      })
+      .sort((a, b) => {
+        if (a.need !== b.need) return b.need - a.need;
+        return a.label.localeCompare(b.label);
+      });
+  }, [catalog.gen_ed?.categories, catalog.gen_ed?.rules, plan?.gen_ed_status, courseObjects]);
 
   const wicRequirementStatus = useMemo(() => {
     const uniqueWicCodes = new Set<string>();

@@ -3313,6 +3313,14 @@ def compute_minor_suggestions(
     in_progress_courses: Set[str] | None = None,
     top_k: int = 5,
 ) -> List[Dict]:
+    selected_minor_count = len({
+        _norm_minor_name(name)
+        for name in (minors or [])
+        if isinstance(name, str) and _norm_minor_name(name)
+    })
+    if selected_minor_count >= 2:
+        return []
+
     planned_real_courses: Set[str] = set()
     free_slots: List[Dict[str, object]] = []
     catalog_courses = _catalog_courses(catalog)

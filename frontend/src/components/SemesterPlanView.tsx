@@ -25,6 +25,24 @@ interface GroupedCourses {
   [semester: string]: Course[];
 }
 
+const ELECTIVE_TAG_ALIASES: Record<string, string[]> = {
+  'Business Administration': ['BUS'],
+  'Computer Science': ['COS', 'CS'],
+  'Economics': ['ECO'],
+  'European Studies': ['EUR'],
+  'History and Civilizations': ['HC', 'HTY'],
+  'Information Systems': ['IS', 'ISM'],
+  'Journalism and Mass Communication': ['JMC'],
+  'Literature': ['LIT', 'ENG'],
+  'Mathematics': ['MAT'],
+  'Modern Languages and Cultures': ['MLC'],
+  'Physics': ['PHY'],
+  'Political Science and International Relations': ['POS'],
+  'Psychology': ['PSY'],
+  'Film and Creative Media': ['Film', 'FIL'],
+  'Sustainability Studies': ['Sustainability', 'Sustainabiliy']
+};
+
 export function SemesterPlanView({
   courses,
   catalogCourses,
@@ -269,6 +287,7 @@ export function SemesterPlanView({
   const electiveRequirementCards = useMemo(() => {
     if (!electivePlaceholders || electivePlaceholders.length === 0) return [];
 
+    const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
     const grouped = new Map<
       string,
       { programType: ElectivePlaceholder['program_type']; program: string; items: ElectivePlaceholder[] }
@@ -286,12 +305,6 @@ export function SemesterPlanView({
       grouped.get(key)?.items.push(placeholder);
     });
 
-    const plannedCodes = new Set(
-      courses
-        .map((course) => normalizeCourseCode(course.code))
-        .filter((code) => code.length > 0)
-    );
-
     return Array.from(grouped.entries())
       .map(([key, group]) => {
         const { programType, program, items } = group;
@@ -307,12 +320,6 @@ export function SemesterPlanView({
           headerTotals.length > 0
             ? Math.max(...headerTotals.map((item) => Number(item.courses_required ?? 0)))
             : items.reduce((sum, item) => sum + Number(item.courses_required ?? 0), 0);
-        const requirementText =
-          totalCredits > 0
-            ? `${totalCredits} credits`
-            : totalCourses > 0
-              ? `${totalCourses} courses`
-              : 'Electives required';
 
         const allowedByNormalized = new Map<string, string>();
         items.forEach((item) => {
@@ -326,10 +333,49 @@ export function SemesterPlanView({
           });
         });
         const allowedCourses = Array.from(allowedByNormalized.values());
-        const matchingCourses = allowedCourses.filter((code) => plannedCodes.has(normalizeCourseCode(code)));
+        const noteNeedle = programType === 'major' ? 'major elective' : 'minor elective';
+        const aliasPrefixes = (ELECTIVE_TAG_ALIASES[program] ?? []).map((alias) => normalizeText(alias));
+        const matchingCourses = Array.from(
+          courses.reduce((matched, course) => {
+            const normalizedCode = normalizeCourseCode(course.code);
+            const matchesByAllowedCourse = allowedByNormalized.has(normalizedCode);
+            const matchesByElectiveNote = (course.electiveNotes ?? []).some((note) => {
+              const normalizedNote = normalizeText(note);
+              if (!normalizedNote.includes(noteNeedle)) return false;
+              if (aliasPrefixes.length === 0) return false;
+              return aliasPrefixes.some((alias) => normalizedNote.startsWith(`${alias} `));
+            });
+
+            if (!matchesByAllowedCourse && !matchesByElectiveNote) {
+              return matched;
+            }
+
+            if (!matched.has(normalizedCode)) {
+              matched.set(normalizedCode, course);
+            }
+            return matched;
+          }, new Map<string, Course>())
+            .values()
+        );
+        const matchedCredits = matchingCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0);
+        const matchedCourseCodes = matchingCourses.map((course) => course.code);
+        const requirementText =
+          totalCredits > 0
+            ? matchedCredits > 0
+              ? Math.max(totalCredits - matchedCredits, 0) > 0
+                ? `${Math.max(totalCredits - matchedCredits, 0)} credits left`
+                : 'Completed'
+              : `${totalCredits} credits`
+            : totalCourses > 0
+              ? matchedCourseCodes.length > 0
+                ? Math.max(totalCourses - matchedCourseCodes.length, 0) > 0
+                  ? `${Math.max(totalCourses - matchedCourseCodes.length, 0)} courses left`
+                  : 'Completed'
+                : `${totalCourses} courses`
+              : 'Electives required';
 
         const inferredTotal = totalCourses > 0 ? totalCourses : allowedCourses.length;
-        const totalCount = Math.max(inferredTotal, matchingCourses.length);
+        const totalCount = Math.max(inferredTotal, matchedCourseCodes.length);
 
         const ruleText = Array.from(
           new Set(
@@ -344,10 +390,10 @@ export function SemesterPlanView({
           programType,
           programLabel,
           requirementText,
-          matchingCourses,
+          matchingCourses: matchedCourseCodes,
           allowedCourses,
           ruleText,
-          doneCount: matchingCourses.length,
+          doneCount: matchedCourseCodes.length,
           totalCount
         };
       })
