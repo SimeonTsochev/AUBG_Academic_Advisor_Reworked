@@ -10,6 +10,7 @@ PROGRAM_TAG_ALIASES: Dict[str, List[str]] = {
     "Computer Science": ["COS", "CS"],
     "Economics": ["ECO"],
     "European Studies": ["EUR"],
+    "Finance": ["FIN"],
     "History and Civilizations": ["HC", "HTY"],
     "Information Systems": ["IS", "ISM"],
     "Journalism and Mass Communication": ["JMC"],

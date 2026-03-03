@@ -268,7 +268,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: 'Upload processed. I’m generating your degree plan based on the official catalog rules…',
+      content: "Upload processed. I'm generating your degree plan based on the official catalog rules...",
       timestamp: new Date()
     }
   ]);
@@ -288,7 +288,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
   const normGenEd = (raw?: string | null) => {
     if (!raw) return "";
     return raw
-      .replace(/[‐‑‒–—―]/g, "-")
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-")
       .replace(/^gen(?:eral)?\s*ed(?:ucation)?\s*:\s*/i, "")
       .replace(/\(\s*wic\s*\)/gi, " ")
       .replace(/-\s*wic\b/gi, " ")
@@ -299,7 +299,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
   const cleanGenEdLabel = (raw?: string | null) => {
     if (!raw) return "";
     return raw
-      .replace(/[‐‑‒–—―]/g, "-")
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-")
       .replace(/^gen(?:eral)?\s*ed(?:ucation)?\s*:\s*/i, "")
       .replace(/\(\s*wic\s*\)/gi, " ")
       .replace(/-\s*wic\b/gi, " ")
@@ -543,6 +543,15 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         }
       });
     }
+    const discoveredCaseStudies = plan?.gened_discovery?.case_studies_textual_analysis ?? [];
+    if (
+      discoveredCaseStudies.some(
+        (course) => course?.code && typeof course.code === 'string' && course.code === courseCode
+      )
+    ) {
+      const canonical = canonicalGenEdLabel('Case Studies in Textual Analysis');
+      if (canonical) tags.push(canonical);
+    }
     return dedupeGenEdLabels(tags);
   };
   const getPrimaryGenEdCategory = (courseCode: string, override?: string | null) => {
@@ -578,6 +587,12 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     const terms = catalog.course_meta?.[courseCode]?.semester_availability;
     if (!Array.isArray(terms)) return [];
     return terms.filter((term): term is string => typeof term === "string" && term.trim().length > 0);
+  };
+  const isCourseAvailableInTerm = (courseCode: string, term?: string | null) => {
+    if (!term) return true;
+    const availableTerms = getCourseSemesterAvailability(courseCode);
+    if (availableTerms.length === 0) return true;
+    return availableTerms.includes(term);
   };
   const getExcelElectiveNotes = (courseCode: string) => {
     const tags = plan?.excel_elective_tags?.[courseCode] ?? [];
@@ -1474,10 +1489,21 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         return a.localeCompare(b);
       })[0];
     const pickBestForCategory = (category: string | undefined | null, codes: string[]) => {
+      const byAffinity = [...codes].sort((a, b) => {
+        const aAffinity = getProgramAffinityScore(a);
+        const bAffinity = getProgramAffinityScore(b);
+        if (aAffinity !== bAffinity) return bAffinity - aAffinity;
+        return a.localeCompare(b);
+      });
+      const strongestAffinity = getProgramAffinityScore(byAffinity[0] ?? "");
+      const preferredCodes =
+        strongestAffinity > 0
+          ? byAffinity.filter((code) => getProgramAffinityScore(code) === strongestAffinity)
+          : codes;
       if (isSameGenEdCategory(category, "historical research")) {
-        return pickBestByHistoricalResearch(codes);
+        return pickBestByHistoricalResearch(preferredCodes);
       }
-      return pickBestByCredits(codes);
+      return pickBestByCredits(preferredCodes);
     };
 
     const updatedTerms = (resp.semester_plan ?? []).map((term) => {
@@ -1504,7 +1530,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         if (!categoryHasNeed(category, responseNeedByCategory)) return course;
 
         const categoryCodes = getGenEdCategoryCourses(category)
-          .filter((code) => code && !blockedCodes.has(code));
+          .filter((code) => code && !blockedCodes.has(code) && isCourseAvailableInTerm(code, term.term));
         if (categoryCodes.length === 0) return course;
 
         const pickCandidate = (codes: string[]) => {
@@ -1658,7 +1684,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         }
 
         const categoryCodes = getGenEdCategoryCourses(category)
-          .filter((code) => code && !blockedCodes.has(code));
+          .filter((code) => code && !blockedCodes.has(code) && isCourseAvailableInTerm(code, term.term));
         if (categoryCodes.length == 0) {
           continue;
         }
@@ -1704,7 +1730,60 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       dedupedTerms.push({ ...term, courses: filtered, credits });
     }
 
-    return { ...resp, semester_plan: dedupedTerms };
+    const requiredCountByCategory: Record<string, number> = {};
+    Object.entries(resp.gen_ed_status ?? {}).forEach(([category, counts]) => {
+      const normalized = normGenEd(category);
+      if (!normalized) return;
+      const required = Math.max(1, Number(counts?.required ?? 0) || 1);
+      requiredCountByCategory[normalized] = Math.max(requiredCountByCategory[normalized] ?? 0, required);
+    });
+
+    const categoryVisibleCounts = new Map<string, number>();
+    const trimmedTerms = dedupedTerms.map((term) => {
+      const filtered = (term.courses ?? []).filter((course) => {
+        if (!course?.code) return false;
+        const categories = dedupeGenEdLabels([
+          ...extractGenEdFromSatisfies(course.satisfies),
+          ...getCourseGenEdTags(course.code)
+        ]);
+        if (categories.length === 0) {
+          return true;
+        }
+
+        const normalizedCategories = categories
+          .map((category) => normGenEd(category))
+          .filter((category): category is string => Boolean(category));
+        if (normalizedCategories.length === 0) {
+          return true;
+        }
+
+        const isProgramRequired = Boolean(course.source_reason && course.source_reason !== 'GENED_REQUIRED');
+        if (isProgramRequired) {
+          normalizedCategories.forEach((category) => {
+            categoryVisibleCounts.set(category, (categoryVisibleCounts.get(category) ?? 0) + 1);
+          });
+          return true;
+        }
+
+        const fillsNeededCategory = normalizedCategories.some((category) => {
+          const required = Math.max(1, requiredCountByCategory[category] ?? 1);
+          const current = categoryVisibleCounts.get(category) ?? 0;
+          return current < required;
+        });
+        if (!fillsNeededCategory) {
+          return false;
+        }
+
+        normalizedCategories.forEach((category) => {
+          categoryVisibleCounts.set(category, (categoryVisibleCounts.get(category) ?? 0) + 1);
+        });
+        return true;
+      });
+      const credits = filtered.reduce((sum, c) => sum + (c.credits ?? 3), 0);
+      return { ...term, courses: filtered, credits };
+    });
+
+    return { ...resp, semester_plan: trimmedTerms };
   };
 
 
@@ -1823,7 +1902,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
           {
             role: 'assistant',
             content:
-              `I couldn’t generate the plan. ${e?.message ?? ''}\n\n` +
+              `I couldn't generate the plan. ${e?.message ?? ''}\n\n` +
               `Tip: make sure the backend API is running at ${import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'}.`,
             timestamp: new Date()
           }
@@ -2247,6 +2326,19 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       .filter(Boolean)
   );
 
+  const getProgramAffinityScore = (courseCode: string) => {
+    const notes = getExcelElectiveNotes(courseCode);
+    const hasMatchingElectiveNote = notes.some((note) => {
+      const match = note.toUpperCase().match(/^([A-Z]{2,4})\b/);
+      if (!match) return false;
+      return preferredPrefixes.has(match[1]) && /\b(?:MAJOR|MINOR)\s+ELECTIVE\b/i.test(note);
+    });
+    if (hasMatchingElectiveNote) return 2;
+    const prefix = normalizeCourseCode(courseCode).split(" ")[0];
+    if (preferredPrefixes.has(prefix)) return 1;
+    return 0;
+  };
+
   const termKey = (term: string) => {
     const m = term.match(/^(Spring|Fall)\s+(\d{4})$/);
     if (!m) return { year: 9999, season: 9 };
@@ -2298,17 +2390,9 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         }
       });
     }
-    for (const [code, meta] of Object.entries(catalog.course_meta ?? {})) {
-      const metaTags: string[] = [];
-      if (Array.isArray(meta?.gen_ed_tags)) {
-        meta.gen_ed_tags.forEach((tag) => {
-          if (typeof tag === "string" && tag.trim()) metaTags.push(canonicalGenEdLabel(tag));
-        });
-      }
-      if (metaTags.length === 0 && typeof meta?.gen_ed === "string" && meta.gen_ed.trim()) {
-        metaTags.push(...splitGenEdTags(meta.gen_ed));
-      }
-      if (metaTags.some((tag) => isSameGenEdCategory(tag, normalizedCategory))) {
+    for (const code of Object.keys(catalog.course_meta ?? {})) {
+      const courseTags = getCourseGenEdTags(code);
+      if (courseTags.some((tag) => isSameGenEdCategory(tag, normalizedCategory))) {
         matches.add(code);
       }
     }
@@ -2335,7 +2419,11 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     return Array.from(matches);
   };
 
-  const buildReplacementOptions = (category: string, targetCode: string) => {
+  const buildReplacementOptions = (
+    category: string,
+    targetCode: string,
+    targetTerm?: string | null
+  ) => {
     const effectiveCategory = canonicalGenEdLabel(category);
     const taken = new Set([
       ...planningCompleted,
@@ -2345,17 +2433,22 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     const categoryCourses = new Set(getGenEdCategoryCourses(effectiveCategory));
     categoryCourses.add(targetCode);
     const candidates = Array.from(categoryCourses).filter(
-      (c) => c === targetCode || !taken.has(c)
+      (c) =>
+        (c === targetCode || !taken.has(c))
+        && (c === targetCode || isCourseAvailableInTerm(c, targetTerm))
     );
     return candidates.sort((a, b) => {
       if (a === targetCode) return -1;
       if (b === targetCode) return 1;
-      const aPref = preferredPrefixes.has(a.split(" ")[0]) ? 1 : 0;
-      const bPref = preferredPrefixes.has(b.split(" ")[0]) ? 1 : 0;
-      if (aPref !== bPref) return bPref - aPref;
+      const aAffinity = getProgramAffinityScore(a);
+      const bAffinity = getProgramAffinityScore(b);
+      if (aAffinity !== bAffinity) return bAffinity - aAffinity;
       const aPrereq = getCoursePrereqs(a).length;
       const bPrereq = getCoursePrereqs(b).length;
       if (aPrereq !== bPrereq) return aPrereq - bPrereq;
+      const aCredits = getCourseCredits(a);
+      const bCredits = getCourseCredits(b);
+      if (aCredits !== bCredits) return bCredits - aCredits;
       return a.localeCompare(b);
     });
   };
@@ -2367,7 +2460,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         ...prev,
         {
           role: 'assistant',
-          content: `No GenEd category found for ${code}, so I can’t suggest a category-matched replacement.`,
+          content: `No GenEd category found for ${code}, so I can't suggest a category-matched replacement.`,
           timestamp: new Date()
         }
       ]);
@@ -2379,7 +2472,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       pickCategoryByNeed(selectableCategories, genEdNeedByCategory, true)
       ?? pickCategoryByNeed(selectableCategories, genEdNeedByCategory, false)
       ?? selectableCategories[0];
-    const sorted = buildReplacementOptions(category, code);
+    const sorted = buildReplacementOptions(category, code, semester);
     setReplacementTarget(instanceId);
     setReplacementTargetCode(code);
     setReplacementTargetTerm(semester);
@@ -2405,10 +2498,55 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     const { targetInstanceId, targetCode, nextCode, semester } = pendingReplacement;
     if (!semester) return;
 
-    if (!skipImpactCheck) {
+    const removeTerm = replacementTargetTerm ?? semester;
+    const replacementInstanceId = createInstanceId();
+    const genEdCategory =
+      pendingReplacement.category ??
+      replacementCategory ??
+      getPrimaryGenEdCategory(targetCode) ??
+      getPrimaryGenEdCategory(nextCode);
+    const normalizedCategory = normGenEd(genEdCategory);
+    const normalizedTargetCode = normalizeCourseCode(targetCode);
+    const normalizedNextCode = normalizeCourseCode(nextCode);
+
+    const slotAddEntries = (overrides.add ?? []).filter((entry) => {
+      if (entry.term !== semester) return false;
+      if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
+      if (normalizeCourseCode(entry.code) === normalizedTargetCode) return true;
+      if (!normalizedCategory) return false;
+      const entryCategory = entry.gen_ed_category ?? getPrimaryGenEdCategory(entry.code);
+      return normGenEd(entryCategory) === normalizedCategory;
+    });
+    const currentSlotAdd =
+      slotAddEntries.find((entry) => entry.instance_id === targetInstanceId)
+      ?? slotAddEntries.find((entry) => normalizeCourseCode(entry.code) === normalizedTargetCode)
+      ?? null;
+
+    const slotRemoveEntries = (overrides.remove ?? []).filter((entry) => {
+      if ((entry.term ?? null) != removeTerm) return false;
+      if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
+      if (normalizeCourseCode(entry.code ?? '') === normalizedTargetCode) return true;
+      if (!normalizedCategory || !entry.code) return false;
+      return getCourseGenEdTags(entry.code).some((tag) => normGenEd(tag) === normalizedCategory);
+    });
+    const baselineRemoveEntry = currentSlotAdd
+      ? (
+          slotRemoveEntries.find((entry) => {
+            if (!entry.code) return false;
+            return normalizeCourseCode(entry.code) !== normalizedTargetCode;
+          }) ?? null
+        )
+      : null;
+    const revertingToOriginal = Boolean(
+      currentSlotAdd
+      && baselineRemoveEntry?.code
+      && normalizeCourseCode(baselineRemoveEntry.code) === normalizedNextCode
+    );
+
+    if (!skipImpactCheck && targetCode !== nextCode) {
       const downstream = getDownstreamDependents(
         targetCode,
-        replacementTargetTerm ?? semester,
+        removeTerm,
         targetInstanceId
       );
       if (downstream.length > 0) {
@@ -2422,40 +2560,102 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       }
     }
 
+    const dependentsToRemove =
+      targetCode === nextCode
+        ? []
+        : (skipImpactCheck && pendingReplacementImpact ? pendingReplacementImpact.dependents : []);
+
+    const retainedAdds = (overrides.add ?? []).filter((entry) => !slotAddEntries.includes(entry));
+    const retainedRemoves = (overrides.remove ?? []).filter((entry) => !slotRemoveEntries.includes(entry));
+
     if (targetCode === nextCode) {
-      const targetTerm = replacementTargetTerm ?? semester;
-      const downstream = getDownstreamDependents(targetCode, targetTerm, targetInstanceId);
-      setOverrides((prev) => {
-        const filteredRemove = (prev.remove ?? []).filter((entry) => {
-          if (entry.instance_id && entry.instance_id === targetInstanceId) return false;
-          if (
-            (entry.term ?? null) === targetTerm
-            && !entry.instance_id
-            && normalizeCourseCode(entry.code ?? "") === normalizeCourseCode(targetCode)
-          ) {
-            return false;
-          }
-          for (const dep of downstream) {
-            if (dep.instanceId && entry.instance_id === dep.instanceId) return false;
-            if (
-              (entry.term ?? null) === (dep.term ?? null)
-              && !entry.instance_id
-              && normalizeCourseCode(entry.code ?? "") === normalizeCourseCode(dep.code)
-            ) {
-              return false;
-            }
-          }
-          return true;
+      if (currentSlotAdd) {
+        retainedAdds.push({
+          term: semester,
+          code: targetCode,
+          instance_id: targetInstanceId,
+          gen_ed_category: genEdCategory ?? undefined,
         });
-        return { ...prev, remove: filteredRemove };
-      });
-      setRemovedCourses(prev => {
-        const blocked = new Set<string>([targetInstanceId]);
-        downstream.forEach((dep) => {
-          if (dep.instanceId) blocked.add(dep.instanceId);
+        if (baselineRemoveEntry?.code) {
+          retainedRemoves.push({
+            term: removeTerm,
+            code: baselineRemoveEntry.code,
+            instance_id: baselineRemoveEntry.instance_id ?? undefined,
+          });
+        }
+      }
+    } else if (!revertingToOriginal) {
+      const effectiveBaselineRemove = currentSlotAdd
+        ? baselineRemoveEntry
+        : {
+            term: removeTerm,
+            code: targetCode,
+            instance_id: targetInstanceId,
+          };
+      if (effectiveBaselineRemove?.code) {
+        retainedRemoves.push({
+          term: removeTerm,
+          code: effectiveBaselineRemove.code,
+          instance_id: effectiveBaselineRemove.instance_id ?? undefined,
         });
-        return prev.filter((id) => !blocked.has(id));
+      }
+      retainedAdds.push({
+        term: semester,
+        code: nextCode,
+        instance_id: replacementInstanceId,
+        gen_ed_category: genEdCategory ?? undefined,
       });
+    }
+
+    dependentsToRemove.forEach((dep) => {
+      const exists = retainedRemoves.some((entry) => {
+        if (dep.instanceId) {
+          return entry.instance_id === dep.instanceId;
+        }
+        return (entry.term ?? null) === (dep.term ?? null)
+          && !entry.instance_id
+          && normalizeCourseCode(entry.code ?? '') === normalizeCourseCode(dep.code);
+      });
+      if (exists) return;
+      retainedRemoves.push({
+        term: dep.term ?? undefined,
+        code: dep.code,
+        instance_id: dep.instanceId ?? undefined,
+      });
+    });
+
+    setOverrides({
+      ...overrides,
+      add: retainedAdds,
+      remove: retainedRemoves,
+    });
+
+    const nextRemoved = new Set(removedCourses);
+    slotRemoveEntries.forEach((entry) => {
+      if (entry.instance_id) {
+        nextRemoved.delete(entry.instance_id);
+      }
+    });
+    if (targetCode === nextCode) {
+      if (currentSlotAdd && baselineRemoveEntry?.instance_id) {
+        nextRemoved.add(baselineRemoveEntry.instance_id);
+      }
+    } else if (!revertingToOriginal) {
+      const activeRemovedInstanceId = currentSlotAdd
+        ? (baselineRemoveEntry?.instance_id ?? null)
+        : targetInstanceId;
+      if (activeRemovedInstanceId) {
+        nextRemoved.add(activeRemovedInstanceId);
+      }
+    }
+    dependentsToRemove.forEach((dep) => {
+      if (dep.instanceId) {
+        nextRemoved.add(dep.instanceId);
+      }
+    });
+    setRemovedCourses(Array.from(nextRemoved));
+
+    if (targetCode === nextCode) {
       setMessages(prev => [
         ...prev,
         {
@@ -2466,30 +2666,6 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       ]);
       resetReplacementState();
       return;
-    }
-
-    const removeTerm = replacementTargetTerm ?? semester;
-    const newInstanceId = createInstanceId();
-    const genEdCategory =
-      pendingReplacement.category ??
-      replacementCategory ??
-      getPrimaryGenEdCategory(targetCode) ??
-      getPrimaryGenEdCategory(nextCode);
-    addOverrideRemove(removeTerm, targetInstanceId, targetCode);
-    addOverrideAdd(semester, nextCode, newInstanceId, genEdCategory);
-
-    const dependentsToRemove = skipImpactCheck && pendingReplacementImpact ? pendingReplacementImpact.dependents : [];
-    if (dependentsToRemove.length > 0) {
-      dependentsToRemove.forEach((dep) => {
-        addOverrideRemove(dep.term ?? null, dep.instanceId ?? null, dep.code);
-      });
-      setRemovedCourses(prev => {
-        const next = new Set(prev);
-        dependentsToRemove.forEach((dep) => {
-          if (dep.instanceId) next.add(dep.instanceId);
-        });
-        return Array.from(next);
-      });
     }
 
     const wasInProgress = inProgressCourses.includes(targetCode);
@@ -2544,7 +2720,6 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         }
       }
 
-      // remove dependents from plan immediately
       if (dependentsToRemove.length > 0) {
         updated.semester_plan.forEach((t) => {
           const removals = new Set(dependentsToRemove.map((d) => d.code));
@@ -2553,7 +2728,6 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         });
       }
 
-      // remove nextCode from any other term to avoid duplicates
       updated.semester_plan.forEach((t) => {
         if (t.term === semester) return;
         t.courses = t.courses.filter((c) => c.code !== nextCode);
@@ -2561,7 +2735,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       });
 
       termEntry.courses = termEntry.courses.filter((c) => c.code !== nextCode);
-      termEntry.courses.push(buildPlannedCourse(nextCode, genEdCategory, newInstanceId));
+      termEntry.courses.push(buildPlannedCourse(nextCode, genEdCategory, replacementInstanceId));
       termEntry.credits = termEntry.courses.reduce((sum, c) => sum + (c.credits ?? 3), 0);
 
       if (genEdCategory) {
@@ -2569,11 +2743,6 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       }
 
       return updated;
-    });
-
-    setRemovedCourses(prev => {
-      const next = prev.includes(targetInstanceId) ? prev : [...prev, targetInstanceId];
-      return next;
     });
 
     setMessages(prev => [
@@ -3935,7 +4104,14 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
         if (a.need !== b.need) return b.need - a.need;
         return a.label.localeCompare(b.label);
       });
-  }, [catalog.gen_ed?.categories, catalog.gen_ed?.rules, plan?.gen_ed_status, courseObjects]);
+  }, [
+    catalog.course_meta,
+    catalog.gen_ed?.categories,
+    catalog.gen_ed?.rules,
+    plan?.gen_ed_status,
+    plan?.gened_discovery?.case_studies_textual_analysis,
+    courseObjects
+  ]);
 
   const wicRequirementStatus = useMemo(() => {
     const uniqueWicCodes = new Set<string>();
@@ -3980,17 +4156,253 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     });
   }, [smartMinorSuggestions]);
 
+  const electiveRequirementStatus = useMemo(() => {
+    const placeholders = plan?.elective_placeholders ?? [];
+    if (placeholders.length === 0) return [] as {
+      key: string;
+      program: string;
+      programType: 'major' | 'minor';
+      tagPrefixes: string[];
+      displayTag: string;
+      allowedCourses: string[];
+      isComplete: boolean;
+    }[];
+
+    const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+    const normalizeCourseCode = (value: string) => value.replace(/\s+/g, '').toUpperCase();
+    const knownAliases: Record<string, string[]> = {
+      'Business Administration': ['BUS'],
+      'Computer Science': ['COS', 'CS'],
+      'Economics': ['ECO'],
+      'European Studies': ['EUR'],
+      'Finance': ['FIN'],
+      'History and Civilizations': ['HC', 'HTY'],
+      'Information Systems': ['IS', 'ISM'],
+      'Journalism and Mass Communication': ['JMC'],
+      'Literature': ['LIT', 'ENG'],
+      'Mathematics': ['MAT'],
+      'Modern Languages and Cultures': ['MLC'],
+      'Physics': ['PHY'],
+      'Political Science and International Relations': ['POS'],
+      'Psychology': ['PSY'],
+      'Film and Creative Media': ['Film', 'FIL'],
+      'Sustainability Studies': ['Sustainability', 'Sustainabiliy']
+    };
+
+    const grouped = new Map<
+      string,
+      { programType: 'major' | 'minor'; program: string; items: typeof placeholders }
+    >();
+
+    placeholders.forEach((placeholder) => {
+      const key = `${placeholder.program_type}:${placeholder.program}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          programType: placeholder.program_type,
+          program: placeholder.program,
+          items: []
+        });
+      }
+      grouped.get(key)?.items.push(placeholder);
+    });
+
+    return Array.from(grouped.entries()).map(([key, group]) => {
+      const { programType, program, items } = group;
+      const headerTotals = items.filter(
+        (item) => item.is_total && (Number(item.credits_required ?? 0) > 0 || Number(item.courses_required ?? 0) > 0)
+      );
+      const totalCredits =
+        headerTotals.length > 0
+          ? Math.max(...headerTotals.map((item) => Number(item.credits_required ?? 0)))
+          : items.reduce((sum, item) => sum + Number(item.credits_required ?? 0), 0);
+      const totalCourses =
+        headerTotals.length > 0
+          ? Math.max(...headerTotals.map((item) => Number(item.courses_required ?? 0)))
+          : items.reduce((sum, item) => sum + Number(item.courses_required ?? 0), 0);
+
+      const allowedByNormalized = new Map<string, string>();
+      items.forEach((item) => {
+        (item.allowed_courses ?? []).forEach((code) => {
+          const trimmed = (code ?? '').trim();
+          if (!trimmed) return;
+          const normalized = normalizeCourseCode(trimmed);
+          if (!allowedByNormalized.has(normalized)) {
+            allowedByNormalized.set(normalized, trimmed);
+          }
+        });
+      });
+
+      const allowedCourses = Array.from(allowedByNormalized.values());
+      const derivedPrefixes = allowedCourses
+        .map((code) => code.trim().split(/\s+/)[0] ?? '')
+        .filter((prefix) => prefix.length > 0);
+      const tagPrefixes = Array.from(
+        new Set([...(knownAliases[program] ?? []), ...derivedPrefixes].map((prefix) => normalizeText(prefix)).filter(Boolean))
+      );
+      const noteNeedle = programType === 'major' ? 'major elective' : 'minor elective';
+
+      const matchingCourses = Array.from(
+        courseObjects.reduce((matched, course) => {
+          const normalizedCode = normalizeCourseCode(course.code);
+          const matchesByAllowedCourse = allowedByNormalized.has(normalizedCode);
+          const matchesByElectiveNote = (course.electiveNotes ?? []).some((note) => {
+            const normalizedNote = normalizeText(note);
+            if (!normalizedNote.includes(noteNeedle)) return false;
+            if (tagPrefixes.length === 0) return false;
+            return tagPrefixes.some((prefix) => normalizedNote.startsWith(`${prefix} `));
+          });
+
+          if (!matchesByAllowedCourse && !matchesByElectiveNote) {
+            return matched;
+          }
+
+          if (!matched.has(normalizedCode)) {
+            matched.set(normalizedCode, course);
+          }
+          return matched;
+        }, new Map<string, Course>())
+          .values()
+      );
+
+      const matchedCredits = matchingCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0);
+      const matchedCourseCount = matchingCourses.length;
+      const isComplete =
+        totalCredits > 0
+          ? matchedCredits >= totalCredits
+          : totalCourses > 0
+            ? matchedCourseCount >= totalCourses
+            : false;
+      const primaryPrefix =
+        (knownAliases[program] ?? []).find((alias) => String(alias ?? '').trim().length > 0) ??
+        derivedPrefixes.find((prefix) => String(prefix ?? '').trim().length > 0) ??
+        program;
+      const displayTag = `${String(primaryPrefix).trim()} ${programType === 'major' ? 'Major' : 'Minor'} Elective`;
+
+      return {
+        key,
+        program,
+        programType,
+        tagPrefixes,
+        displayTag,
+        allowedCourses,
+        isComplete
+      };
+    });
+  }, [courseObjects, plan?.elective_placeholders]);
+
   const electiveSuggestions: ElectiveSuggestion[] = useMemo(() => {
+    const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+    const normalizeCourseCode = (value: string) => value.replace(/\s+/g, '').toUpperCase();
+    const hasTrackedElectiveRequirements = electiveRequirementStatus.length > 0;
+    const incompleteElectiveRequirements = electiveRequirementStatus.filter((entry) => !entry.isComplete);
+    const tagMatchesRequirement = (
+      tag: string,
+      requirement: { programType: 'major' | 'minor'; tagPrefixes: string[] }
+    ) => {
+      const normalizedTag = normalizeText(tag);
+      const needle = requirement.programType === 'major' ? 'major elective' : 'minor elective';
+      if (!normalizedTag.includes(needle)) return false;
+      if (requirement.tagPrefixes.length === 0) return false;
+      return requirement.tagPrefixes.some((prefix) => normalizedTag.startsWith(`${prefix} `));
+    };
+
+    let backendSuggestions: ElectiveSuggestion[] = [];
     if (plan?.elective_recommendations && plan.elective_recommendations.length > 0) {
-      return plan.elective_recommendations.map((rec) => ({
-        code: rec.code,
-        name: rec.name,
-        credits: rec.credits,
-        requirementsSatisfied: rec.requirementsSatisfied,
-        tags: rec.tags ?? [],
-        explanation: rec.explanation
-      }));
+      if (!hasTrackedElectiveRequirements) {
+        backendSuggestions = plan.elective_recommendations.map((rec) => ({
+          code: rec.code,
+          name: rec.name,
+          credits: rec.credits,
+          requirementsSatisfied: rec.requirementsSatisfied,
+          tags: rec.tags ?? [],
+          explanation: rec.explanation
+        }));
+      } else if (incompleteElectiveRequirements.length === 0) {
+        return [];
+      } else {
+        backendSuggestions = plan.elective_recommendations
+          .map((rec) => {
+            const activeMatches = incompleteElectiveRequirements.filter((requirement) =>
+              (rec.tags ?? []).some((tag) => tagMatchesRequirement(tag, requirement))
+            );
+            if (activeMatches.length === 0) {
+              return null;
+            }
+
+            const visibleTags = (rec.tags ?? []).filter((tag) => {
+              const normalizedTag = normalizeText(tag);
+              const isProgramElectiveTag =
+                normalizedTag.includes('major elective') || normalizedTag.includes('minor elective');
+              if (!isProgramElectiveTag) return true;
+              return activeMatches.some((requirement) => tagMatchesRequirement(tag, requirement));
+            });
+
+            const hasMajorMatch = activeMatches.some((requirement) => requirement.programType === 'major');
+            const hasMinorMatch = activeMatches.some((requirement) => requirement.programType === 'minor');
+
+            return {
+              code: rec.code,
+              name: rec.name,
+              credits: rec.credits,
+              requirementsSatisfied: activeMatches.length,
+              tags: visibleTags,
+              explanation:
+                hasMajorMatch && hasMinorMatch
+                  ? 'Matches electives for your remaining majors and minors.'
+                  : hasMajorMatch
+                    ? 'Matches electives for your remaining selected major electives.'
+                    : 'Matches electives for your remaining selected minor electives.'
+            };
+          })
+          .filter((rec): rec is ElectiveSuggestion => rec !== null);
+      }
     }
+
+    const requirementIsCoveredByBackend = (requirementKey: string) =>
+      backendSuggestions.some((suggestion) =>
+        suggestion.tags.some((tag) => {
+          const requirement = incompleteElectiveRequirements.find((entry) => entry.key === requirementKey);
+          return requirement ? tagMatchesRequirement(tag, requirement) : false;
+        })
+      );
+
+    const existingCodes = new Set(courseObjects.map((course) => normalizeCourseCode(course.code)));
+    const supplementalSuggestions = incompleteElectiveRequirements
+      .filter((requirement) => !requirementIsCoveredByBackend(requirement.key))
+      .flatMap((requirement) =>
+        requirement.allowedCourses
+          .filter((code) => !existingCodes.has(normalizeCourseCode(code)))
+          .map((code) => ({
+            code,
+            name: catalog.courses[code] ?? code,
+            credits: catalog.course_meta?.[code]?.credits ?? 3,
+            requirementsSatisfied: 1,
+            tags: [requirement.displayTag],
+            explanation:
+              `Matches the remaining ${requirement.programType} elective requirement for ${requirement.program}.`
+          }))
+      );
+
+    const combinedSuggestions = [...backendSuggestions];
+    for (const suggestion of supplementalSuggestions) {
+      const existing = combinedSuggestions.find((entry) => entry.code === suggestion.code);
+      if (!existing) {
+        combinedSuggestions.push(suggestion);
+        continue;
+      }
+
+      existing.requirementsSatisfied = Math.max(existing.requirementsSatisfied, suggestion.requirementsSatisfied);
+      existing.tags = Array.from(new Set([...(existing.tags ?? []), ...(suggestion.tags ?? [])]));
+      if (!existing.explanation && suggestion.explanation) {
+        existing.explanation = suggestion.explanation;
+      }
+    }
+
+    if (combinedSuggestions.length > 0) {
+      return combinedSuggestions;
+    }
+
+    if (hasTrackedElectiveRequirements && incompleteElectiveRequirements.length === 0) return [];
     if (!plan?.minor_alerts?.length) return [];
     const suggestions: ElectiveSuggestion[] = [];
     for (const alert of plan.minor_alerts) {
@@ -4013,7 +4425,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       seen.add(s.code);
       return true;
     });
-  }, [catalog.courses, plan?.minor_alerts, plan?.elective_recommendations]);
+  }, [catalog.course_meta, catalog.courses, courseObjects, electiveRequirementStatus, plan?.minor_alerts, plan?.elective_recommendations]);
 
   const handleDownloadPdf = async () => {
     if (!plan) return;
@@ -4333,8 +4745,8 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                       <div className="mb-4 p-3 rounded-lg border" style={{ background: 'var(--neutral-cream)', borderColor: 'var(--neutral-border)', color: 'var(--navy-dark)' }}>
                         <div className="font-medium">Plan needs attention</div>
                         <div className="text-sm mt-1">
-                          {plan.validation_errors.slice(0, 3).join(' · ')}
-                          {plan.validation_errors.length > 3 ? ` · (+${plan.validation_errors.length - 3} more)` : ''}
+                          {plan.validation_errors.slice(0, 3).join(' | ')}
+                          {plan.validation_errors.length > 3 ? ` | (+${plan.validation_errors.length - 3} more)` : ''}
                         </div>
                         <div className="text-xs mt-1" style={{ color: 'var(--neutral-dark)' }}>
                           You can still view and edit the plan, but graduation rules may not be fully satisfied yet.
@@ -4746,7 +5158,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                             >
                               <div className="font-medium">{term}</div>
                               <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                                {termCredits} credits now → {adjustedCredits} after swap
+                                {termCredits} credits now, {adjustedCredits} after swap
                                 {" "}({placeholders.length} FREE ELECTIVE slot{placeholders.length === 1 ? "" : "s"})
                               </div>
                               {hasAvailabilityWarning && availability.warningLabel && availability.detailsLabel && (
@@ -5019,7 +5431,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                             >
                               <div className="font-medium">{term}</div>
                               <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                                {termCredits} credits now → {adjustedCredits} after swap
+                                {termCredits} credits now, {adjustedCredits} after swap
                               </div>
                             </button>
                           );
@@ -5190,7 +5602,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                                 const nextCategory = e.target.value;
                                 setReplacementCategory(nextCategory);
                                 if (replacementTargetCode) {
-                                  setReplacementOptions(buildReplacementOptions(nextCategory, replacementTargetCode));
+                                  setReplacementOptions(buildReplacementOptions(nextCategory, replacementTargetCode, replacementTargetTerm));
                                 }
                                 setPendingReplacement(null);
                               }}
@@ -5451,7 +5863,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                       role: 'assistant',
                       content:
                         'Right now, the advisor chat is connected to the real plan engine but does not change your plan. ' +
-                        'In the next iteration we can add actions like “add minor”, “recompute”, and “why this course?”.',
+                        "In the next iteration we can add actions like \"add minor\", \"recompute\", and \"why this course?\".",
                       timestamp: new Date()
                     }
                   ]);

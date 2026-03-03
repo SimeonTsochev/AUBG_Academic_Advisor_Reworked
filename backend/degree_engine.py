@@ -9,6 +9,7 @@ import statistics
 import uuid
 
 from excel_catalog import (
+    PROGRAM_TAG_ALIASES,
     get_recommended_electives,
     get_case_studies_gened_courses,
     get_selected_program_elective_tags,
@@ -3913,27 +3914,51 @@ def compute_elective_recommendations(
     limit: int = 30,
 ) -> List[Dict]:
     excel_catalog: Dict = catalog.get("excel_catalog") or {}
-    if not excel_catalog:
-        return []
-
-    candidates = get_recommended_electives(
-        excel_catalog=excel_catalog,
-        selected_majors=majors,
-        selected_minors=minors,
-    )
-    candidates = _limit_business_administration_non_bus_elective_candidates(candidates, majors)
-    if not candidates:
-        return []
-
-    taken = set(completed_courses) | set(planned_courses)
+    taken = {
+        _normalize_course_code(code)
+        for code in (set(completed_courses) | set(planned_courses))
+        if isinstance(code, str) and code.strip()
+    }
     catalog_courses = _catalog_courses(catalog)
-    results = []
+    result_by_code: Dict[str, Dict] = {}
+
+    def _merge_recommendation(code: str, tags: List[str], program_keys: Set[str]) -> None:
+        normalized_code = _normalize_course_code(code)
+        if not normalized_code or normalized_code in taken or normalized_code not in catalog_courses:
+            return
+
+        entry = result_by_code.get(normalized_code)
+        if entry is None:
+            entry = {
+                "code": normalized_code,
+                "name": _course_name(catalog, normalized_code),
+                "credits": _course_credits(catalog, normalized_code),
+                "tags": [],
+                "_program_keys": set(),
+            }
+            result_by_code[normalized_code] = entry
+
+        for tag in tags:
+            if isinstance(tag, str) and tag and tag not in entry["tags"]:
+                entry["tags"].append(tag)
+        entry["_program_keys"].update({
+            key for key in program_keys
+            if isinstance(key, str) and key
+        })
+
+    if excel_catalog:
+        candidates = get_recommended_electives(
+            excel_catalog=excel_catalog,
+            selected_majors=majors,
+            selected_minors=minors,
+        )
+        candidates = _limit_business_administration_non_bus_elective_candidates(candidates, majors)
+    else:
+        candidates = []
 
     for entry in candidates:
         code = entry.get("code")
         if not isinstance(code, str):
-            continue
-        if code in taken or code not in catalog_courses:
             continue
         tags = entry.get("tags") or []
         if not isinstance(tags, list):
@@ -3953,45 +3978,128 @@ def compute_elective_recommendations(
             if isinstance(tag, str) and tag not in display_tags:
                 display_tags.append(tag)
 
-        unique_programs = set()
+        unique_programs: Set[str] = set()
         for line in matched_major:
             if isinstance(line, str) and line.split():
-                unique_programs.add((line.split()[0], "major"))
+                unique_programs.add(f"major:{line.split()[0]}")
         for line in matched_minor:
             if isinstance(line, str) and line.split():
-                unique_programs.add((line.split()[0], "minor"))
+                unique_programs.add(f"minor:{line.split()[0]}")
 
-        requirements_satisfied = len(unique_programs)
-        credits = _course_credits(catalog, code)
-        name = _course_name(catalog, code)
+        _merge_recommendation(code, display_tags, unique_programs)
 
-        if matched_major and matched_minor:
-            explanation = "Matches electives for your majors and minors."
-        elif matched_major:
-            explanation = "Matches electives for your selected major(s)."
-        else:
-            explanation = "Matches electives for your selected minor(s)."
+    # Selected minors should also recommend from the PDF-parsed elective blocks, which are
+    # the source of truth for the "Elective Requirements" panel.
+    for minor_name in minors:
+        minor_data = (catalog.get("minors", {}) or {}).get(minor_name, {}) or {}
+        elective_blocks = minor_data.get("elective_requirements", []) or []
+        if not isinstance(elective_blocks, list) or not elective_blocks:
+            continue
 
-        major_match_prefixes = {
-            line.split()[0]
-            for line in matched_major
-            if isinstance(line, str) and line.split()
+        header_totals = [
+            block
+            for block in elective_blocks
+            if isinstance(block, dict)
+            and bool(block.get("is_total"))
+            and (
+                _parse_number(block.get("credits_required")) is not None
+                or _parse_number(block.get("courses_required")) is not None
+            )
+        ]
+        total_required_credits = (
+            max(
+                int(math.ceil(float(_parse_number(block.get("credits_required")) or 0)))
+                for block in header_totals
+            )
+            if header_totals
+            else sum(
+                int(math.ceil(float(_parse_number(block.get("credits_required")) or 0)))
+                for block in elective_blocks
+                if isinstance(block, dict)
+            )
+        )
+        total_required_courses = (
+            max(
+                int(math.ceil(float(_parse_number(block.get("courses_required")) or 0)))
+                for block in header_totals
+            )
+            if header_totals
+            else sum(
+                int(math.ceil(float(_parse_number(block.get("courses_required")) or 0)))
+                for block in elective_blocks
+                if isinstance(block, dict)
+            )
+        )
+
+        allowed_courses: List[str] = []
+        seen_allowed: Set[str] = set()
+        for block in elective_blocks:
+            if not isinstance(block, dict):
+                continue
+            for raw_code in block.get("allowed_courses", []) or []:
+                if not isinstance(raw_code, str):
+                    continue
+                normalized = _normalize_course_code(raw_code)
+                if not normalized or normalized not in catalog_courses or normalized in seen_allowed:
+                    continue
+                seen_allowed.add(normalized)
+                allowed_courses.append(normalized)
+        if not allowed_courses:
+            continue
+
+        required_courses = {
+            _normalize_course_code(code)
+            for code in (minor_data.get("required_courses") or [])
+            if isinstance(code, str)
         }
+        counted_taken = [code for code in allowed_courses if code in taken and code not in required_courses]
+        counted_credits = sum(_course_credits(catalog, code) for code in counted_taken)
 
-        results.append({
-            "code": code,
-            "name": name,
-            "credits": credits,
-            "requirementsSatisfied": requirements_satisfied,
-            "tags": display_tags,
-            "explanation": explanation,
-            "_major_matches": len(major_match_prefixes),
-        })
+        is_complete = False
+        if total_required_credits > 0:
+            is_complete = counted_credits >= total_required_credits
+        elif total_required_courses > 0:
+            is_complete = len(counted_taken) >= total_required_courses
+        if is_complete:
+            continue
+
+        aliases = PROGRAM_TAG_ALIASES.get(minor_name) or []
+        display_prefix = next(
+            (str(alias).strip() for alias in aliases if isinstance(alias, str) and str(alias).strip()),
+            "",
+        )
+        if not display_prefix:
+            display_prefix = minor_name.strip()
+        display_tag = f"{display_prefix} Minor Elective"
+        program_key = f"minor:{_norm_minor_name(minor_name) or minor_name}"
+
+        for code in allowed_courses:
+            _merge_recommendation(code, [display_tag], {program_key})
+
+    results = list(result_by_code.values())
+    for entry in results:
+        program_keys = entry.get("_program_keys") or set()
+        if not isinstance(program_keys, set):
+            program_keys = set()
+        has_major = any(isinstance(key, str) and key.startswith("major:") for key in program_keys)
+        has_minor = any(isinstance(key, str) and key.startswith("minor:") for key in program_keys)
+        entry["requirementsSatisfied"] = len(program_keys)
+        if has_major and has_minor:
+            entry["explanation"] = "Matches electives for your majors and minors."
+        elif has_major:
+            entry["explanation"] = "Matches electives for your selected major(s)."
+        else:
+            entry["explanation"] = "Matches electives for your selected minor(s)."
+        entry["_major_matches"] = sum(
+            1 for key in program_keys
+            if isinstance(key, str) and key.startswith("major:")
+        )
 
     results.sort(key=lambda r: (-r["_major_matches"], -r["requirementsSatisfied"], -r["credits"], r["code"]))
     trimmed = results[:limit]
     for r in trimmed:
         r.pop("_major_matches", None)
+        r.pop("_program_keys", None)
     return trimmed
 
 
@@ -4625,8 +4733,11 @@ def _apply_plan_overrides(
                     )
                 )
                 continue
+        manual_gened_override_known = bool(gen_ed_category) and bool(
+            _excel_course_record(normalized_code)
+        )
         if not _is_free_elective(code) and code not in allowed_auto:
-            if code not in catalog_courses:
+            if code not in catalog_courses and not manual_gened_override_known:
                 override_warnings.append(_make_warning("OVERRIDE_ADD_UNKNOWN", course=code, term=term))
                 continue
             if not gen_ed_category:

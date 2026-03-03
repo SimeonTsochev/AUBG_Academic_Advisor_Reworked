@@ -30,6 +30,7 @@ const ELECTIVE_TAG_ALIASES: Record<string, string[]> = {
   'Computer Science': ['COS', 'CS'],
   'Economics': ['ECO'],
   'European Studies': ['EUR'],
+  'Finance': ['FIN'],
   'History and Civilizations': ['HC', 'HTY'],
   'Information Systems': ['IS', 'ISM'],
   'Journalism and Mass Communication': ['JMC'],

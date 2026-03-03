@@ -12,7 +12,7 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 from excel_catalog import load_excel_catalog, get_recommended_electives, get_case_studies_gened_courses  # noqa: E402
-from degree_engine import generate_plan  # noqa: E402
+from degree_engine import compute_elective_recommendations, generate_plan  # noqa: E402
 
 
 def _write_xlsx(rows: list[list[object]]) -> Path:
@@ -28,6 +28,50 @@ def _write_xlsx(rows: list[list[object]]) -> Path:
 
 
 class ExcelCatalogTests(unittest.TestCase):
+    def _finance_minor_catalog(self) -> dict:
+        return {
+            "courses": {
+                "BUS 4090": {"name": "Thesis", "credits": 3, "gen_ed": []},
+                "ECO 2012": {"name": "Money and Banking", "credits": 3, "gen_ed": []},
+                "ECO 2015": {"name": "Financial Economics", "credits": 3, "gen_ed": []},
+                "ECO 3010": {"name": "Intermediate Macro", "credits": 3, "gen_ed": []},
+            },
+            "course_meta": {
+                "BUS 4090": {"credits": 3, "prereq_codes": []},
+                "ECO 2012": {"credits": 3, "prereq_codes": []},
+                "ECO 2015": {"credits": 3, "prereq_codes": []},
+                "ECO 3010": {"credits": 3, "prereq_codes": []},
+            },
+            "majors": {},
+            "minors": {
+                "Finance": {
+                    "required_courses": [],
+                    "elective_requirements": [
+                        {
+                            "id": "finance-elective-total",
+                            "label": "Elective Courses",
+                            "credits_required": 6,
+                            "courses_required": None,
+                            "allowed_courses": [],
+                            "rule_text": "Finance minor electives: 6 credits required.",
+                            "is_total": True,
+                        },
+                        {
+                            "id": "finance-elective-list",
+                            "label": "Two courses out of the following:",
+                            "credits_required": None,
+                            "courses_required": 2,
+                            "allowed_courses": ["BUS 4090", "ECO 2012", "ECO 2015", "ECO 3010"],
+                            "rule_text": "Two courses out of the following.",
+                            "is_total": False,
+                        },
+                    ],
+                },
+            },
+            "foundation_courses": [],
+            "gen_ed": {"categories": {"Dummy": []}, "rules": {"Dummy": 0}},
+        }
+
     def test_multiline_area_of_study_parses_tags(self):
         path = _write_xlsx([
             [
@@ -69,6 +113,51 @@ class ExcelCatalogTests(unittest.TestCase):
             self.assertNotIn("ECO 3000", codes)
         finally:
             path.unlink(missing_ok=True)
+
+    def test_recommended_electives_include_finance_minor_tags(self):
+        path = _write_xlsx([
+            ["BUS", "4030", "FIN Minor Elective"],
+            ["BUS", "4031", "FIN Minor Elective"],
+            ["ECO", "3000", "ECO Major Elective"],
+        ])
+        try:
+            catalog = load_excel_catalog(path)
+            recs = get_recommended_electives(
+                excel_catalog=catalog,
+                selected_majors=[],
+                selected_minors=["Finance"],
+            )
+            codes = {r["code"] for r in recs}
+            self.assertIn("BUS 4030", codes)
+            self.assertIn("BUS 4031", codes)
+            self.assertNotIn("ECO 3000", codes)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_compute_elective_recommendations_uses_pdf_minor_allowed_courses(self):
+        recs = compute_elective_recommendations(
+            catalog=self._finance_minor_catalog(),
+            majors=[],
+            minors=["Finance"],
+            completed_courses=set(),
+            planned_courses=[],
+        )
+        by_code = {entry["code"]: entry for entry in recs}
+
+        self.assertIn("BUS 4090", by_code)
+        self.assertIn("ECO 2012", by_code)
+        self.assertIn("FIN Minor Elective", by_code["BUS 4090"]["tags"])
+
+    def test_compute_elective_recommendations_skip_pdf_minor_when_completed(self):
+        recs = compute_elective_recommendations(
+            catalog=self._finance_minor_catalog(),
+            majors=[],
+            minors=["Finance"],
+            completed_courses={"BUS 4090", "ECO 2012"},
+            planned_courses=[],
+        )
+
+        self.assertEqual(recs, [])
 
     def test_case_studies_gened_discovery(self):
         path = _write_xlsx([
