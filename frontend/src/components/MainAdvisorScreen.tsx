@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, Download, ArrowLeft, Sparkles, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { Calendar, Copy, Download, ArrowLeft, Sparkles, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { ChatInterface } from './ChatInterface';
 import { ProgressDashboard } from './ProgressDashboard';
 import { SemesterPlanView } from './SemesterPlanView';
@@ -1923,10 +1923,21 @@ export function MainAdvisorScreen({
   );
   const currentSnapshotTokenRef = useRef<string | null>(initialSnapshotToken);
   const initialSnapshotSettledRef = useRef(!initialSnapshotToken);
+  const tokenCopyResetTimeoutRef = useRef<number | null>(null);
+  const [currentSnapshotToken, setCurrentSnapshotToken] = useState<string | null>(initialSnapshotToken);
+  const [tokenCopyStatus, setTokenCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
   const [isSnapshotHydrated, setIsSnapshotHydrated] = useState(false);
 
   useEffect(() => {
     setIsSnapshotHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (tokenCopyResetTimeoutRef.current !== null) {
+        window.clearTimeout(tokenCopyResetTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -1952,6 +1963,7 @@ export function MainAdvisorScreen({
         lastSavedSnapshotHashRef.current = snapshotRelevantStateHash;
         if (snapshot.token !== currentSnapshotTokenRef.current) {
           currentSnapshotTokenRef.current = snapshot.token;
+          setCurrentSnapshotToken(snapshot.token);
           window.history.replaceState(null, "", `/p/${snapshot.token}`);
         }
       } catch (e) {
@@ -1971,6 +1983,42 @@ export function MainAdvisorScreen({
     snapshotPayload,
     snapshotRelevantStateHash,
   ]);
+
+  const copySnapshotToken = async () => {
+    if (!currentSnapshotToken) return;
+
+    const scheduleReset = () => {
+      if (tokenCopyResetTimeoutRef.current !== null) {
+        window.clearTimeout(tokenCopyResetTimeoutRef.current);
+      }
+      tokenCopyResetTimeoutRef.current = window.setTimeout(() => {
+        setTokenCopyStatus('idle');
+        tokenCopyResetTimeoutRef.current = null;
+      }, 1500);
+    };
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(currentSnapshotToken);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = currentSnapshotToken;
+        textArea.setAttribute('readonly', 'true');
+        textArea.style.position = 'absolute';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      setTokenCopyStatus('copied');
+      scheduleReset();
+    } catch (e) {
+      console.error('Failed to copy snapshot token.', e);
+      setTokenCopyStatus('error');
+      scheduleReset();
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -2693,39 +2741,90 @@ export function MainAdvisorScreen({
     const normalizedTargetCode = normalizeCourseCode(targetCode);
     const normalizedNextCode = normalizeCourseCode(nextCode);
 
-    const slotAddEntries = (overrides.add ?? []).filter((entry) => {
-      if (entry.term !== semester) return false;
-      if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
-      if (normalizeCourseCode(entry.code) === normalizedTargetCode) return true;
-      if (!normalizedCategory) return false;
-      const entryCategory = entry.gen_ed_category ?? getPrimaryGenEdCategory(entry.code);
-      return normGenEd(entryCategory) === normalizedCategory;
-    });
-    const currentSlotAdd =
-      slotAddEntries.find((entry) => entry.instance_id === targetInstanceId)
-      ?? slotAddEntries.find((entry) => normalizeCourseCode(entry.code) === normalizedTargetCode)
-      ?? null;
+    const requiredCount = (() => {
+      if (!normalizedCategory) return 1;
+      let required = 0;
+      for (const [category, counts] of Object.entries(plan?.gen_ed_status ?? {})) {
+        if (normGenEd(category) !== normalizedCategory) continue;
+        required = Math.max(required, Number(counts?.required ?? 0) || 0);
+      }
+      if (!required) {
+        for (const [category, req] of Object.entries(catalog.gen_ed?.rules ?? {})) {
+          if (normGenEd(category) !== normalizedCategory) continue;
+          required = Math.max(required, Number(req ?? 0) || 0);
+        }
+      }
+      return Math.max(1, required || 1);
+    })();
+    const allowCategoryGrouping = requiredCount <= 1;
 
-    const slotRemoveEntries = (overrides.remove ?? []).filter((entry) => {
-      if ((entry.term ?? null) != removeTerm) return false;
-      if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
-      if (normalizeCourseCode(entry.code ?? '') === normalizedTargetCode) return true;
-      if (!normalizedCategory || !entry.code) return false;
-      return getCourseGenEdTags(entry.code).some((tag) => normGenEd(tag) === normalizedCategory);
-    });
-    const baselineRemoveEntry = currentSlotAdd
-      ? (
-          slotRemoveEntries.find((entry) => {
-            if (!entry.code) return false;
-            return normalizeCourseCode(entry.code) !== normalizedTargetCode;
-          }) ?? null
-        )
-      : null;
-    const revertingToOriginal = Boolean(
-      currentSlotAdd
-      && baselineRemoveEntry?.code
-      && normalizeCourseCode(baselineRemoveEntry.code) === normalizedNextCode
-    );
+    let slotAddEntries: PlanOverrideAdd[] = [];
+    let currentSlotAdd: PlanOverrideAdd | null = null;
+    let slotRemoveEntries: PlanOverrideRemove[] = [];
+    let baselineRemoveEntry: PlanOverrideRemove | null = null;
+    let revertingToOriginal = false;
+
+    if (allowCategoryGrouping) {
+      slotAddEntries = (overrides.add ?? []).filter((entry) => {
+        if (entry.term !== semester) return false;
+        if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
+        if (normalizeCourseCode(entry.code) === normalizedTargetCode) return true;
+        if (!normalizedCategory) return false;
+        const entryCategory = entry.gen_ed_category ?? getPrimaryGenEdCategory(entry.code);
+        return normGenEd(entryCategory) === normalizedCategory;
+      });
+      currentSlotAdd =
+        slotAddEntries.find((entry) => entry.instance_id === targetInstanceId)
+        ?? slotAddEntries.find((entry) => normalizeCourseCode(entry.code) === normalizedTargetCode)
+        ?? null;
+
+      slotRemoveEntries = (overrides.remove ?? []).filter((entry) => {
+        if ((entry.term ?? null) != removeTerm) return false;
+        if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
+        if (normalizeCourseCode(entry.code ?? '') === normalizedTargetCode) return true;
+        if (!normalizedCategory || !entry.code) return false;
+        return getCourseGenEdTags(entry.code).some((tag) => normGenEd(tag) === normalizedCategory);
+      });
+      baselineRemoveEntry = currentSlotAdd
+        ? (
+            slotRemoveEntries.find((entry) => {
+              if (!entry.code) return false;
+              return normalizeCourseCode(entry.code) !== normalizedTargetCode;
+            }) ?? null
+          )
+        : null;
+      revertingToOriginal = Boolean(
+        currentSlotAdd
+        && baselineRemoveEntry?.code
+        && normalizeCourseCode(baselineRemoveEntry.code) === normalizedNextCode
+      );
+    } else {
+      slotAddEntries = (overrides.add ?? []).filter((entry) => {
+        if (entry.term !== semester) return false;
+        if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
+        return normalizeCourseCode(entry.code) === normalizedTargetCode;
+      });
+      currentSlotAdd =
+        slotAddEntries.find((entry) => entry.instance_id === targetInstanceId)
+        ?? slotAddEntries.find((entry) => normalizeCourseCode(entry.code) === normalizedTargetCode)
+        ?? null;
+
+      const matchingRemoveByNextCode = currentSlotAdd
+        ? (overrides.remove ?? []).find((entry) =>
+            (entry.term ?? null) == removeTerm
+            && normalizeCourseCode(entry.code ?? '') === normalizedNextCode
+          ) ?? null
+        : null;
+
+      slotRemoveEntries = (overrides.remove ?? []).filter((entry) => {
+        if ((entry.term ?? null) != removeTerm) return false;
+        if (entry.instance_id && entry.instance_id === targetInstanceId) return true;
+        if (normalizeCourseCode(entry.code ?? '') === normalizedTargetCode) return true;
+        return Boolean(matchingRemoveByNextCode && entry === matchingRemoveByNextCode);
+      });
+      baselineRemoveEntry = matchingRemoveByNextCode;
+      revertingToOriginal = Boolean(matchingRemoveByNextCode);
+    }
 
     if (!skipImpactCheck && targetCode !== nextCode) {
       const downstream = getDownstreamDependents(
@@ -4772,9 +4871,40 @@ export function MainAdvisorScreen({
         {/* Left: Plan / Chat */}
         <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
           <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--neutral-border)' }}>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Calendar className="w-5 h-5" style={{ color: 'var(--academic-gold)' }} />
               <h3 className="m-0">Your Plan</h3>
+              <button
+                type="button"
+                onClick={copySnapshotToken}
+                disabled={!currentSnapshotToken}
+                className="flex items-center gap-2 px-3 py-1 rounded-lg border text-xs"
+                style={{
+                  borderColor: 'var(--neutral-border)',
+                  background: currentSnapshotToken ? 'var(--neutral-cream)' : 'var(--white)',
+                  color: currentSnapshotToken ? 'var(--navy-dark)' : 'var(--neutral-dark)',
+                  cursor: currentSnapshotToken ? 'pointer' : 'default',
+                  opacity: currentSnapshotToken ? 1 : 0.7
+                }}
+                title={currentSnapshotToken ? 'Copy program token' : 'Generating program token...'}
+              >
+                <span className="font-mono">
+                  {currentSnapshotToken ?? 'Generating token...'}
+                </span>
+                {tokenCopyStatus === 'copied' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Copied</span>
+                  </>
+                ) : tokenCopyStatus === 'error' ? (
+                  <span>Retry</span>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
             </div>
 
             <div className="flex gap-2">
