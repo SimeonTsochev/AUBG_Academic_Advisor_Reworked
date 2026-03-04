@@ -21,6 +21,9 @@ interface AcademicSetupScreenProps {
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     completedCourses: string[];
     inProgressCourses: string[];
+    inProgressOverrides?: Record<string, string>;
+    completedOverrides?: Record<string, string>;
+    lastRolloverTermApplied?: string;
     maxCreditsPerSemester: number;
     startTermSeason: string;
     startTermYear: number;
@@ -266,12 +269,21 @@ export function AcademicSetupScreen({
 
   const handleSubmit = () => {
     if (!canSubmit) return;
+    const nextInProgressOverrides = currentTermLabel
+      ? inProgressCourses.reduce<Record<string, string>>((acc, code) => {
+          acc[code] = currentTermLabel;
+          return acc;
+        }, {})
+      : {};
     onComplete({
       majors: selectedMajors,
       minors: selectedMinors,
       economicsIntermediateChoice,
       completedCourses: completedForPlan,
       inProgressCourses,
+      inProgressOverrides: nextInProgressOverrides,
+      completedOverrides: {},
+      lastRolloverTermApplied: currentTermLabel ?? undefined,
       maxCreditsPerSemester,
       startTermSeason: selectedStartTerm?.season ?? "Fall",
       startTermYear: selectedStartTerm?.year ?? new Date().getFullYear(),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict
+from typing import Any, List, Optional, Dict
 
 class UploadCatalogResponse(BaseModel):
     catalog_id: str
@@ -172,6 +172,23 @@ class GeneratePlanResponse(BaseModel):
     warnings: List[PlanWarning] = Field(default_factory=list)
     is_valid: bool = True
     validation_errors: List[str] = Field(default_factory=list)
+
+
+class CreateSnapshotRequest(BaseModel):
+    catalog_year: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CreateSnapshotResponse(BaseModel):
+    token: str
+    expires_at: int
+
+
+class GetSnapshotResponse(BaseModel):
+    token: str
+    expires_at: int
+    catalog_year: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
 
 # Pydantic forward refs

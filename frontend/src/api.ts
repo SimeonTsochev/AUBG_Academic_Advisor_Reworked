@@ -144,11 +144,55 @@ export interface PlanOverrideLock {
   instance_id?: string;
 }
 
+export interface ProgramSnapshotSwappedElective {
+  termLabel: string;
+  addedCourseCode: string;
+  addedCourseInstanceId: string;
+  replacedPlaceholderInstanceId: string;
+  placeholderCode: string;
+  placeholderCredits: number;
+}
+
+export interface ProgramSnapshotPayload {
+  majors: string[];
+  minors: string[];
+  economicsIntermediateChoice?: "ECO 3001" | "ECO 3002" | null;
+  completedCourses: string[];
+  inProgressCourses: string[];
+  completedOverrides: Record<string, string>;
+  inProgressOverrides: Record<string, string>;
+  overrides: PlanOverrides;
+  swappedElectives: ProgramSnapshotSwappedElective[];
+  removedCourses: string[];
+  start_term_season: string;
+  start_term_year: number;
+  max_credits_per_semester: number;
+  waived_mat1000: boolean;
+  waived_eng1000: boolean;
+  strict_prereqs: boolean;
+  retakeCourses: string[];
+  current_term_label?: string | null;
+  lastRolloverTermApplied?: string;
+}
+
+export interface CreateProgramSnapshotResponse {
+  token: string;
+  expires_at: number;
+}
+
+export interface GetProgramSnapshotResponse {
+  token: string;
+  expires_at: number;
+  catalog_year: string;
+  payload: ProgramSnapshotPayload;
+}
+
 export interface GeneratePlanRequest {
   catalog_id: string;
   majors: string[];
   minors: string[];
   completed_courses: string[];
+  retake_courses?: string[];
   in_progress_courses?: string[];
   in_progress_terms?: Record<string, string>;
   current_term_label?: string | null;
@@ -315,6 +359,54 @@ export async function downloadPlanPdf(payload: GeneratePlanRequest): Promise<Blo
   return res.blob();
 }
 
+export async function createProgramSnapshot(
+  catalog_year: string,
+  payload: ProgramSnapshotPayload
+): Promise<CreateProgramSnapshotResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/program-snapshots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ catalog_year, payload }),
+    });
+  } catch (e: any) {
+    throw new Error(`POST /program-snapshots failed: ${e?.message ?? e}`);
+  }
+  if (!res.ok) {
+    const detail = (await readErrorDetail(res)) ?? (await safeDetail(res));
+    const statusInfo = `${res.status} ${res.statusText}`.trim();
+    throw new Error(
+      detail
+        ? `POST /program-snapshots failed (${statusInfo}): ${detail}`
+        : `POST /program-snapshots failed (${statusInfo})`
+    );
+  }
+  return res.json();
+}
+
+export async function getProgramSnapshot(token: string): Promise<GetProgramSnapshotResponse> {
+  const encodedToken = encodeURIComponent(token);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/program-snapshots/${encodedToken}`, {
+      method: "GET",
+    });
+  } catch (e: any) {
+    throw new Error(`GET /program-snapshots/${token} failed: ${e?.message ?? e}`);
+  }
+  if (!res.ok) {
+    const detail = (await readErrorDetail(res)) ?? (await safeDetail(res));
+    const statusInfo = `${res.status} ${res.statusText}`.trim();
+    throw new Error(
+      detail
+        ? `GET /program-snapshots/${token} failed (${statusInfo}): ${detail}`
+        : `GET /program-snapshots/${token} failed (${statusInfo})`
+    );
+  }
+  return res.json();
+}
+
 
 async function readErrorDetail(res: Response): Promise<string | null> {
   try {
@@ -340,5 +432,3 @@ async function safeDetail(res: Response): Promise<string | null> {
     return null;
   }
 }
-
-

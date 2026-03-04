@@ -13,7 +13,14 @@ import logging
 from catalog_parser import parse_catalog
 from degree_engine import generate_plan
 from pdf_export import plan_to_pdf_bytes
-from models import UploadCatalogResponse, GeneratePlanRequest, GeneratePlanResponse
+from models import (
+    UploadCatalogResponse,
+    GeneratePlanRequest,
+    GeneratePlanResponse,
+    CreateSnapshotRequest,
+    CreateSnapshotResponse,
+    GetSnapshotResponse,
+)
 from excel_catalog import (
     load_excel_catalog,
     compute_catalog_integrity,
@@ -25,6 +32,7 @@ from excel_course_catalog import (
     search_courses as search_excel_courses,
     list_courses as list_excel_courses,
 )
+from snapshots_db import SnapshotExpiredError, create_snapshot, get_snapshot, init_db
 
 app = FastAPI(title="AUBG Academic Advisor API", version="0.1.0")
 
@@ -150,6 +158,12 @@ def _ensure_excel_course_universe_loaded() -> Path:
 def _startup_preload_excel_course_universe() -> None:
     excel_path = _ensure_excel_course_universe_loaded()
     logging.info("Excel course universe preloaded from %s.", excel_path)
+
+
+@app.on_event("startup")
+def _startup_init_snapshot_db() -> None:
+    init_db()
+    logging.info("Program snapshot database initialized.")
 
 def _load_default_catalog() -> Dict:
     global DEFAULT_CATALOG, DEFAULT_CATALOG_ID, DEFAULT_CATALOG_MTIME, DEFAULT_CATALOG_VERSION
@@ -280,6 +294,37 @@ def _catalog_course_meta_for_response(catalog: Dict[str, Any]) -> Dict[str, Dict
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.post("/program-snapshots", response_model=CreateSnapshotResponse)
+def program_snapshots_create(req: CreateSnapshotRequest):
+    payload_json = json.dumps(req.payload, separators=(",", ":"), ensure_ascii=False)
+    if len(payload_json.encode("utf-8")) > 1_000_000:
+        raise HTTPException(status_code=413, detail="Snapshot payload is too large.")
+    try:
+        snapshot = create_snapshot(req.payload, req.catalog_year)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return CreateSnapshotResponse(
+        token=str(snapshot["token"]),
+        expires_at=int(snapshot["expires_at"]),
+    )
+
+
+@app.get("/program-snapshots/{token}", response_model=GetSnapshotResponse)
+def program_snapshots_get(token: str):
+    try:
+        snapshot = get_snapshot(token)
+    except SnapshotExpiredError:
+        raise HTTPException(status_code=410, detail="Snapshot has expired.")
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Snapshot not found.")
+    return GetSnapshotResponse(
+        token=str(snapshot["token"]),
+        expires_at=int(snapshot["expires_at"]),
+        catalog_year=str(snapshot["catalog_year"]),
+        payload=dict(snapshot["payload"]),
+    )
 
 
 @app.get("/courses/search")

@@ -6,9 +6,18 @@ import { SemesterPlanView } from './SemesterPlanView';
 import { ElectiveRecommendationPanel } from './ElectiveRecommendationPanel';
 import { PrereqConfirmDialog } from './PrereqConfirmDialog';
 import type { ChatMessage, Course, Progress, ElectiveSuggestion } from '../types';
-import type { UploadCatalogResponse, GeneratePlanResponse, PlanCourse, PlanOverrides, MinorSuggestion as ApiMinorSuggestion } from '../api';
-import { downloadPlanPdf, generatePlan } from '../api';
+import type {
+  UploadCatalogResponse,
+  GeneratePlanResponse,
+  PlanCourse,
+  PlanOverrides,
+  ProgramSnapshotPayload,
+  ProgramSnapshotSwappedElective,
+  MinorSuggestion as ApiMinorSuggestion,
+} from '../api';
+import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
 import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
+import { applyRolloverIfNeeded } from '../utils/term';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 
 interface MainAdvisorScreenProps {
@@ -19,30 +28,93 @@ interface MainAdvisorScreenProps {
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     completedCourses: string[];
     inProgressCourses: string[];
+    inProgressOverrides?: Record<string, string>;
+    completedOverrides?: Record<string, string>;
+    lastRolloverTermApplied?: string;
+    strictPrereqs?: boolean;
+    retakeCourses?: string[];
     maxCreditsPerSemester: number;
     startTermSeason: string;
     startTermYear: number;
     waivedMat1000: boolean;
     waivedEng1000: boolean;
   };
+  initialSnapshot?: ProgramSnapshotPayload | null;
+  initialSnapshotToken?: string | null;
   onBack: () => void;
 }
 
-export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScreenProps) {
+function clonePlanOverrides(value?: PlanOverrides | null): PlanOverrides {
+  return {
+    add: (value?.add ?? []).map((entry) => ({ ...entry })),
+    remove: (value?.remove ?? []).map((entry) => ({ ...entry })),
+    move: (value?.move ?? []).map((entry) => ({ ...entry })),
+    locks: (value?.locks ?? []).map((entry) => ({ ...entry })),
+  };
+}
+
+function buildSnapshotPayload(params: {
+  selection: MainAdvisorScreenProps['selection'];
+  completedCourses: string[];
+  inProgressCourses: string[];
+  completedOverrides: Record<string, string>;
+  inProgressOverrides: Record<string, string>;
+  overrides: PlanOverrides;
+  swappedElectives: ProgramSnapshotSwappedElective[];
+  removedCourses: string[];
+  startTermSeason: string;
+  startTermYear: number;
+  currentTermLabel: string;
+  lastRolloverTermApplied?: string;
+}): ProgramSnapshotPayload {
+  return {
+    majors: [...params.selection.majors],
+    minors: [...params.selection.minors],
+    economicsIntermediateChoice: params.selection.economicsIntermediateChoice,
+    completedCourses: [...params.completedCourses],
+    inProgressCourses: [...params.inProgressCourses],
+    completedOverrides: { ...params.completedOverrides },
+    inProgressOverrides: { ...params.inProgressOverrides },
+    overrides: clonePlanOverrides(params.overrides),
+    swappedElectives: params.swappedElectives.map((entry) => ({ ...entry })),
+    removedCourses: [...params.removedCourses],
+    start_term_season: params.startTermSeason,
+    start_term_year: params.startTermYear,
+    max_credits_per_semester: params.selection.maxCreditsPerSemester,
+    waived_mat1000: params.selection.waivedMat1000,
+    waived_eng1000: params.selection.waivedEng1000,
+    strict_prereqs: params.selection.strictPrereqs ?? false,
+    retakeCourses: [...(params.selection.retakeCourses ?? [])],
+    current_term_label: params.currentTermLabel,
+    lastRolloverTermApplied: params.lastRolloverTermApplied,
+  };
+}
+
+export function MainAdvisorScreen({
+  catalog,
+  selection,
+  initialSnapshot = null,
+  initialSnapshotToken = null,
+  onBack,
+}: MainAdvisorScreenProps) {
   const SEMESTERS_PER_YEAR = 2;
   const [activeTab, setActiveTab] = useState<'plan' | 'electives' | 'chat'>('plan');
   const [plan, setPlan] = useState<GeneratePlanResponse | null>(null);
   const [overrides, setOverrides] = useState<PlanOverrides>(() => {
+    if (initialSnapshot?.overrides) {
+      return clonePlanOverrides(initialSnapshot.overrides);
+    }
     const choice = selection.economicsIntermediateChoice;
     const economicsSelected = selection.minors.includes("Economics");
     if (!economicsSelected || !choice) {
-      return { add: [], remove: [], move: [] };
+      return { add: [], remove: [], move: [], locks: [] };
     }
     const unselected = choice === "ECO 3001" ? "ECO 3002" : "ECO 3001";
     return {
       add: [],
       remove: [{ code: unselected }],
       move: [],
+      locks: [],
     };
   });
 
@@ -105,12 +177,32 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     });
   };
 
+  const currentTermLabel = useMemo(() => {
+    const now = new Date();
+    const season = now.getMonth() + 1 <= 5 ? "Spring" : "Fall";
+    const year = now.getFullYear();
+    return `${season} ${year}`;
+  }, []);
+  const initialCourseStatus = useMemo(
+    () =>
+      applyRolloverIfNeeded({
+        currentTermLabel,
+        lastRolloverTermApplied: selection.lastRolloverTermApplied,
+        completedCourses: selection.completedCourses,
+        inProgressCourses: selection.inProgressCourses ?? [],
+        completedOverrides: selection.completedOverrides ?? {},
+        inProgressOverrides: selection.inProgressOverrides ?? {},
+      }),
+    [currentTermLabel, selection]
+  );
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [completedCourses, setCompletedCourses] = useState<string[]>(selection.completedCourses);
-  const [inProgressCourses, setInProgressCourses] = useState<string[]>(selection.inProgressCourses ?? []);
-  const [inProgressOverrides, setInProgressOverrides] = useState<Record<string, string>>({});
-  const [completedOverrides, setCompletedOverrides] = useState<Record<string, string>>({});
+  const [completedCourses, setCompletedCourses] = useState<string[]>(initialCourseStatus.completedCourses);
+  const [inProgressCourses, setInProgressCourses] = useState<string[]>(initialCourseStatus.inProgressCourses);
+  const [inProgressOverrides, setInProgressOverrides] = useState<Record<string, string>>(initialCourseStatus.inProgressOverrides);
+  const [completedOverrides, setCompletedOverrides] = useState<Record<string, string>>(initialCourseStatus.completedOverrides);
+  const [lastRolloverTermApplied, setLastRolloverTermApplied] = useState<string | undefined>(initialCourseStatus.lastRolloverTermApplied);
   const [startTermSeason, setStartTermSeason] = useState<string>(selection.startTermSeason);
   const [startTermYear, setStartTermYear] = useState<number>(selection.startTermYear);
   const [dismissedImpliedStart, setDismissedImpliedStart] = useState(false);
@@ -121,8 +213,10 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     completedCourses: string[];
     inProgressCourses: string[];
     inProgressOverrides: Record<string, string>;
+    completedOverrides: Record<string, string>;
+    lastRolloverTermApplied?: string;
   } | null>(null);
-  const [removedCourses, setRemovedCourses] = useState<string[]>([]);
+  const [removedCourses, setRemovedCourses] = useState<string[]>(() => [...(initialSnapshot?.removedCourses ?? [])]);
   const lastRemovedSnapshot = useRef<string[]>([]);
   const [pendingRemoval, setPendingRemoval] = useState<{
     instanceId: string;
@@ -173,15 +267,10 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
   const [pendingSwapSourceInstanceId, setPendingSwapSourceInstanceId] = useState<string | null>(null);
   const [moveCourseWarning, setMoveCourseWarning] = useState<string | null>(null);
   const [expandedSmartMinor, setExpandedSmartMinor] = useState<string | null>(null);
-  type SwappedElectiveRecord = {
-    termLabel: string;
-    addedCourseCode: string;
-    addedCourseInstanceId: string;
-    replacedPlaceholderInstanceId: string;
-    placeholderCode: string;
-    placeholderCredits: number;
-  };
-  const [swappedElectives, setSwappedElectives] = useState<SwappedElectiveRecord[]>([]);
+  type SwappedElectiveRecord = ProgramSnapshotSwappedElective;
+  const [swappedElectives, setSwappedElectives] = useState<SwappedElectiveRecord[]>(
+    () => (initialSnapshot?.swappedElectives ?? []).map((entry) => ({ ...entry }))
+  );
   const pendingAtomicAddRef = useRef<{
     expectedCode: string;
     expectedTerm: string;
@@ -196,11 +285,6 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     (globalThis.crypto && "randomUUID" in globalThis.crypto)
       ? globalThis.crypto.randomUUID()
       : `inst-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const cloneOverrides = (value: PlanOverrides): PlanOverrides => ({
-    add: (value.add ?? []).map((entry) => ({ ...entry })),
-    remove: (value.remove ?? []).map((entry) => ({ ...entry })),
-    move: (value.move ?? []).map((entry) => ({ ...entry })),
-  });
   const commitAtomicOverrideAdd = (
     term: string,
     code: string,
@@ -221,7 +305,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     pendingAtomicAddRef.current = {
       expectedCode: code,
       expectedTerm: term,
-      previousOverrides: cloneOverrides(overrides),
+      previousOverrides: clonePlanOverrides(overrides),
       previousRemovedCourses: [...removedCourses],
       previousSwappedElectives: [...swappedElectives],
     };
@@ -279,12 +363,6 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     const season = idx % 2 === 1 ? "Fall" : "Spring";
     return { season, year };
   };
-  const currentTermLabel = useMemo(() => {
-    const now = new Date();
-    const season = now.getMonth() + 1 <= 5 ? "Spring" : "Fall";
-    const year = now.getFullYear();
-    return `${season} ${year}`;
-  }, []);
   const normGenEd = (raw?: string | null) => {
     if (!raw) return "";
     return raw
@@ -592,7 +670,20 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     if (!term) return true;
     const availableTerms = getCourseSemesterAvailability(courseCode);
     if (availableTerms.length === 0) return true;
-    return availableTerms.includes(term);
+
+    const isExcelOnly = catalog.course_meta?.[courseCode]?.is_excel_only === true;
+    if (isExcelOnly) {
+      return availableTerms.includes(term);
+    }
+
+    const targetSeason = term.match(/^(Spring|Fall)\s+\d{4}$/)?.[1] ?? null;
+    if (!targetSeason) return true;
+
+    return availableTerms.some((availableTerm) => {
+      const availableSeason = availableTerm.match(/^(Spring|Fall)\s+\d{4}$/)?.[1] ?? null;
+      if (!availableSeason) return true;
+      return availableSeason === targetSeason;
+    });
   };
   const getExcelElectiveNotes = (courseCode: string) => {
     const tags = plan?.excel_elective_tags?.[courseCode] ?? [];
@@ -1792,6 +1883,95 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     setDismissedImpliedStart(false);
   }, [appliedImpliedStartKey, impliedStartKey]);
 
+  const snapshotPayload = useMemo(
+    () =>
+      buildSnapshotPayload({
+        selection,
+        completedCourses,
+        inProgressCourses,
+        completedOverrides,
+        inProgressOverrides,
+        overrides,
+        swappedElectives,
+        removedCourses,
+        startTermSeason,
+        startTermYear,
+        currentTermLabel,
+        lastRolloverTermApplied,
+      }),
+    [
+      selection,
+      completedCourses,
+      inProgressCourses,
+      completedOverrides,
+      inProgressOverrides,
+      overrides,
+      swappedElectives,
+      removedCourses,
+      startTermSeason,
+      startTermYear,
+      currentTermLabel,
+      lastRolloverTermApplied,
+    ]
+  );
+  const snapshotRelevantStateHash = useMemo(
+    () => JSON.stringify(snapshotPayload),
+    [snapshotPayload]
+  );
+  const lastSavedSnapshotHashRef = useRef<string | null>(
+    initialSnapshotToken ? snapshotRelevantStateHash : null
+  );
+  const currentSnapshotTokenRef = useRef<string | null>(initialSnapshotToken);
+  const initialSnapshotSettledRef = useRef(!initialSnapshotToken);
+  const [isSnapshotHydrated, setIsSnapshotHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsSnapshotHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!initialSnapshotToken || initialSnapshotSettledRef.current) return;
+    if (loading) return;
+    initialSnapshotSettledRef.current = true;
+    lastSavedSnapshotHashRef.current = snapshotRelevantStateHash;
+  }, [initialSnapshotToken, loading, snapshotRelevantStateHash]);
+
+  useEffect(() => {
+    if (!isSnapshotHydrated) return;
+    if (initialSnapshotToken && !initialSnapshotSettledRef.current) return;
+    if (snapshotRelevantStateHash === lastSavedSnapshotHashRef.current) return;
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const snapshot = await createProgramSnapshot(
+          catalog.catalog_year ?? "2025-26",
+          snapshotPayload
+        );
+        if (cancelled) return;
+        lastSavedSnapshotHashRef.current = snapshotRelevantStateHash;
+        if (snapshot.token !== currentSnapshotTokenRef.current) {
+          currentSnapshotTokenRef.current = snapshot.token;
+          window.history.replaceState(null, "", `/p/${snapshot.token}`);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        console.error("Failed to save program snapshot.", e);
+      }
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    catalog.catalog_year,
+    initialSnapshotToken,
+    isSnapshotHydrated,
+    snapshotPayload,
+    snapshotRelevantStateHash,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1805,6 +1985,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
           majors: selection.majors,
           minors: selection.minors,
           completed_courses: planningCompleted,
+          retake_courses: selection.retakeCourses ?? [],
           in_progress_courses: effectiveInProgress,
           in_progress_terms: inProgressOverrides,
           current_term_label: currentTermLabel,
@@ -1813,6 +1994,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
           start_term_year: effectiveStartForPlanning.year,
           waived_mat1000: selection.waivedMat1000,
           waived_eng1000: selection.waivedEng1000,
+          strict_prereqs: selection.strictPrereqs ?? false,
           overrides
         });
         if (cancelled) return;
@@ -1926,6 +2108,8 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
     effectiveStartForPlanning.year,
     selection.waivedMat1000,
     selection.waivedEng1000,
+    selection.strictPrereqs,
+    selection.retakeCourses,
     effectiveInProgress,
     inProgressOverrides,
     currentTermLabel,
@@ -2675,10 +2859,9 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       setInProgressCourses(prev => Array.from(new Set([...prev.filter(c => c !== targetCode), nextCode])));
       setInProgressOverrides(prev => {
         const next = { ...prev };
-        if (next[targetCode]) {
-          next[nextCode] = next[targetCode];
-          delete next[targetCode];
-        }
+        const sourceTerm = next[targetCode] ?? currentTermLabel;
+        next[nextCode] = sourceTerm;
+        delete next[targetCode];
         return next;
       });
     }
@@ -4434,6 +4617,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       majors: selection.majors,
       minors: selection.minors,
       completed_courses: planningCompleted,
+      retake_courses: selection.retakeCourses ?? [],
       in_progress_courses: effectiveInProgress,
       in_progress_terms: inProgressOverrides,
       current_term_label: currentTermLabel,
@@ -4442,6 +4626,7 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
       start_term_year: effectiveStartForPlanning.year,
       waived_mat1000: selection.waivedMat1000,
       waived_eng1000: selection.waivedEng1000,
+      strict_prereqs: selection.strictPrereqs ?? false,
       overrides
     });
     const url = URL.createObjectURL(blob);
@@ -4658,13 +4843,24 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                                 year: startTermYear,
                                 completedCourses: [...completedCourses],
                                 inProgressCourses: [...inProgressCourses],
-                                inProgressOverrides: { ...inProgressOverrides }
+                                inProgressOverrides: { ...inProgressOverrides },
+                                completedOverrides: { ...completedOverrides },
+                                lastRolloverTermApplied
                               });
                               setStartTermSeason(impliedStart.season);
                               setStartTermYear(impliedStart.year);
                               setCompletedCourses(prev => {
                                 const merged = new Set([...prev, ...inProgressCourses]);
                                 return Array.from(merged);
+                              });
+                              setCompletedOverrides(prev => {
+                                const next = { ...prev };
+                                inProgressCourses.forEach((code) => {
+                                  const sourceTerm = inProgressOverrides[code];
+                                  if (!sourceTerm || next[code]) return;
+                                  next[code] = sourceTerm;
+                                });
+                                return next;
                               });
                               setInProgressCourses([]);
                               setInProgressOverrides({});
@@ -4709,6 +4905,8 @@ export function MainAdvisorScreen({ catalog, selection, onBack }: MainAdvisorScr
                             setCompletedCourses(startTermUndo.completedCourses);
                             setInProgressCourses(startTermUndo.inProgressCourses);
                             setInProgressOverrides(startTermUndo.inProgressOverrides);
+                            setCompletedOverrides(startTermUndo.completedOverrides);
+                            setLastRolloverTermApplied(startTermUndo.lastRolloverTermApplied);
                             setAppliedImpliedStartKey(null);
                             setDismissedImpliedStart(false);
                             setStartTermUndo(null);
