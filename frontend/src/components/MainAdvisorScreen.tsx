@@ -5,7 +5,7 @@ import { ProgressDashboard } from './ProgressDashboard';
 import { SemesterPlanView } from './SemesterPlanView';
 import { ElectiveRecommendationPanel } from './ElectiveRecommendationPanel';
 import { PrereqConfirmDialog } from './PrereqConfirmDialog';
-import type { ChatMessage, Course, Progress, ElectiveSuggestion } from '../types';
+import type { ChatMessage, Course, Progress, ElectiveSuggestion, ManualCreditEntry } from '../types';
 import type {
   UploadCatalogResponse,
   GeneratePlanResponse,
@@ -28,6 +28,7 @@ interface MainAdvisorScreenProps {
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     completedCourses: string[];
     inProgressCourses: string[];
+    manualCredits?: ManualCreditEntry[];
     inProgressOverrides?: Record<string, string>;
     completedOverrides?: Record<string, string>;
     lastRolloverTermApplied?: string;
@@ -57,6 +58,7 @@ function buildSnapshotPayload(params: {
   selection: MainAdvisorScreenProps['selection'];
   completedCourses: string[];
   inProgressCourses: string[];
+  manualCredits: ManualCreditEntry[];
   completedOverrides: Record<string, string>;
   inProgressOverrides: Record<string, string>;
   overrides: PlanOverrides;
@@ -73,6 +75,7 @@ function buildSnapshotPayload(params: {
     economicsIntermediateChoice: params.selection.economicsIntermediateChoice,
     completedCourses: [...params.completedCourses],
     inProgressCourses: [...params.inProgressCourses],
+    manualCredits: params.manualCredits.map((entry) => ({ ...entry })),
     completedOverrides: { ...params.completedOverrides },
     inProgressOverrides: { ...params.inProgressOverrides },
     overrides: clonePlanOverrides(params.overrides),
@@ -200,6 +203,7 @@ export function MainAdvisorScreen({
   const [loading, setLoading] = useState(true);
   const [completedCourses, setCompletedCourses] = useState<string[]>(initialCourseStatus.completedCourses);
   const [inProgressCourses, setInProgressCourses] = useState<string[]>(initialCourseStatus.inProgressCourses);
+  const [manualCredits, setManualCredits] = useState<ManualCreditEntry[]>(selection.manualCredits ?? []);
   const [inProgressOverrides, setInProgressOverrides] = useState<Record<string, string>>(initialCourseStatus.inProgressOverrides);
   const [completedOverrides, setCompletedOverrides] = useState<Record<string, string>>(initialCourseStatus.completedOverrides);
   const [lastRolloverTermApplied, setLastRolloverTermApplied] = useState<string | undefined>(initialCourseStatus.lastRolloverTermApplied);
@@ -266,6 +270,20 @@ export function MainAdvisorScreen({
   const [pendingPrereqTerm, setPendingPrereqTerm] = useState<string | null>(null);
   const [pendingSwapSourceInstanceId, setPendingSwapSourceInstanceId] = useState<string | null>(null);
   const [moveCourseWarning, setMoveCourseWarning] = useState<string | null>(null);
+  const [showManualCreditModal, setShowManualCreditModal] = useState(false);
+  const [manualCreditDraft, setManualCreditDraft] = useState<{
+    credits: string;
+    term: string;
+    credit_type: ManualCreditEntry['credit_type'];
+    gened_category: string;
+    program: string;
+  }>({
+    credits: '3',
+    term: currentTermLabel,
+    credit_type: 'GENED',
+    gened_category: '',
+    program: selection.majors[0] ?? '',
+  });
   const [expandedSmartMinor, setExpandedSmartMinor] = useState<string | null>(null);
   type SwappedElectiveRecord = ProgramSnapshotSwappedElective;
   const [swappedElectives, setSwappedElectives] = useState<SwappedElectiveRecord[]>(
@@ -285,6 +303,29 @@ export function MainAdvisorScreen({
     (globalThis.crypto && "randomUUID" in globalThis.crypto)
       ? globalThis.crypto.randomUUID()
       : `inst-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const genEdCategoryOptions = useMemo(
+    () =>
+      Object.keys(catalog.gen_ed?.rules ?? {})
+        .filter((category) => typeof category === 'string' && category.trim().length > 0)
+        .sort((a, b) => a.localeCompare(b)),
+    [catalog.gen_ed?.rules]
+  );
+  const describeManualCreditTarget = (entry: ManualCreditEntry) => {
+    if (entry.credit_type === 'GENED') {
+      return entry.gened_category?.trim() ? `GenEd: ${entry.gened_category.trim()}` : 'GenEd Credit';
+    }
+    if (entry.credit_type === 'MAJOR_ELECTIVE') {
+      return entry.program?.trim()
+        ? `Major Elective: ${entry.program.trim()}`
+        : 'Major Elective Credit';
+    }
+    return 'Free Elective Credit';
+  };
+  const getManualCreditCourseType = (entry: ManualCreditEntry): Course['courseType'] => {
+    if (entry.credit_type === 'GENED') return 'GENED';
+    if (entry.credit_type === 'MAJOR_ELECTIVE') return 'PROGRAM';
+    return 'FREE_ELECTIVE';
+  };
   const commitAtomicOverrideAdd = (
     term: string,
     code: string,
@@ -1889,6 +1930,7 @@ export function MainAdvisorScreen({
         selection,
         completedCourses,
         inProgressCourses,
+        manualCredits,
         completedOverrides,
         inProgressOverrides,
         overrides,
@@ -1903,6 +1945,7 @@ export function MainAdvisorScreen({
       selection,
       completedCourses,
       inProgressCourses,
+      manualCredits,
       completedOverrides,
       inProgressOverrides,
       overrides,
@@ -2033,6 +2076,7 @@ export function MainAdvisorScreen({
           majors: selection.majors,
           minors: selection.minors,
           completed_courses: planningCompleted,
+          manual_credits: manualCredits,
           retake_courses: selection.retakeCourses ?? [],
           in_progress_courses: effectiveInProgress,
           in_progress_terms: inProgressOverrides,
@@ -2151,6 +2195,7 @@ export function MainAdvisorScreen({
     selection.majors,
     selection.minors,
     planningCompleted,
+    manualCredits,
     selection.maxCreditsPerSemester,
     effectiveStartForPlanning.season,
     effectiveStartForPlanning.year,
@@ -2333,6 +2378,31 @@ export function MainAdvisorScreen({
       addedCodes.add(code);
     }
 
+    for (const entry of manualCredits) {
+      if (entry.code !== 'OTH 0001') continue;
+      if (!entry.instance_id || addedInstances.has(entry.instance_id)) continue;
+      const targetLabel = describeManualCreditTarget(entry);
+      out.push({
+        instanceId: entry.instance_id,
+        code: entry.code,
+        name: 'Transfer Credit',
+        credits: entry.credits,
+        tags: ['Completed', 'TRANSFER CREDIT'],
+        semester: entry.term,
+        status: 'completed',
+        prerequisites: [],
+        prereqText: null,
+        reason: targetLabel,
+        satisfies:
+          entry.credit_type === 'GENED' && entry.gened_category
+            ? [`GenEd: ${entry.gened_category}`]
+            : [targetLabel],
+        courseType: getManualCreditCourseType(entry),
+        sourceReason: 'MANUAL_TRANSFER_CREDIT',
+      });
+      addedInstances.add(entry.instance_id);
+    }
+
     const plannedCoursesByTerm = new Map<string, PlanCourse[]>();
     const plannedCourseTermMap = new Map<string, string>();
 
@@ -2509,6 +2579,7 @@ export function MainAdvisorScreen({
     startTermSeason,
     startTermYear,
     currentTermLabel,
+    manualCredits,
     selection.maxCreditsPerSemester,
     inProgressCredits
   ]);
@@ -4313,6 +4384,15 @@ export function MainAdvisorScreen({
       });
     }
 
+    const freeElective = plan?.category_progress?.free_elective;
+    if (freeElective && ((freeElective.completed ?? 0) > 0 || (freeElective.required ?? 0) > 0)) {
+      items.push({
+        category: 'Free Electives',
+        completed: freeElective.completed ?? 0,
+        total: Math.max(freeElective.required ?? 0, 1)
+      });
+    }
+
     if (items.length > 0) return items;
 
     const fallbackTotal = plan?.summary?.total_required ?? 0;
@@ -4321,7 +4401,7 @@ export function MainAdvisorScreen({
       { category: 'Majors', completed: fallbackCompleted, total: Math.max(fallbackTotal, 1) },
       { category: 'Minors/GenEd', completed: fallbackCompleted, total: Math.max(fallbackTotal, 1) }
     ];
-  }, [plan?.category_progress, plan?.majors, plan?.summary, selection.majors]);
+  }, [plan?.category_progress, plan?.majors, plan?.summary, selection.majors, selection.minors]);
 
   const genEdCategoryNeeds = useMemo(() => {
     const labelByNorm = new Map<string, string>();
@@ -4413,10 +4493,11 @@ export function MainAdvisorScreen({
 
   const totalCredits = useMemo(() => {
     const unique = new Set([...effectiveCompleted, ...effectiveInProgress]);
-    const completed = Array.from(unique).reduce((sum, code) => {
+    const fallbackCompleted = Array.from(unique).reduce((sum, code) => {
       return sum + (catalog.course_meta?.[code]?.credits ?? 3);
     }, 0);
-    const total = plan?.summary?.total_required_credits ?? (plan?.summary?.total_required ?? 0) * 3;
+    const completed = plan?.summary?.completed_credits ?? fallbackCompleted;
+    const total = Math.max(plan?.summary?.total_required_credits ?? 0, 120);
     return { completed, total: total || 1 };
   }, [catalog.course_meta, effectiveCompleted, effectiveInProgress, plan?.summary]);
 
@@ -4716,6 +4797,7 @@ export function MainAdvisorScreen({
       majors: selection.majors,
       minors: selection.minors,
       completed_courses: planningCompleted,
+      manual_credits: manualCredits,
       retake_courses: selection.retakeCourses ?? [],
       in_progress_courses: effectiveInProgress,
       in_progress_terms: inProgressOverrides,
@@ -4755,6 +4837,63 @@ export function MainAdvisorScreen({
   const termPickerOptions = useMemo(() => {
     return buildTermLabels(startTermSeason, startTermYear, 8);
   }, [startTermSeason, startTermYear]);
+
+  const manualCreditTermOptions = useMemo(() => {
+    const known = new Set<string>([currentTermLabel, ...termPickerOptions]);
+    manualCredits.forEach((entry) => {
+      if (entry.term?.trim()) {
+        known.add(entry.term.trim());
+      }
+    });
+    return Array.from(known).sort((a, b) => termIndexFromLabel(a) - termIndexFromLabel(b));
+  }, [currentTermLabel, termPickerOptions, manualCredits]);
+
+  const openManualCreditModal = () => {
+    const defaultTerm =
+      manualCreditTermOptions.find((term) => term === currentTermLabel)
+      ?? manualCreditTermOptions[0]
+      ?? currentTermLabel;
+    setManualCreditDraft({
+      credits: '3',
+      term: defaultTerm,
+      credit_type: 'GENED',
+      gened_category: genEdCategoryOptions[0] ?? '',
+      program: selection.majors[0] ?? '',
+    });
+    setShowManualCreditModal(true);
+  };
+
+  const saveManualCredit = () => {
+    const credits = Number.parseInt(manualCreditDraft.credits, 10);
+    if (!Number.isFinite(credits) || credits <= 0) return;
+    if (!manualCreditDraft.term.trim()) return;
+    if (manualCreditDraft.credit_type === 'GENED' && !manualCreditDraft.gened_category.trim()) return;
+    if (manualCreditDraft.credit_type === 'MAJOR_ELECTIVE' && !manualCreditDraft.program.trim()) return;
+
+    setManualCredits((prev) => [
+      ...prev,
+      {
+        code: 'OTH 0001',
+        instance_id: createInstanceId(),
+        term: manualCreditDraft.term.trim(),
+        credits,
+        credit_type: manualCreditDraft.credit_type,
+        gened_category:
+          manualCreditDraft.credit_type === 'GENED'
+            ? manualCreditDraft.gened_category.trim()
+            : undefined,
+        program:
+          manualCreditDraft.credit_type === 'MAJOR_ELECTIVE'
+            ? manualCreditDraft.program.trim()
+            : undefined,
+      },
+    ]);
+    setShowManualCreditModal(false);
+  };
+
+  const removeManualCredit = (instanceId: string) => {
+    setManualCredits((prev) => prev.filter((entry) => entry.instance_id !== instanceId));
+  };
 
   const termCreditsMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -5091,6 +5230,7 @@ export function MainAdvisorScreen({
                     onToggleCompleted={(instanceId) => {
                       const target = courseObjects.find(c => c.instanceId === instanceId);
                       const code = target?.code;
+                      if (target?.sourceReason === 'MANUAL_TRANSFER_CREDIT') return;
                       if (!code) return;
                       const isCurrentlyCompleted = completedCourses.includes(code);
                       setCompletedCourses(prev => {
@@ -5117,6 +5257,7 @@ export function MainAdvisorScreen({
                     onToggleInProgress={(instanceId) => {
                       const target = courseObjects.find(c => c.instanceId === instanceId);
                       const code = target?.code;
+                      if (target?.sourceReason === 'MANUAL_TRANSFER_CREDIT') return;
                       const isCurrentlyInProgress = inProgressCourses.includes(code);
                       if (!target || !code) return;
 
@@ -5178,6 +5319,7 @@ export function MainAdvisorScreen({
                     onMoveCompleted={(instanceId, term) => {
                       const target = courseObjects.find(c => c.instanceId === instanceId);
                       const code = target?.code;
+                      if (target?.sourceReason === 'MANUAL_TRANSFER_CREDIT') return;
                       if (!code) return;
                       if (term === currentTermLabel) {
                         // Move to In Progress if user selects the current term.
@@ -5219,8 +5361,192 @@ export function MainAdvisorScreen({
                       if (!hasGenEdSignal || isProgramRequired) return;
                       openReplacementDialog(instanceId, target.code, term);
                     }}
+                    onAddTransferCredit={openManualCreditModal}
+                    onRemoveTransferCredit={removeManualCredit}
                   />
                   </>
+                )}
+
+                {showManualCreditModal && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(0,0,0,0.45)',
+                      zIndex: 1100,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setShowManualCreditModal(false)}
+                  >
+                    <div
+                      style={{
+                        background: 'var(--white)',
+                        borderRadius: '12px',
+                        maxWidth: '640px',
+                        width: '100%',
+                        maxHeight: '85vh',
+                        overflowY: 'auto',
+                        padding: '24px',
+                        border: '1px solid var(--neutral-border)'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h4 className="mb-1">Add Transfer Credit (OTH 0001)</h4>
+                          <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                            This creates a manual transfer/equalization credit entry. It affects credit totals only.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowManualCreditModal(false)}
+                          className="text-sm"
+                          style={{ color: 'var(--neutral-dark)' }}
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-4">
+                        <label className="grid gap-1">
+                          <span className="text-sm font-medium">Credits</span>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={manualCreditDraft.credits}
+                            onChange={(e) =>
+                              setManualCreditDraft((prev) => ({ ...prev, credits: e.target.value }))
+                            }
+                            className="px-3 py-2 rounded-lg border"
+                            style={{ borderColor: 'var(--neutral-border)' }}
+                          />
+                        </label>
+
+                        <label className="grid gap-1">
+                          <span className="text-sm font-medium">Term</span>
+                          <select
+                            value={manualCreditDraft.term}
+                            onChange={(e) =>
+                              setManualCreditDraft((prev) => ({ ...prev, term: e.target.value }))
+                            }
+                            className="px-3 py-2 rounded-lg border"
+                            style={{ borderColor: 'var(--neutral-border)' }}
+                          >
+                            {manualCreditTermOptions.map((term) => (
+                              <option key={term} value={term}>
+                                {term}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <div className="grid gap-2">
+                          <span className="text-sm font-medium">Credit Type</span>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="radio"
+                              name="manual-credit-type"
+                              checked={manualCreditDraft.credit_type === 'GENED'}
+                              onChange={() =>
+                                setManualCreditDraft((prev) => ({
+                                  ...prev,
+                                  credit_type: 'GENED',
+                                  gened_category: prev.gened_category || genEdCategoryOptions[0] || '',
+                                }))
+                              }
+                            />
+                            <span>Gen-Ed category</span>
+                          </label>
+                          {manualCreditDraft.credit_type === 'GENED' && (
+                            <select
+                              value={manualCreditDraft.gened_category}
+                              onChange={(e) =>
+                                setManualCreditDraft((prev) => ({ ...prev, gened_category: e.target.value }))
+                              }
+                              className="px-3 py-2 rounded-lg border"
+                              style={{ borderColor: 'var(--neutral-border)' }}
+                            >
+                              <option value="">Select Gen-Ed category</option>
+                              {genEdCategoryOptions.map((category) => (
+                                <option key={category} value={category}>
+                                  {category}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="radio"
+                              name="manual-credit-type"
+                              checked={manualCreditDraft.credit_type === 'MAJOR_ELECTIVE'}
+                              onChange={() =>
+                                setManualCreditDraft((prev) => ({
+                                  ...prev,
+                                  credit_type: 'MAJOR_ELECTIVE',
+                                  program: prev.program || selection.majors[0] || '',
+                                }))
+                              }
+                            />
+                            <span>Major elective credits</span>
+                          </label>
+                          {manualCreditDraft.credit_type === 'MAJOR_ELECTIVE' && (
+                            <select
+                              value={manualCreditDraft.program}
+                              onChange={(e) =>
+                                setManualCreditDraft((prev) => ({ ...prev, program: e.target.value }))
+                              }
+                              className="px-3 py-2 rounded-lg border"
+                              style={{ borderColor: 'var(--neutral-border)' }}
+                            >
+                              <option value="">Select major</option>
+                              {selection.majors.map((major) => (
+                                <option key={major} value={major}>
+                                  {major}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="radio"
+                              name="manual-credit-type"
+                              checked={manualCreditDraft.credit_type === 'FREE_ELECTIVE'}
+                              onChange={() =>
+                                setManualCreditDraft((prev) => ({ ...prev, credit_type: 'FREE_ELECTIVE' }))
+                              }
+                            />
+                            <span>Free elective credits</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowManualCreditModal(false)}
+                          className="px-3 py-2 rounded-lg border text-sm"
+                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveManualCredit}
+                          className="px-3 py-2 rounded-lg text-sm font-medium"
+                          style={{ background: 'var(--navy-blue)', color: 'var(--white)' }}
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {pendingRemoval && pendingRemovalDetails && (

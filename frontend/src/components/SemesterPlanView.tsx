@@ -19,6 +19,8 @@ interface SemesterPlanViewProps {
   onAddCourse?: (code: string) => void;
   onMoveCompleted?: (instanceId: string, term: string) => void;
   onChangeGenEd?: (instanceId: string, term: string) => void;
+  onAddTransferCredit?: () => void;
+  onRemoveTransferCredit?: (instanceId: string) => void;
 }
 
 interface GroupedCourses {
@@ -58,7 +60,9 @@ export function SemesterPlanView({
   movingCourseInstanceId,
   onAddCourse,
   onMoveCompleted,
-  onChangeGenEd
+  onChangeGenEd,
+  onAddTransferCredit,
+  onRemoveTransferCredit
 }: SemesterPlanViewProps) {
   const [hoveredCourse, setHoveredCourse] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -138,6 +142,7 @@ export function SemesterPlanView({
   }, [canSearch, normalizedQuery, catalogCourses]);
 
   const planCodeSet = useMemo(() => new Set(courses.map((c) => c.code)), [courses]);
+  const isTransferCredit = (course: Course) => (course.tags ?? []).includes('TRANSFER CREDIT');
 
   const completedCourses = filteredCourses.filter((c) => c.semester === 'Completed');
   const inProgressCourses = filteredCourses.filter((c) => c.semester === 'In Progress');
@@ -249,10 +254,28 @@ export function SemesterPlanView({
   };
 
   const hasAnyPlanned = sortedGroupedEntries.length > 0;
-  // Render only terms that actually exist in the current plan/courses to avoid extra/empty semesters.
-  // If no grouped terms exist yet, fall back to generated labels.
-  const termSequence = termLabels.length > 0 ? termLabels : sortedGroupedEntries.map(([term]) => term);
-  const boundedTermSequence = termSequence.slice(0, totalTerms);
+  const termSequence = useMemo(() => {
+    const merged = new Set<string>();
+    sortedGroupedEntries.forEach(([term]) => merged.add(term));
+    termLabels.forEach((term) => merged.add(term));
+    const parseTerm = (term: string) => {
+      const m = term.match(/^(Spring|Fall)\s+(\d{4})$/);
+      if (!m) return { year: 9999, season: 9, term };
+      return {
+        year: Number(m[2]),
+        season: m[1] === 'Spring' ? 0 : 1,
+        term,
+      };
+    };
+    return Array.from(merged).sort((a, b) => {
+      const ka = parseTerm(a);
+      const kb = parseTerm(b);
+      if (ka.year !== kb.year) return ka.year - kb.year;
+      if (ka.season !== kb.season) return ka.season - kb.season;
+      return a.localeCompare(b);
+    });
+  }, [sortedGroupedEntries, termLabels]);
+  const boundedTermSequence = termSequence;
 
   const completedTermOptions = (currentTerm: string) => {
     if (boundedTermSequence.includes(currentTerm)) return boundedTermSequence;
@@ -408,7 +431,8 @@ export function SemesterPlanView({
     <div className="space-y-6">
       <div className="px-6 pt-4">
         <div className="flex flex-col gap-3">
-          <div className="relative" style={{ position: 'relative' }}>
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1" style={{ position: 'relative' }}>
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -440,6 +464,21 @@ export function SemesterPlanView({
                 title="Clear search"
               >
                 <X className="w-4 h-4" />
+              </button>
+            )}
+            </div>
+            {onAddTransferCredit && (
+              <button
+                type="button"
+                onClick={onAddTransferCredit}
+                className="text-xs px-3 py-2 rounded-lg border whitespace-nowrap"
+                style={{
+                  borderColor: 'var(--navy-blue)',
+                  background: '#eef6ff',
+                  color: 'var(--navy-dark)'
+                }}
+              >
+                Add Transfer Credit (OTH 0001)
               </button>
             )}
           </div>
@@ -730,8 +769,8 @@ export function SemesterPlanView({
                   key={course.instanceId}
                   className="rounded-lg p-4 border-2 transition-all cursor-pointer relative"
                   style={{
-                    backgroundColor: 'var(--white)',
-                    borderColor: getStatusColor(course.status)
+                    backgroundColor: isTransferCredit(course) ? '#eef6ff' : 'var(--white)',
+                    borderColor: isTransferCredit(course) ? 'var(--navy-blue)' : getStatusColor(course.status)
                   }}
                   onMouseEnter={() => setHoveredCourse(course.instanceId)}
                   onMouseLeave={() => setHoveredCourse(null)}
@@ -740,15 +779,21 @@ export function SemesterPlanView({
                     const electiveNotes = (course.electiveNotes ?? []).filter((note) =>
                       /major elective|minor elective/i.test(note)
                     );
+                    const transferCredit = isTransferCredit(course);
                     return (
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 flex-1">
                       <button
                         type="button"
-                        onClick={() => onToggleCompleted?.(course.instanceId)}
-                        className={onToggleCompleted ? "cursor-pointer" : ""}
+                        onClick={() => {
+                          if (!transferCredit) {
+                            onToggleCompleted?.(course.instanceId);
+                          }
+                        }}
+                        className={onToggleCompleted && !transferCredit ? "cursor-pointer" : ""}
                         style={{ background: "transparent", border: "none", padding: 0 }}
                         aria-label="Toggle completed"
+                        disabled={transferCredit}
                       >
                         {getStatusIcon(course.status)}
                       </button>
@@ -791,6 +836,9 @@ export function SemesterPlanView({
                             } else if (tag === 'Completed') {
                               background = 'var(--completed)';
                               color = 'var(--white)';
+                            } else if (tag === 'TRANSFER CREDIT') {
+                              background = 'var(--navy-blue)';
+                              color = 'var(--white)';
                             }
                             return (
                             <span
@@ -805,7 +853,7 @@ export function SemesterPlanView({
                             </span>
                           )})}
                         </div>
-                        {onToggleInProgress && course.status !== 'completed' && (
+                        {onToggleInProgress && course.status !== 'completed' && !transferCredit && (
                           <div className="mt-2">
                             <button
                               type="button"
@@ -817,7 +865,7 @@ export function SemesterPlanView({
                             </button>
                           </div>
                         )}
-                        {onMoveCompleted && course.status === 'completed' && (
+                        {onMoveCompleted && course.status === 'completed' && !transferCredit && (
                           <div className="mt-2">
                             <label className="text-xs mr-2" style={{ color: 'var(--neutral-dark)' }}>
                               Completed term
@@ -844,7 +892,7 @@ export function SemesterPlanView({
                           {electiveNotes.join(' | ')}
                         </div>
                       )}
-                      {onChangeGenEd && course.status !== 'completed' && canChangeGenEdCourse(course) && (
+                      {onChangeGenEd && course.status !== 'completed' && !transferCredit && canChangeGenEdCourse(course) && (
                         <button
                           type="button"
                           onClick={() => onChangeGenEd(course.instanceId, course.semester)}
@@ -859,7 +907,18 @@ export function SemesterPlanView({
                           Change course
                         </button>
                       )}
-                      {onRemoveCourse && !isProgramOrGenEdCourse(course) && (
+                      {transferCredit && onRemoveTransferCredit && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveTransferCredit(course.instanceId)}
+                          className="text-sm"
+                          style={{ color: 'var(--navy-dark)' }}
+                          title="Remove transfer credit"
+                        >
+                          Remove
+                        </button>
+                      )}
+                      {onRemoveCourse && !transferCredit && !isProgramOrGenEdCourse(course) && (
                         <button
                           type="button"
                           onClick={() => onRemoveCourse(course.instanceId)}
@@ -870,7 +929,7 @@ export function SemesterPlanView({
                           Remove
                         </button>
                       )}
-                      {onMoveCourse && course.status === 'remaining' && (
+                      {onMoveCourse && course.status === 'remaining' && !transferCredit && (
                         <button
                           type="button"
                           onClick={() => onMoveCourse(course.instanceId)}

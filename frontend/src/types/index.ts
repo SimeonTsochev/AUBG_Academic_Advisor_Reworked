@@ -18,6 +18,17 @@ export interface Course {
   };
 }
 
+export interface ManualCreditEntry {
+  code: "OTH 0001";
+  instance_id: string;
+  term: string;
+  credits: number;
+  credit_type: "GENED" | "MAJOR_ELECTIVE" | "FREE_ELECTIVE";
+  gened_category?: string;
+  program?: string;
+  note?: string;
+}
+
 export interface Major {
   id: string;
   name: string;

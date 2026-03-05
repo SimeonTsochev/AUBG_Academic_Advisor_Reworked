@@ -1,10 +1,37 @@
 from __future__ import annotations
-from typing import Dict
+from typing import Any, Dict
 from io import BytesIO
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+
+
+def _term_sort_key(term: str) -> tuple[int, int, str]:
+    if not isinstance(term, str):
+        return (9999, 9, "")
+    parts = term.strip().split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return (9999, 9, term)
+    season_rank = {"Spring": 0, "Fall": 1}.get(parts[0], 9)
+    return (int(parts[1]), season_rank, term)
+
+
+def _manual_credit_label(entry: Dict[str, Any]) -> str:
+    credits = entry.get("credits", 0)
+    credit_type = str(entry.get("credit_type") or "").strip().upper()
+    suffix = "Transfer Credit"
+    if credit_type == "GENED":
+        category = str(entry.get("gened_category") or "").strip()
+        if category:
+            suffix = f"Transfer Credit; GenEd: {category}"
+    elif credit_type == "MAJOR_ELECTIVE":
+        program = str(entry.get("program") or "").strip()
+        if program:
+            suffix = f"Transfer Credit; Major Elective: {program}"
+    elif credit_type == "FREE_ELECTIVE":
+        suffix = "Transfer Credit; Free Elective"
+    return f"OTH 0001 - {suffix} ({credits} cr)"
 
 def plan_to_pdf_bytes(plan: Dict) -> bytes:
     buf = BytesIO()
@@ -31,17 +58,39 @@ def plan_to_pdf_bytes(plan: Dict) -> bytes:
 
     story.append(Paragraph("<b>Semester-by-semester plan</b>", styles["Heading2"]))
     data = [["Term", "Courses", "Credits"]]
+    term_rows: Dict[str, Dict[str, Any]] = {}
     for sem in plan.get("semester_plan", []):
-        course_codes = []
+        if not isinstance(sem, dict):
+            continue
+        term = sem.get("term", "")
+        if not isinstance(term, str):
+            term = ""
+        row = term_rows.setdefault(term, {"courses": [], "credits": 0})
         for c in sem.get("courses", []):
             if isinstance(c, dict):
-                course_codes.append(c.get("code", ""))
-            else:
-                course_codes.append(str(c))
+                code = c.get("code", "")
+                if code:
+                    row["courses"].append(str(code))
+            elif c:
+                row["courses"].append(str(c))
+        row["credits"] += int(sem.get("credits", 0) or 0)
+
+    for entry in plan.get("manual_credits", []):
+        if not isinstance(entry, dict):
+            continue
+        term = entry.get("term", "")
+        if not isinstance(term, str):
+            continue
+        row = term_rows.setdefault(term, {"courses": [], "credits": 0})
+        row["courses"].append(_manual_credit_label(entry))
+        row["credits"] += int(entry.get("credits", 0) or 0)
+
+    for term in sorted(term_rows.keys(), key=_term_sort_key):
+        row = term_rows[term]
         data.append([
-            sem.get("term", ""),
-            ", ".join([c for c in course_codes if c]),
-            str(sem.get("credits", 0))
+            term,
+            ", ".join([c for c in row.get("courses", []) if c]),
+            str(int(row.get("credits", 0) or 0))
         ])
     table = Table(data, colWidths=[90, 360, 60])
     table.setStyle(TableStyle([

@@ -11,6 +11,7 @@ import {
   type ProgramSnapshotSwappedElective,
   type UploadCatalogResponse,
 } from './api';
+import type { ManualCreditEntry } from './types';
 
 type Screen = 'welcome' | 'setup' | 'advisor';
 
@@ -20,6 +21,7 @@ interface AcademicSelection {
   economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
   completedCourses: string[];
   inProgressCourses: string[];
+  manualCredits: ManualCreditEntry[];
   inProgressOverrides?: Record<string, string>;
   completedOverrides?: Record<string, string>;
   lastRolloverTermApplied?: string;
@@ -104,6 +106,56 @@ const normalizeSwappedElectives = (value: unknown): ProgramSnapshotSwappedElecti
     );
 };
 
+const normalizeManualCredits = (value: unknown): ManualCreditEntry[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
+    .map((entry) => {
+      const rawCode = typeof entry.code === 'string' ? entry.code.trim().toUpperCase() : '';
+      const rawCredits = typeof entry.credits === 'number' ? entry.credits : Number(entry.credits);
+      const rawType = typeof entry.credit_type === 'string' ? entry.credit_type : '';
+      const term = typeof entry.term === 'string' ? entry.term.trim() : '';
+      const instanceId = typeof entry.instance_id === 'string' ? entry.instance_id.trim() : '';
+      const creditType =
+        rawType === 'GENED' || rawType === 'MAJOR_ELECTIVE' || rawType === 'FREE_ELECTIVE'
+          ? rawType
+          : null;
+
+      return {
+        code: rawCode === 'OTH 0001' ? 'OTH 0001' : null,
+        instance_id: instanceId,
+        term,
+        credits: Number.isFinite(rawCredits) ? Math.max(0, Math.trunc(rawCredits)) : 0,
+        credit_type: creditType,
+        gened_category:
+          typeof entry.gened_category === 'string' && entry.gened_category.trim().length > 0
+            ? entry.gened_category.trim()
+            : undefined,
+        program:
+          typeof entry.program === 'string' && entry.program.trim().length > 0
+            ? entry.program.trim()
+            : undefined,
+        note:
+          typeof entry.note === 'string' && entry.note.trim().length > 0
+            ? entry.note.trim()
+            : undefined,
+      };
+    })
+    .filter(
+      (
+        entry
+      ): entry is ManualCreditEntry & {
+        code: 'OTH 0001';
+        credit_type: 'GENED' | 'MAJOR_ELECTIVE' | 'FREE_ELECTIVE';
+      } =>
+        entry.code === 'OTH 0001'
+        && typeof entry.credit_type === 'string'
+        && entry.instance_id.length > 0
+        && entry.term.length > 0
+        && entry.credits > 0
+    );
+};
+
 const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload => {
   const raw = value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -123,6 +175,7 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
     economicsIntermediateChoice,
     completedCourses: toStringArray(raw.completedCourses),
     inProgressCourses: toStringArray(raw.inProgressCourses),
+    manualCredits: normalizeManualCredits(raw.manualCredits),
     completedOverrides: toStringMap(raw.completedOverrides),
     inProgressOverrides: toStringMap(raw.inProgressOverrides),
     overrides: normalizePlanOverrides(raw.overrides),
@@ -164,6 +217,7 @@ export default function App() {
     economicsIntermediateChoice: null,
     completedCourses: [],
     inProgressCourses: [],
+    manualCredits: [],
     inProgressOverrides: {},
     completedOverrides: {},
     lastRolloverTermApplied: undefined,
@@ -213,6 +267,7 @@ export default function App() {
           economicsIntermediateChoice: normalized.economicsIntermediateChoice ?? null,
           completedCourses: normalized.completedCourses,
           inProgressCourses: normalized.inProgressCourses,
+          manualCredits: normalized.manualCredits,
           inProgressOverrides: normalized.inProgressOverrides,
           completedOverrides: normalized.completedOverrides,
           lastRolloverTermApplied: normalized.lastRolloverTermApplied,

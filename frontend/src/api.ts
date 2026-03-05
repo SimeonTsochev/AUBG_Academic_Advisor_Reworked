@@ -1,3 +1,5 @@
+import type { ManualCreditEntry } from "./types";
+
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 export interface UploadCatalogResponse {
@@ -159,6 +161,7 @@ export interface ProgramSnapshotPayload {
   economicsIntermediateChoice?: "ECO 3001" | "ECO 3002" | null;
   completedCourses: string[];
   inProgressCourses: string[];
+  manualCredits: ManualCreditEntry[];
   completedOverrides: Record<string, string>;
   inProgressOverrides: Record<string, string>;
   overrides: PlanOverrides;
@@ -192,6 +195,7 @@ export interface GeneratePlanRequest {
   majors: string[];
   minors: string[];
   completed_courses: string[];
+  manual_credits?: ManualCreditEntry[];
   retake_courses?: string[];
   in_progress_courses?: string[];
   in_progress_terms?: Record<string, string>;
@@ -299,6 +303,7 @@ export interface GeneratePlanResponse {
     minors?: Record<string, { required: number; completed: number }>;
     gen_ed?: { required: number; completed: number };
     foundation?: { required: number; completed: number };
+    free_elective?: { required: number; completed: number };
     minors_gened?: { required: number; completed: number };
   };
   course_reasons?: Record<string, string>;

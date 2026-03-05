@@ -88,6 +88,70 @@ class PlanValidationTests(unittest.TestCase):
         self.assertGreater(len(plan["semester_plan"]), 0)
         self.assertEqual(plan.get("warnings", []), [])
 
+    def test_manual_transfer_credits_adjust_credit_progress_without_affecting_prereqs(self):
+        catalog = build_sample_catalog()
+        baseline = generate_plan(
+            catalog=catalog,
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=set(),
+            max_credits_per_semester=16,
+            start_term_season="Fall",
+            start_term_year=2025,
+        )
+        plan = generate_plan(
+            catalog=catalog,
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=set(),
+            manual_credits=[
+                {
+                    "code": "OTH 0001",
+                    "instance_id": "manual-major-1",
+                    "term": "Spring 2025",
+                    "credits": 3,
+                    "credit_type": "MAJOR_ELECTIVE",
+                    "program": "Computer Science",
+                },
+                {
+                    "code": "OTH 0001",
+                    "instance_id": "manual-gened-1",
+                    "term": "Spring 2025",
+                    "credits": 3,
+                    "credit_type": "GENED",
+                    "gened_category": "Arts",
+                },
+            ],
+            max_credits_per_semester=16,
+            start_term_season="Fall",
+            start_term_year=2025,
+        )
+
+        self.assertEqual(
+            plan["summary"]["completed_credits"],
+            baseline["summary"]["completed_credits"] + 6,
+        )
+        self.assertEqual(
+            plan["category_progress"]["majors"]["Computer Science"]["completed"],
+            baseline["category_progress"]["majors"]["Computer Science"]["completed"] + 3,
+        )
+        self.assertEqual(
+            plan["category_progress"]["gen_ed"]["completed"],
+            baseline["category_progress"]["gen_ed"]["completed"] + 3,
+        )
+        self.assertNotIn(
+            "OTH 0001",
+            {
+                rec.get("code")
+                for rec in plan.get("elective_recommendations", [])
+                if isinstance(rec, dict)
+            },
+        )
+        self.assertEqual(
+            [w for w in plan.get("warnings", []) if w.get("type") == "PREREQ_UNMET"],
+            [w for w in baseline.get("warnings", []) if w.get("type") == "PREREQ_UNMET"],
+        )
+
     def test_validate_plan_catches_prereq_violation(self):
         catalog = build_sample_catalog()
         semester_plan = [

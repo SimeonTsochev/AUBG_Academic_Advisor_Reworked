@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 import datetime
 import logging
 import math
@@ -3880,6 +3880,101 @@ def _category_credit_progress(
     }
 
 
+def _manual_credit_breakdown(
+    manual_credits: List[Dict[str, Any]] | None,
+    selected_majors: List[str] | None,
+    catalog_gened_categories: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+    breakdown: Dict[str, Any] = {
+        "total": 0,
+        "free_elective": 0,
+        "gened": {},
+        "major_electives": {},
+    }
+    if not manual_credits:
+        return breakdown
+
+    major_lookup = {
+        name.strip().lower(): name
+        for name in (selected_majors or [])
+        if isinstance(name, str) and name.strip()
+    }
+    gened_lookup = {
+        _normalize_gened_label(category).lower(): category
+        for category in (catalog_gened_categories or {}).keys()
+        if isinstance(category, str) and _normalize_gened_label(category)
+    }
+
+    for entry in manual_credits:
+        if not isinstance(entry, dict):
+            continue
+        if _normalize_course_code(entry.get("code")) != "OTH 0001":
+            continue
+
+        raw_credits = entry.get("credits")
+        try:
+            credits = int(raw_credits)
+        except (TypeError, ValueError):
+            continue
+        if credits <= 0:
+            continue
+
+        breakdown["total"] += credits
+        credit_type = str(entry.get("credit_type") or "").strip().upper()
+
+        if credit_type == "FREE_ELECTIVE":
+            breakdown["free_elective"] += credits
+            continue
+
+        if credit_type == "GENED":
+            raw_category = _normalize_gened_label(str(entry.get("gened_category") or ""))
+            if not raw_category:
+                continue
+            category = gened_lookup.get(raw_category.lower(), raw_category)
+            breakdown["gened"][category] = int(breakdown["gened"].get(category, 0) or 0) + credits
+            continue
+
+        if credit_type == "MAJOR_ELECTIVE":
+            raw_program = str(entry.get("program") or "").strip()
+            if not raw_program:
+                continue
+            program = major_lookup.get(raw_program.lower())
+            if not program:
+                continue
+            breakdown["major_electives"][program] = (
+                int(breakdown["major_electives"].get(program, 0) or 0) + credits
+            )
+
+    return breakdown
+
+
+def _apply_manual_credit_progress(
+    category_progress: Dict[str, Dict],
+    manual_credit_breakdown: Dict[str, Any],
+) -> None:
+    gened_total = sum(
+        int(credits or 0)
+        for credits in (manual_credit_breakdown.get("gened") or {}).values()
+    )
+    if gened_total > 0:
+        gen_ed_bucket = category_progress.setdefault("gen_ed", {"required": 0, "completed": 0})
+        gen_ed_bucket["completed"] = int(gen_ed_bucket.get("completed", 0) or 0) + gened_total
+
+    major_progress = category_progress.setdefault("majors", {})
+    for program, credits in (manual_credit_breakdown.get("major_electives") or {}).items():
+        bucket = major_progress.setdefault(program, {"required": 0, "completed": 0})
+        bucket["completed"] = int(bucket.get("completed", 0) or 0) + int(credits or 0)
+
+    free_credits = int(manual_credit_breakdown.get("free_elective", 0) or 0)
+    if free_credits > 0:
+        free_bucket = category_progress.setdefault(
+            "free_elective",
+            {"required": free_credits, "completed": 0},
+        )
+        free_bucket["required"] = max(int(free_bucket.get("required", 0) or 0), free_credits)
+        free_bucket["completed"] = int(free_bucket.get("completed", 0) or 0) + free_credits
+
+
 def _collect_elective_placeholders(catalog: Dict, majors: List[str], minors: List[str]) -> List[Dict]:
     placeholders: List[Dict] = []
 
@@ -4117,6 +4212,7 @@ def generate_plan(
     majors: List[str],
     minors: List[str],
     completed_courses: Set[str],
+    manual_credits: List[Dict[str, Any]] | None = None,
     retake_courses: Set[str] | List[str] | None = None,
     max_credits_per_semester: int = 16,
     start_term_season: str | None = None,
@@ -4166,6 +4262,12 @@ def generate_plan(
     if waived_eng1000 and "ENG 1000" in catalog_courses:
         completed_courses.add("ENG 1000")
         waived_courses.add("ENG 1000")
+
+    manual_credit_breakdown = _manual_credit_breakdown(
+        manual_credits=manual_credits,
+        selected_majors=majors,
+        catalog_gened_categories=(catalog.get("gen_ed", {}) or {}).get("categories", {}) or {},
+    )
 
     slots = build_requirement_slots(catalog, majors, minors)
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
@@ -4265,6 +4367,7 @@ def generate_plan(
         waived_courses,
         selected_majors=majors,
     )
+    total_manual_credits = int(manual_credit_breakdown.get("total", 0) or 0)
 
     # Credit totals derived from slot buckets (more accurate than assuming 3 credits per course)
     total_required_credits = (
@@ -4279,6 +4382,8 @@ def generate_plan(
         + int(category_progress.get("gen_ed", {}).get("completed", 0) or 0)
         + int(category_progress.get("foundation", {}).get("completed", 0) or 0)
     )
+    _apply_manual_credit_progress(category_progress, manual_credit_breakdown)
+    total_completed_credits += total_manual_credits
 
     course_reasons = {}
     for code, entry in course_outputs.items():
@@ -4436,6 +4541,8 @@ def generate_plan(
         + int(category_progress.get("gen_ed", {}).get("completed", 0) or 0)
         + int(category_progress.get("foundation", {}).get("completed", 0) or 0)
     )
+    _apply_manual_credit_progress(category_progress, manual_credit_breakdown)
+    total_completed_credits += total_manual_credits
 
     return {
         "majors": majors,

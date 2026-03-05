@@ -106,6 +106,7 @@ def _generate_plan_with_compatible_kwargs(catalog: Dict[str, Any], req: Generate
         "majors": req.majors,
         "minors": req.minors,
         "completed_courses": set(req.completed_courses),
+        "manual_credits": [entry.dict() for entry in req.manual_credits],
         "retake_courses": set(req.retake_courses or []),
         "max_credits_per_semester": req.max_credits_per_semester,
         "start_term_season": req.start_term_season,
@@ -454,6 +455,7 @@ async def plan_download_pdf(req: GeneratePlanRequest):
     pdf_bytes = plan_to_pdf_bytes({
         "majors": req.majors,
         "minors": req.minors,
+        "manual_credits": [entry.dict() for entry in req.manual_credits],
         **plan,
     })
     return Response(

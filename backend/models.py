@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Any, List, Optional, Dict
+from typing import Any, List, Optional, Dict, Literal
 
 class UploadCatalogResponse(BaseModel):
     catalog_id: str
@@ -12,11 +12,23 @@ class UploadCatalogResponse(BaseModel):
     gen_ed: Dict[str, Dict] = Field(default_factory=dict)
     excel_only_codes: List[str] = Field(default_factory=list)
 
+
+class ManualCredit(BaseModel):
+    code: Literal["OTH 0001"]
+    instance_id: str
+    term: str
+    credits: int
+    credit_type: Literal["GENED", "MAJOR_ELECTIVE", "FREE_ELECTIVE"]
+    gened_category: Optional[str] = None
+    program: Optional[str] = None
+    note: Optional[str] = None
+
 class GeneratePlanRequest(BaseModel):
     catalog_id: str
     majors: List[str] = Field(default_factory=list)
     minors: List[str] = Field(default_factory=list)
     completed_courses: List[str] = Field(default_factory=list)
+    manual_credits: List[ManualCredit] = Field(default_factory=list)
     retake_courses: List[str] = Field(default_factory=list)
     in_progress_courses: List[str] = Field(default_factory=list)
     in_progress_terms: Dict[str, str] = Field(default_factory=dict)

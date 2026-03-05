@@ -3,6 +3,7 @@ import { ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { searchCourses, type CourseCatalogRecord } from '../api';
 import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
+import type { ManualCreditEntry } from '../types';
 
 interface AcademicSetupScreenProps {
   catalogYear?: string;
@@ -21,6 +22,7 @@ interface AcademicSetupScreenProps {
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     completedCourses: string[];
     inProgressCourses: string[];
+    manualCredits: ManualCreditEntry[];
     inProgressOverrides?: Record<string, string>;
     completedOverrides?: Record<string, string>;
     lastRolloverTermApplied?: string;
@@ -281,6 +283,7 @@ export function AcademicSetupScreen({
       economicsIntermediateChoice,
       completedCourses: completedForPlan,
       inProgressCourses,
+      manualCredits: [],
       inProgressOverrides: nextInProgressOverrides,
       completedOverrides: {},
       lastRolloverTermApplied: currentTermLabel ?? undefined,
