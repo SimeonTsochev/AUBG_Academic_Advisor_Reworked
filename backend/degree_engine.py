@@ -3975,6 +3975,61 @@ def _apply_manual_credit_progress(
         free_bucket["completed"] = int(free_bucket.get("completed", 0) or 0) + free_credits
 
 
+def _slots_after_manual_credit_reduction(
+    slots: Dict[str, Any],
+    manual_credit_breakdown: Dict[str, Any],
+) -> Dict[str, Any]:
+    gened_breakdown = manual_credit_breakdown.get("gened") or {}
+    if not isinstance(gened_breakdown, dict) or not gened_breakdown:
+        return slots
+
+    remove_by_category_norm: Dict[str, int] = {}
+    for category, credits in gened_breakdown.items():
+        normalized = _normalize_gened_label(str(category or "")).lower()
+        if not normalized:
+            continue
+        try:
+            credits_int = int(credits)
+        except (TypeError, ValueError):
+            continue
+        slot_count = max(0, credits_int // 3)
+        if slot_count <= 0:
+            continue
+        remove_by_category_norm[normalized] = remove_by_category_norm.get(normalized, 0) + slot_count
+
+    if not remove_by_category_norm:
+        return slots
+
+    filtered_slots: List[Dict[str, Any]] = []
+    removed_any = False
+    for slot in slots.get("slots", []) or []:
+        if not isinstance(slot, dict):
+            continue
+        if slot.get("type") != "gened":
+            filtered_slots.append(dict(slot))
+            continue
+        normalized_category = _normalize_gened_label(str(slot.get("category") or "")).lower()
+        remaining_to_remove = remove_by_category_norm.get(normalized_category, 0)
+        if remaining_to_remove > 0:
+            remove_by_category_norm[normalized_category] = remaining_to_remove - 1
+            removed_any = True
+            continue
+        filtered_slots.append(dict(slot))
+
+    if not removed_any:
+        return slots
+
+    filtered_by_id = {
+        slot.get("id"): slot
+        for slot in filtered_slots
+        if isinstance(slot.get("id"), str)
+    }
+    return {
+        "slots": filtered_slots,
+        "by_id": filtered_by_id,
+    }
+
+
 def _collect_elective_placeholders(catalog: Dict, majors: List[str], minors: List[str]) -> List[Dict]:
     placeholders: List[Dict] = []
 
@@ -4270,6 +4325,7 @@ def generate_plan(
     )
 
     slots = build_requirement_slots(catalog, majors, minors)
+    planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
     max_terms_remaining = 8
     max_credits = max(14, int(max_credits_per_semester))
@@ -4278,7 +4334,7 @@ def generate_plan(
 
     semester_result = generate_semester_plan(
         catalog=catalog,
-        slots=slots,
+        slots=planning_slots,
         completed_courses=completed_courses,
         retake_courses=normalized_retakes,
         start_term=(base_season, base_year),
@@ -4294,7 +4350,7 @@ def generate_plan(
     selection = semester_result["selection"]
 
     uncovered_gened = [
-        slot for slot in slots.get("slots", [])
+        slot for slot in planning_slots.get("slots", [])
         if slot.get("type") == "gened" and slot.get("id") not in selection["covered_slots"]
     ]
     if uncovered_gened:
@@ -4315,7 +4371,7 @@ def generate_plan(
         code: _build_course_output(
             catalog,
             code,
-            slots,
+            planning_slots,
             selection["course_assignments"],
             prereq_only,
             source_reasons,

@@ -444,11 +444,20 @@ export function MainAdvisorScreen({
       const planned = Number(counts.planned ?? 0);
       needByCategory[normalized] = Math.max(0, required - (completed + planned));
     }
+    for (const entry of manualCredits) {
+      if (entry.code !== 'OTH 0001' || entry.credit_type !== 'GENED') continue;
+      const normalized = normGenEd(entry.gened_category);
+      if (!normalized) continue;
+      const slotEquivalent = Math.max(0, Math.floor(Number(entry.credits ?? 0) / 3));
+      if (slotEquivalent <= 0) continue;
+      const currentNeed = Number(needByCategory[normalized] ?? 0);
+      needByCategory[normalized] = Math.max(0, currentNeed - slotEquivalent);
+    }
     return needByCategory;
   };
   const genEdNeedByCategory = useMemo(
     () => getGenEdNeedByCategory(plan),
-    [plan?.gen_ed_status]
+    [plan?.gen_ed_status, manualCredits]
   );
   const genEdCanonicalLabelByNorm = useMemo(() => {
     const byNorm: Record<string, string> = {};
@@ -4406,7 +4415,7 @@ export function MainAdvisorScreen({
   const genEdCategoryNeeds = useMemo(() => {
     const labelByNorm = new Map<string, string>();
     const requiredByNorm = new Map<string, number>();
-    const courseCodesByCategory = new Map<string, Set<string>>();
+    const needByCategory = genEdNeedByCategory;
 
     const registerCategory = (raw?: string | null, requiredValue?: number | null) => {
       const label = canonicalGenEdLabel(raw) || cleanGenEdLabel(raw);
@@ -4433,33 +4442,20 @@ export function MainAdvisorScreen({
     Object.entries(plan?.gen_ed_status ?? {}).forEach(([category, counts]) => {
       registerCategory(category, Number(counts?.required ?? 0));
     });
-
-    for (const course of courseObjects) {
-      const code = typeof course.code === 'string' ? normalizeCourseCode(course.code) : '';
-      if (!code) continue;
-      const categories = dedupeGenEdLabels([
-        ...extractGenEdFromSatisfies(course.satisfies),
-        ...getCourseGenEdTags(code),
-      ]);
-      for (const category of categories) {
-        const label = canonicalGenEdLabel(category) || category;
-        const normalized = normGenEd(label);
-        if (!normalized) continue;
-        registerCategory(label, null);
-        if (!courseCodesByCategory.has(normalized)) {
-          courseCodesByCategory.set(normalized, new Set<string>());
-        }
-        courseCodesByCategory.get(normalized)?.add(code);
-      }
-    }
+    manualCredits.forEach((entry) => {
+      if (entry.code !== 'OTH 0001' || entry.credit_type !== 'GENED') return;
+      registerCategory(entry.gened_category, null);
+    });
 
     return Array.from(labelByNorm.entries())
       .map(([normalized, label]) => {
         const required = Math.max(1, requiredByNorm.get(normalized) ?? 1);
-        const actualCount = courseCodesByCategory.get(normalized)?.size ?? 0;
+        const computedNeed = Object.prototype.hasOwnProperty.call(needByCategory, normalized)
+          ? Number(needByCategory[normalized] ?? required)
+          : required;
         return {
           label,
-          need: Math.max(0, required - actualCount),
+          need: Math.max(0, computedNeed),
         };
       })
       .sort((a, b) => {
@@ -4467,12 +4463,11 @@ export function MainAdvisorScreen({
         return a.label.localeCompare(b.label);
       });
   }, [
-    catalog.course_meta,
     catalog.gen_ed?.categories,
     catalog.gen_ed?.rules,
     plan?.gen_ed_status,
-    plan?.gened_discovery?.case_studies_textual_analysis,
-    courseObjects
+    manualCredits,
+    genEdNeedByCategory
   ]);
 
   const wicRequirementStatus = useMemo(() => {
@@ -4556,6 +4551,16 @@ export function MainAdvisorScreen({
       string,
       { programType: 'major' | 'minor'; program: string; items: typeof placeholders }
     >();
+    const manualMajorCreditsByProgram = new Map<string, number>();
+    manualCredits.forEach((entry) => {
+      if (entry.code !== 'OTH 0001' || entry.credit_type !== 'MAJOR_ELECTIVE') return;
+      const program = entry.program?.trim();
+      if (!program) return;
+      manualMajorCreditsByProgram.set(
+        program,
+        (manualMajorCreditsByProgram.get(program) ?? 0) + Number(entry.credits ?? 0)
+      );
+    });
 
     placeholders.forEach((placeholder) => {
       const key = `${placeholder.program_type}:${placeholder.program}`;
@@ -4626,9 +4631,12 @@ export function MainAdvisorScreen({
         }, new Map<string, Course>())
           .values()
       );
-
-      const matchedCredits = matchingCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0);
-      const matchedCourseCount = matchingCourses.length;
+      const manualMajorCredits =
+        programType === 'major' ? Number(manualMajorCreditsByProgram.get(program) ?? 0) : 0;
+      const matchedCredits =
+        matchingCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0) + manualMajorCredits;
+      const matchedCourseCount =
+        matchingCourses.length + (programType === 'major' ? Math.floor(manualMajorCredits / 3) : 0);
       const isComplete =
         totalCredits > 0
           ? matchedCredits >= totalCredits
@@ -4651,7 +4659,7 @@ export function MainAdvisorScreen({
         isComplete
       };
     });
-  }, [courseObjects, plan?.elective_placeholders]);
+  }, [courseObjects, manualCredits, plan?.elective_placeholders]);
 
   const electiveSuggestions: ElectiveSuggestion[] = useMemo(() => {
     const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -5384,17 +5392,20 @@ export function MainAdvisorScreen({
                     <div
                       style={{
                         background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '640px',
-                        width: '100%',
-                        maxHeight: '85vh',
-                        overflowY: 'auto',
-                        padding: '24px',
-                        border: '1px solid var(--neutral-border)'
+                        borderRadius: '14px',
+                        width: 'min(920px, 94vw)',
+                        maxHeight: '90vh',
+                        border: '1px solid var(--neutral-border)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        boxShadow: '0 16px 40px rgba(0, 0, 0, 0.18)'
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex items-start justify-between gap-4">
+                      <div
+                        className="flex items-start justify-between gap-4"
+                        style={{ padding: '24px 28px 12px 28px' }}
+                      >
                         <div>
                           <h4 className="mb-1">Add Transfer Credit (OTH 0001)</h4>
                           <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
@@ -5411,7 +5422,10 @@ export function MainAdvisorScreen({
                         </button>
                       </div>
 
-                      <div className="mt-4 grid gap-4">
+                      <div
+                        className="grid gap-4"
+                        style={{ padding: '8px 28px 20px 28px', overflowY: 'auto', minHeight: 0 }}
+                      >
                         <label className="grid gap-1">
                           <span className="text-sm font-medium">Credits</span>
                           <input
@@ -5527,7 +5541,14 @@ export function MainAdvisorScreen({
                         </div>
                       </div>
 
-                      <div className="mt-5 flex justify-end gap-2">
+                      <div
+                        className="flex justify-end gap-2"
+                        style={{
+                          padding: '14px 28px 24px 28px',
+                          borderTop: '1px solid var(--neutral-border)',
+                          background: 'var(--white)'
+                        }}
+                      >
                         <button
                           type="button"
                           onClick={() => setShowManualCreditModal(false)}

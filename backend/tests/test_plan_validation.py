@@ -152,6 +152,36 @@ class PlanValidationTests(unittest.TestCase):
             [w for w in baseline.get("warnings", []) if w.get("type") == "PREREQ_UNMET"],
         )
 
+    def test_manual_gened_transfer_credit_prevents_redundant_gened_course_scheduling(self):
+        catalog = build_sample_catalog()
+        plan = generate_plan(
+            catalog=catalog,
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=set(),
+            manual_credits=[
+                {
+                    "code": "OTH 0001",
+                    "instance_id": "manual-gened-arts",
+                    "term": "Spring 2025",
+                    "credits": 3,
+                    "credit_type": "GENED",
+                    "gened_category": "Arts",
+                }
+            ],
+            max_credits_per_semester=16,
+            start_term_season="Fall",
+            start_term_year=2025,
+        )
+
+        planned_codes = {
+            course.get("code")
+            for term in plan.get("semester_plan", [])
+            for course in term.get("courses", [])
+            if isinstance(course, dict)
+        }
+        self.assertNotIn("ART 1000", planned_codes)
+
     def test_validate_plan_catches_prereq_violation(self):
         catalog = build_sample_catalog()
         semester_plan = [

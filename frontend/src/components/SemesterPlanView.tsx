@@ -312,6 +312,19 @@ export function SemesterPlanView({
     if (!electivePlaceholders || electivePlaceholders.length === 0) return [];
 
     const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+    const manualMajorCreditsByProgram = new Map<string, number>();
+    courses.forEach((course) => {
+      if (!isTransferCredit(course)) return;
+      const reason = typeof course.reason === 'string' ? course.reason : '';
+      const match = reason.match(/^Major Elective:\s+(.+)$/i);
+      if (!match) return;
+      const program = (match[1] ?? '').trim();
+      if (!program) return;
+      manualMajorCreditsByProgram.set(
+        program,
+        (manualMajorCreditsByProgram.get(program) ?? 0) + Number(course.credits ?? 0)
+      );
+    });
     const grouped = new Map<
       string,
       { programType: ElectivePlaceholder['program_type']; program: string; items: ElectivePlaceholder[] }
@@ -381,8 +394,13 @@ export function SemesterPlanView({
           }, new Map<string, Course>())
             .values()
         );
-        const matchedCredits = matchingCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0);
+        const manualMajorCredits =
+          programType === 'major' ? Number(manualMajorCreditsByProgram.get(program) ?? 0) : 0;
+        const matchedCredits =
+          matchingCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0) + manualMajorCredits;
         const matchedCourseCodes = matchingCourses.map((course) => course.code);
+        const matchedCourseEquivalentCount =
+          matchedCourseCodes.length + (programType === 'major' ? Math.floor(manualMajorCredits / 3) : 0);
         const requirementText =
           totalCredits > 0
             ? matchedCredits > 0
@@ -391,15 +409,15 @@ export function SemesterPlanView({
                 : 'Completed'
               : `${totalCredits} credits`
             : totalCourses > 0
-              ? matchedCourseCodes.length > 0
-                ? Math.max(totalCourses - matchedCourseCodes.length, 0) > 0
-                  ? `${Math.max(totalCourses - matchedCourseCodes.length, 0)} courses left`
+              ? matchedCourseEquivalentCount > 0
+                ? Math.max(totalCourses - matchedCourseEquivalentCount, 0) > 0
+                  ? `${Math.max(totalCourses - matchedCourseEquivalentCount, 0)} courses left`
                   : 'Completed'
                 : `${totalCourses} courses`
               : 'Electives required';
 
         const inferredTotal = totalCourses > 0 ? totalCourses : allowedCourses.length;
-        const totalCount = Math.max(inferredTotal, matchedCourseCodes.length);
+        const totalCount = Math.max(inferredTotal, matchedCourseEquivalentCount);
 
         const ruleText = Array.from(
           new Set(
@@ -417,7 +435,7 @@ export function SemesterPlanView({
           matchingCourses: matchedCourseCodes,
           allowedCourses,
           ruleText,
-          doneCount: matchedCourseCodes.length,
+          doneCount: matchedCourseEquivalentCount,
           totalCount
         };
       })
