@@ -366,7 +366,7 @@ def courses_get(code: str):
     return _with_excel_only_flag(course, excel_only_codes)
 
 
-@app.post("/catalog/load-default", response_model=UploadCatalogResponse)
+@app.get("/catalog/load-default", response_model=UploadCatalogResponse)
 def load_default_catalog():
     catalog = _load_default_catalog()
     catalog_id = DEFAULT_CATALOG_ID or str(uuid.uuid4())
