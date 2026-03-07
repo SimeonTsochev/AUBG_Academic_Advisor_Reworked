@@ -51,7 +51,7 @@ app.add_middleware(
 )
 
 CATALOGS: Dict[str, Dict] = {}
-DEFAULT_CATALOG_PATH = Path(__file__).resolve().parent.parent / "frontend" / "AY-2025-26-3rd-ed.pdf"
+DEFAULT_CATALOG_PATH = Path(__file__).resolve().parent / "AY-2025-26-3rd-ed.pdf"
 DEFAULT_CATALOG: Optional[Dict] = None
 DEFAULT_CATALOG_ID: Optional[str] = None
 DEFAULT_CATALOG_MTIME: Optional[float] = None
@@ -62,8 +62,8 @@ EXCEL_CATALOG_BASENAME = "course_catalog 012526"
 EXCEL_CATALOG_PATHS = [
     Path("/mnt/data/course_catalog 012526.xls"),
     Path("/mnt/data/course_catalog 012526.xlsx"),
-    Path(__file__).resolve().parent.parent / "frontend" / f"{EXCEL_CATALOG_BASENAME}.xlsx",
-    Path(__file__).resolve().parent.parent / "frontend" / f"{EXCEL_CATALOG_BASENAME}.xls",
+    Path(__file__).resolve().parent / f"{EXCEL_CATALOG_BASENAME}.xlsx",
+    Path(__file__).resolve().parent / f"{EXCEL_CATALOG_BASENAME}.xls",
 ]
 EXCEL_COURSE_UNIVERSE_PATH: Optional[Path] = None
 FORCE_OPTIMIZE_PLAN = True
