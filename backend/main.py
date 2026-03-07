@@ -9,6 +9,7 @@ import json
 import inspect
 from pathlib import Path
 import logging
+import os
 
 from catalog_parser import parse_catalog
 from degree_engine import generate_plan
@@ -36,16 +37,24 @@ from snapshots_db import SnapshotExpiredError, create_snapshot, get_snapshot, in
 
 app = FastAPI(title="AUBG Academic Advisor API", version="0.1.0")
 
-# Dev CORS: allow local frontend dev servers
+# CORS:
+# - default: local frontend dev servers
+# - override with CORS_ORIGINS="https://app.example.com,https://admin.example.com"
+# - set CORS_ALLOW_ALL=true to allow all origins
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+_cors_origins_env = os.getenv("CORS_ORIGINS", "")
+_env_cors_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
+_allow_all_cors = os.getenv("CORS_ALLOW_ALL", "").strip().lower() in {"1", "true", "yes"}
+_configured_cors_origins = list(dict.fromkeys([*DEFAULT_CORS_ORIGINS, *_env_cors_origins]))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"] if _allow_all_cors else _configured_cors_origins,
+    allow_credentials=not _allow_all_cors,
     allow_methods=["*"],
     allow_headers=["*"],
 )
