@@ -58,10 +58,8 @@ DEFAULT_CATALOG_MTIME: Optional[float] = None
 DEFAULT_CATALOG_VERSION: Optional[str] = None
 DEFAULT_CATALOG_YEAR = "2025-26"
 PARSER_VERSION = "2026-02-17-prereq-expr-v3"
-EXCEL_CATALOG_BASENAME = "course_catalog 012526"
+EXCEL_CATALOG_BASENAME = "course_catalog_012526"
 EXCEL_CATALOG_PATHS = [
-    Path("/mnt/data/course_catalog 012526.xls"),
-    Path("/mnt/data/course_catalog 012526.xlsx"),
     Path(__file__).resolve().parent / f"{EXCEL_CATALOG_BASENAME}.xlsx",
     Path(__file__).resolve().parent / f"{EXCEL_CATALOG_BASENAME}.xls",
 ]
