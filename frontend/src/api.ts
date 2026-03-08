@@ -1,6 +1,6 @@
 import type { ManualCreditEntry } from "./types";
 
-export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000";
+export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 export interface UploadCatalogResponse {
   catalog_id: string;
