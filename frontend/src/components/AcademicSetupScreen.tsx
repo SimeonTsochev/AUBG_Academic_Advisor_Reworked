@@ -50,7 +50,8 @@ export function AcademicSetupScreen({
   const [selectedMajors, setSelectedMajors] = useState<string[]>([]);
   const [selectedMinors, setSelectedMinors] = useState<string[]>([]);
   const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(null);
-  const [maxCreditsPerSemester, setMaxCreditsPerSemester] = useState(16);
+  const [maxCreditsPerSemester, setMaxCreditsPerSemester] = useState(17);
+  const [maxCreditsInput, setMaxCreditsInput] = useState('17');
   const [waivedMat1000, setWaivedMat1000] = useState(false);
   const [waivedEng1000, setWaivedEng1000] = useState(false);
   const [completedCourses, setCompletedCourses] = useState<string[]>([]);
@@ -141,11 +142,25 @@ export function AcademicSetupScreen({
     setSelectedMinors((prev) => [...prev, minor]);
   };
 
-  const handleCreditsChange = (rawValue: number) => {
-    if (!Number.isFinite(rawValue)) return;
-    const clamped = Math.max(MIN_CREDITS_PER_TERM, Math.min(MAX_CREDITS_PER_TERM, rawValue));
+  const commitCreditsInput = (rawInput: string) => {
+    const trimmed = rawInput.trim();
+    if (!trimmed) {
+      setMaxCreditsInput(String(maxCreditsPerSemester));
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setMaxCreditsInput(String(maxCreditsPerSemester));
+      return;
+    }
+    const clamped = Math.max(MIN_CREDITS_PER_TERM, Math.min(MAX_CREDITS_PER_TERM, parsed));
     setMaxCreditsPerSemester(clamped);
+    setMaxCreditsInput(String(clamped));
   };
+
+  useEffect(() => {
+    setMaxCreditsInput(String(maxCreditsPerSemester));
+  }, [maxCreditsPerSemester]);
 
   const termIndex = (season: string, year: number) => year * 2 + (season === "Fall" ? 1 : 0);
   const termsCompleted = useMemo(() => {
@@ -624,8 +639,14 @@ export function AcademicSetupScreen({
                   type="number"
                   min={MIN_CREDITS_PER_TERM}
                   max={MAX_CREDITS_PER_TERM}
-                  value={maxCreditsPerSemester}
-                  onChange={(e) => handleCreditsChange(Number(e.target.value))}
+                  value={maxCreditsInput}
+                  onChange={(e) => setMaxCreditsInput(e.target.value)}
+                  onBlur={() => commitCreditsInput(maxCreditsInput)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      commitCreditsInput(maxCreditsInput);
+                    }
+                  }}
                   className="w-28 px-3 py-2 rounded-lg border"
                   style={{ borderColor: 'var(--neutral-border)' }}
                 />
