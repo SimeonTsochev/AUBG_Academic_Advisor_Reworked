@@ -74,7 +74,7 @@ export async function uploadCatalog(file: File): Promise<UploadCatalogResponse> 
 
 export async function loadDefaultCatalog(): Promise<UploadCatalogResponse> {
   const res = await fetch(`${API_BASE}/catalog/load-default`, {
-    method: "POST",
+    method: "GET",
   });
   if (!res.ok) {
     const detail = await safeDetail(res);
