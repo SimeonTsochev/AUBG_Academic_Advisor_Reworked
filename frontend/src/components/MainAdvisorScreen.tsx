@@ -5,11 +5,13 @@ import { ProgressDashboard } from './ProgressDashboard';
 import { SemesterPlanView } from './SemesterPlanView';
 import { ElectiveRecommendationPanel } from './ElectiveRecommendationPanel';
 import { PrereqConfirmDialog } from './PrereqConfirmDialog';
-import type { ChatMessage, Course, Progress, ElectiveSuggestion, ManualCreditEntry } from '../types';
+import type { ChatMessage, Course, Progress, ElectiveSuggestion, ManualCreditEntry, RetakeEntry } from '../types';
 import type {
   UploadCatalogResponse,
   GeneratePlanResponse,
   PlanCourse,
+  PlanOverrideAdd,
+  PlanOverrideRemove,
   PlanOverrides,
   ProgramSnapshotPayload,
   ProgramSnapshotSwappedElective,
@@ -18,6 +20,7 @@ import type {
 import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
 import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
 import { applyRolloverIfNeeded } from '../utils/term';
+import { resolveActiveAttempts } from '../utils/retakes';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 
 interface MainAdvisorScreenProps {
@@ -34,6 +37,7 @@ interface MainAdvisorScreenProps {
     lastRolloverTermApplied?: string;
     strictPrereqs?: boolean;
     retakeCourses?: string[];
+    retakeEntries?: RetakeEntry[];
     maxCreditsPerSemester: number;
     startTermSeason: string;
     startTermYear: number;
@@ -59,6 +63,7 @@ function buildSnapshotPayload(params: {
   completedCourses: string[];
   inProgressCourses: string[];
   manualCredits: ManualCreditEntry[];
+  retakeEntries: RetakeEntry[];
   completedOverrides: Record<string, string>;
   inProgressOverrides: Record<string, string>;
   overrides: PlanOverrides;
@@ -76,6 +81,7 @@ function buildSnapshotPayload(params: {
     completedCourses: [...params.completedCourses],
     inProgressCourses: [...params.inProgressCourses],
     manualCredits: params.manualCredits.map((entry) => ({ ...entry })),
+    retakeEntries: params.retakeEntries.map((entry) => ({ ...entry })),
     completedOverrides: { ...params.completedOverrides },
     inProgressOverrides: { ...params.inProgressOverrides },
     overrides: clonePlanOverrides(params.overrides),
@@ -91,6 +97,26 @@ function buildSnapshotPayload(params: {
     current_term_label: params.currentTermLabel,
     lastRolloverTermApplied: params.lastRolloverTermApplied,
   };
+}
+
+function formatSnapshotTokenError(error: unknown, hasExistingToken: boolean): string {
+  const baseMessage = hasExistingToken
+    ? 'Could not update the share token. The current token may point to an older saved plan.'
+    : 'Could not generate a share token right now.';
+
+  if (!(error instanceof Error)) {
+    return baseMessage;
+  }
+
+  const detail = error.message
+    .replace(/^POST \/program-snapshots failed(?: \([^)]*\))?:?\s*/i, '')
+    .trim();
+
+  if (!detail) {
+    return baseMessage;
+  }
+
+  return `${baseMessage} ${detail}`;
 }
 
 export function MainAdvisorScreen({
@@ -125,11 +151,15 @@ export function MainAdvisorScreen({
     term: string,
     code: string,
     instanceId: string,
-    genEdCategory?: string | null
+    genEdCategory?: string | null,
+    opts?: { isRetake?: boolean }
   ) => {
     setOverrides(prev => {
-      const existing = prev.add.find(a => a.code === code);
-      const filtered = prev.add.filter(a => a.code !== code);
+      const isRetake = opts?.isRetake === true;
+      const existing = prev.add.find((a) => a.code === code && a.is_retake !== true);
+      const filtered = isRetake
+        ? prev.add.filter((a) => a.instance_id !== instanceId)
+        : prev.add.filter((a) => !(a.code === code && a.is_retake !== true));
       const resolvedCategory = genEdCategory ?? existing?.gen_ed_category ?? undefined;
       return {
         ...prev,
@@ -139,7 +169,8 @@ export function MainAdvisorScreen({
             term,
             code,
             instance_id: instanceId,
-            gen_ed_category: resolvedCategory
+            gen_ed_category: resolvedCategory,
+            is_retake: isRetake || undefined,
           }
         ]
       };
@@ -204,6 +235,9 @@ export function MainAdvisorScreen({
   const [completedCourses, setCompletedCourses] = useState<string[]>(initialCourseStatus.completedCourses);
   const [inProgressCourses, setInProgressCourses] = useState<string[]>(initialCourseStatus.inProgressCourses);
   const [manualCredits, setManualCredits] = useState<ManualCreditEntry[]>(selection.manualCredits ?? []);
+  const [retakeEntries, setRetakeEntries] = useState<RetakeEntry[]>(
+    () => (initialSnapshot?.retakeEntries ?? selection.retakeEntries ?? []).map((entry) => ({ ...entry }))
+  );
   const [inProgressOverrides, setInProgressOverrides] = useState<Record<string, string>>(initialCourseStatus.inProgressOverrides);
   const [completedOverrides, setCompletedOverrides] = useState<Record<string, string>>(initialCourseStatus.completedOverrides);
   const [lastRolloverTermApplied, setLastRolloverTermApplied] = useState<string | undefined>(initialCourseStatus.lastRolloverTermApplied);
@@ -250,6 +284,11 @@ export function MainAdvisorScreen({
   } | null>(null);
   const [pendingAddCourse, setPendingAddCourse] = useState<{ code: string } | null>(null);
   const [pendingAddTerm, setPendingAddTerm] = useState<string | null>(null);
+  const [pendingRetakeCourse, setPendingRetakeCourse] = useState<{
+    code: string;
+    term: string;
+    placeholderInstanceId: string | null;
+  } | null>(null);
 
   const [pendingAddConfirm, setPendingAddConfirm] = useState<{
     code: string;
@@ -290,11 +329,16 @@ export function MainAdvisorScreen({
     () => (initialSnapshot?.swappedElectives ?? []).map((entry) => ({ ...entry }))
   );
   const pendingAtomicAddRef = useRef<{
+    mode: 'course_add' | 'retake_swap';
     expectedCode: string;
     expectedTerm: string;
+    expectedInstanceId?: string | null;
+    expectedRemovedPlaceholderInstanceId?: string | null;
+    expectedRemovedPlaceholderCode?: string | null;
     previousOverrides: PlanOverrides;
     previousRemovedCourses: string[];
     previousSwappedElectives: SwappedElectiveRecord[];
+    previousRetakeEntries: RetakeEntry[];
   } | null>(null);
   const suppressNextSummaryRef = useRef(false);
 
@@ -329,7 +373,11 @@ export function MainAdvisorScreen({
   const commitAtomicOverrideAdd = (
     term: string,
     code: string,
-    opts?: { replaceFreeElective?: { instanceId: string; code: string } | null; genEdCategory?: string | null }
+    opts?: {
+      replaceFreeElective?: { instanceId: string; code: string } | null;
+      genEdCategory?: string | null;
+      isRetake?: boolean;
+    }
   ) => {
     if (pendingAtomicAddRef.current) {
       setMessages((prev) => [
@@ -343,16 +391,22 @@ export function MainAdvisorScreen({
       return false;
     }
 
+    const addedInstanceId = createInstanceId();
+    const isRetake = opts?.isRetake === true;
     pendingAtomicAddRef.current = {
+      mode: isRetake ? 'retake_swap' : 'course_add',
       expectedCode: code,
       expectedTerm: term,
+      expectedInstanceId: addedInstanceId,
+      expectedRemovedPlaceholderInstanceId: opts?.replaceFreeElective?.instanceId ?? null,
+      expectedRemovedPlaceholderCode: opts?.replaceFreeElective?.code ?? null,
       previousOverrides: clonePlanOverrides(overrides),
       previousRemovedCourses: [...removedCourses],
       previousSwappedElectives: [...swappedElectives],
+      previousRetakeEntries: [...retakeEntries],
     };
 
     const placeholder = opts?.replaceFreeElective;
-    const addedInstanceId = createInstanceId();
     if (placeholder) {
       addOverrideRemove(term, placeholder.instanceId, placeholder.code);
       setRemovedCourses((prev) =>
@@ -367,7 +421,9 @@ export function MainAdvisorScreen({
         placeholderCredits: getCourseCredits(placeholder.code),
       });
     }
-    addOverrideAdd(term, code, addedInstanceId, opts?.genEdCategory ?? null);
+    addOverrideAdd(term, code, addedInstanceId, opts?.genEdCategory ?? null, {
+      isRetake,
+    });
     return true;
   };
   const completedInstanceId = (code: string) => `completed:${code}`;
@@ -389,6 +445,43 @@ export function MainAdvisorScreen({
     if (course.code && removedCodeSet.has(course.code)) return true;
     return false;
   };
+  const normalizedRetakeEntries = useMemo(
+    () =>
+      retakeEntries
+        .map((entry) => ({
+          instance_id: entry.instance_id?.trim() ?? '',
+          code: entry.code?.trim().toUpperCase() ?? '',
+          term: entry.term?.trim() ?? '',
+          status: entry.status ?? 'PLANNED',
+          label: 'Retake' as const,
+        }))
+        .filter((entry) => entry.instance_id.length > 0 && entry.code.length > 0 && entry.term.length > 0),
+    [retakeEntries]
+  );
+  const overridesWithRetakes = useMemo(() => {
+    const next = clonePlanOverrides(overrides);
+    const retakeAdds: PlanOverrideAdd[] = normalizedRetakeEntries.map((entry) => ({
+      term: entry.term,
+      code: entry.code,
+      instance_id: entry.instance_id,
+      is_retake: true,
+    }));
+    const retakeIds = new Set(
+      retakeAdds
+        .map((entry) => entry.instance_id)
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    );
+    next.add = [
+      ...next.add.filter((entry) => {
+        const id = typeof entry.instance_id === 'string' ? entry.instance_id : null;
+        if (!id) return true;
+        if (entry.is_retake === true) return !retakeIds.has(id);
+        return true;
+      }),
+      ...retakeAdds,
+    ];
+    return next;
+  }, [overrides, normalizedRetakeEntries]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -1940,6 +2033,7 @@ export function MainAdvisorScreen({
         completedCourses,
         inProgressCourses,
         manualCredits,
+        retakeEntries: normalizedRetakeEntries,
         completedOverrides,
         inProgressOverrides,
         overrides,
@@ -1955,6 +2049,7 @@ export function MainAdvisorScreen({
       completedCourses,
       inProgressCourses,
       manualCredits,
+      normalizedRetakeEntries,
       completedOverrides,
       inProgressOverrides,
       overrides,
@@ -1977,6 +2072,8 @@ export function MainAdvisorScreen({
   const initialSnapshotSettledRef = useRef(!initialSnapshotToken);
   const tokenCopyResetTimeoutRef = useRef<number | null>(null);
   const [currentSnapshotToken, setCurrentSnapshotToken] = useState<string | null>(initialSnapshotToken);
+  const [isSnapshotTokenLoading, setIsSnapshotTokenLoading] = useState(!initialSnapshotToken);
+  const [snapshotTokenError, setSnapshotTokenError] = useState<string | null>(null);
   const [tokenCopyStatus, setTokenCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
   const [isSnapshotHydrated, setIsSnapshotHydrated] = useState(false);
 
@@ -2005,6 +2102,10 @@ export function MainAdvisorScreen({
     if (snapshotRelevantStateHash === lastSavedSnapshotHashRef.current) return;
 
     let cancelled = false;
+    if (!currentSnapshotTokenRef.current) {
+      setIsSnapshotTokenLoading(true);
+    }
+    setSnapshotTokenError(null);
     const timeoutId = window.setTimeout(async () => {
       try {
         const snapshot = await createProgramSnapshot(
@@ -2013,14 +2114,21 @@ export function MainAdvisorScreen({
         );
         if (cancelled) return;
         lastSavedSnapshotHashRef.current = snapshotRelevantStateHash;
-        if (snapshot.token !== currentSnapshotTokenRef.current) {
-          currentSnapshotTokenRef.current = snapshot.token;
-          setCurrentSnapshotToken(snapshot.token);
+        const tokenChanged = snapshot.token !== currentSnapshotTokenRef.current;
+        currentSnapshotTokenRef.current = snapshot.token;
+        setCurrentSnapshotToken(snapshot.token);
+        setIsSnapshotTokenLoading(false);
+        setSnapshotTokenError(null);
+        if (tokenChanged) {
           window.history.replaceState(null, "", `/p/${snapshot.token}`);
         }
       } catch (e) {
         if (cancelled) return;
         console.error("Failed to save program snapshot.", e);
+        setIsSnapshotTokenLoading(false);
+        setSnapshotTokenError(
+          formatSnapshotTokenError(e, Boolean(currentSnapshotTokenRef.current))
+        );
       }
     }, 1000);
 
@@ -2086,7 +2194,7 @@ export function MainAdvisorScreen({
           minors: selection.minors,
           completed_courses: planningCompleted,
           manual_credits: manualCredits,
-          retake_courses: selection.retakeCourses ?? [],
+          retake_courses: [],
           in_progress_courses: effectiveInProgress,
           in_progress_terms: inProgressOverrides,
           current_term_label: currentTermLabel,
@@ -2096,20 +2204,47 @@ export function MainAdvisorScreen({
           waived_mat1000: selection.waivedMat1000,
           waived_eng1000: selection.waivedEng1000,
           strict_prereqs: selection.strictPrereqs ?? false,
-          overrides
+          overrides: overridesWithRetakes
         });
         if (cancelled) return;
+        let postSuccessMessage: string | null = null;
         const pendingAtomicAdd = pendingAtomicAddRef.current;
         if (pendingAtomicAdd) {
           const addedInExpectedTerm = (resp.semester_plan ?? []).some(
             (term) =>
               term.term === pendingAtomicAdd.expectedTerm &&
-              (term.courses ?? []).some((course) => course.code === pendingAtomicAdd.expectedCode)
+              (term.courses ?? []).some((course) => {
+                if (
+                  pendingAtomicAdd.expectedInstanceId &&
+                  typeof pendingAtomicAdd.expectedInstanceId === 'string'
+                ) {
+                  return course.instance_id === pendingAtomicAdd.expectedInstanceId;
+                }
+                return course.code === pendingAtomicAdd.expectedCode;
+              })
+          );
+          const removedPlaceholderStillPresent = Boolean(
+            pendingAtomicAdd.expectedRemovedPlaceholderInstanceId &&
+              (resp.semester_plan ?? []).some(
+                (term) =>
+                  term.term === pendingAtomicAdd.expectedTerm &&
+                  (term.courses ?? []).some(
+                    (course) =>
+                      course.instance_id === pendingAtomicAdd.expectedRemovedPlaceholderInstanceId
+                  )
+              )
           );
           if (!addedInExpectedTerm) {
             const availabilityWarning = (resp.warnings ?? []).find(
               (warning) =>
                 warning?.type === "OVERRIDE_ADD_TERM_UNAVAILABLE" &&
+                warning?.course === pendingAtomicAdd.expectedCode &&
+                warning?.term === pendingAtomicAdd.expectedTerm
+            );
+            const addFailureWarning = (resp.warnings ?? []).find(
+              (warning) =>
+                typeof warning?.type === 'string' &&
+                String(warning.type).startsWith('OVERRIDE_ADD_') &&
                 warning?.course === pendingAtomicAdd.expectedCode &&
                 warning?.term === pendingAtomicAdd.expectedTerm
             );
@@ -2123,19 +2258,48 @@ export function MainAdvisorScreen({
             setOverrides(pendingAtomicAdd.previousOverrides);
             setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
             setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
+            setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
             const reasonText =
               offeredTerms.length > 0
                 ? `Offered only in: ${offeredTerms.join(", ")}.`
-                : "The backend rejected the add operation.";
+                : addFailureWarning?.type
+                  ? `Reason: ${String(addFailureWarning.type)}.`
+                  : "The backend rejected the add operation.";
             setMessages((prev) => [
               ...prev,
               {
                 role: "assistant",
-                content: `Could not add ${pendingAtomicAdd.expectedCode} to ${pendingAtomicAdd.expectedTerm}. ${reasonText} No changes were applied.`,
+                content:
+                  pendingAtomicAdd.mode === 'retake_swap'
+                    ? `Could not complete retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}. ${reasonText} No changes were applied.`
+                    : `Could not add ${pendingAtomicAdd.expectedCode} to ${pendingAtomicAdd.expectedTerm}. ${reasonText} No changes were applied.`,
                 timestamp: new Date(),
               },
             ]);
             return;
+          }
+          if (removedPlaceholderStillPresent) {
+            pendingAtomicAddRef.current = null;
+            suppressNextSummaryRef.current = true;
+            setOverrides(pendingAtomicAdd.previousOverrides);
+            setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
+            setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
+            setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content:
+                  `Retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} did not remove ${pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "the selected FREE ELECTIVE slot"}. No changes were applied.`,
+                timestamp: new Date(),
+              },
+            ]);
+            return;
+          }
+          if (pendingAtomicAdd.mode === 'retake_swap') {
+            suppressNextSummaryRef.current = true;
+            postSuccessMessage =
+              `Retake swap applied: added ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} and removed ${pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "the selected FREE ELECTIVE slot"}.`;
           }
           pendingAtomicAddRef.current = null;
         }
@@ -2150,10 +2314,21 @@ export function MainAdvisorScreen({
         setPendingReplacement(null);
         setPendingAddCourse(null);
         setPendingAddTerm(null);
+        setPendingRetakeCourse(null);
 
         const summary = resp.summary ?? {};
         if (suppressNextSummaryRef.current) {
           suppressNextSummaryRef.current = false;
+          if (postSuccessMessage) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: 'assistant',
+                content: postSuccessMessage,
+                timestamp: new Date()
+              }
+            ]);
+          }
         } else {
           setMessages([
             {
@@ -2177,6 +2352,7 @@ export function MainAdvisorScreen({
           setOverrides(pendingAtomicAdd.previousOverrides);
           setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
           setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
+          setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
         } else {
           setRemovedCourses(lastRemovedSnapshot.current);
         }
@@ -2211,11 +2387,11 @@ export function MainAdvisorScreen({
     selection.waivedMat1000,
     selection.waivedEng1000,
     selection.strictPrereqs,
-    selection.retakeCourses,
     effectiveInProgress,
     inProgressOverrides,
     currentTermLabel,
-    overrides
+    overridesWithRetakes,
+    normalizedRetakeEntries
   ]);
 
   useEffect(() => {
@@ -2268,6 +2444,7 @@ export function MainAdvisorScreen({
       const candidates = courses
         .filter((course) => {
           if (!course?.code) return false;
+          if (course.is_retake === true) return false;
           const instanceId = course.instance_id;
           if (instanceId && removedInstanceIds.has(instanceId)) return false;
           if (removedCodeSet.has(course.code)) return false;
@@ -2509,12 +2686,13 @@ export function MainAdvisorScreen({
           continue;
         }
         const instanceId = course.instance_id ?? `${term}:${code}`;
-        if (addedCodes.has(code) || removedCodeSet.has(code) || removedInstanceSet.has(instanceId) || addedInstances.has(instanceId)) {
+        if (removedCodeSet.has(code) || removedInstanceSet.has(instanceId) || addedInstances.has(instanceId)) {
           continue;
         }
         const meta = catalog.course_meta?.[code];
-        const isCompleted = effectiveCompleted.includes(code);
-        const isInProgress = inProgressSet.has(code);
+        const isRetake = course.is_retake === true;
+        const isCompleted = !isRetake && effectiveCompleted.includes(code);
+        const isInProgress = !isRetake && inProgressSet.has(code);
         const courseCredits = course.credits ?? meta?.credits ?? 3;
         const hasGenEdSatisfies = (course.satisfies ?? []).some(
           (s) => typeof s === "string" && s.startsWith("GenEd:")
@@ -2537,6 +2715,9 @@ export function MainAdvisorScreen({
         if (inferredGenEd && !tags.includes('GEN ED')) tags.push('GEN ED');
         if (meta?.wic && !tags.includes('Writing Intensive Course')) {
           tags.push('Writing Intensive Course');
+        }
+        if (isRetake && !tags.includes('Retake')) {
+          tags.push('Retake');
         }
         if (isCompleted && !tags.includes('Completed')) tags.push('Completed');
         if (isInProgress && !tags.includes('In Progress')) tags.push('In Progress');
@@ -2565,13 +2746,101 @@ export function MainAdvisorScreen({
           satisfies: course.satisfies,
           courseType: displayCourseType,
           sourceReason: course.source_reason,
+          isRetake,
           prereqWarning: prereqWarnings[code]
         });
         addedInstances.add(instanceId);
         addedCodes.add(code);
       }
     }
-    return out;
+    const normalizeAttemptCode = (value: string) =>
+      value.replace(/\s+/g, ' ').trim().toUpperCase();
+    const isFreeElectivePlaceholderCode = (value: string) => {
+      const upper = normalizeAttemptCode(value);
+      return upper.startsWith('FREE ELECTIVE') || upper.startsWith('FREE_ELECTIVE');
+    };
+    const isEligibleAttempt = (course: Course) =>
+      course.code !== 'OTH 0001' &&
+      !isFreeElectivePlaceholderCode(course.code) &&
+      !(course.tags ?? []).includes('TRANSFER CREDIT');
+    const attemptCountsByCode = new Map<string, number>();
+    out.forEach((course) => {
+      if (!isEligibleAttempt(course)) return;
+      const normalizedCode = normalizeAttemptCode(course.code);
+      attemptCountsByCode.set(
+        normalizedCode,
+        (attemptCountsByCode.get(normalizedCode) ?? 0) + 1
+      );
+    });
+    const duplicateCodes = new Set<string>(
+      Array.from(attemptCountsByCode.entries())
+        .filter(([, count]) => count > 1)
+        .map(([code]) => code)
+    );
+    if (duplicateCodes.size === 0) return out;
+
+    const attempts = out
+      .filter((course) => isEligibleAttempt(course) && duplicateCodes.has(normalizeAttemptCode(course.code)))
+      .map((course) => {
+        const attemptStatus: 'COMPLETED' | 'IN_PROGRESS' | 'PLANNED' =
+          course.status === 'completed'
+            ? 'COMPLETED'
+            : course.status === 'in-progress'
+              ? 'IN_PROGRESS'
+              : 'PLANNED';
+        return {
+          instance_id: course.instanceId,
+          code: course.code,
+          term: course.semester,
+          status: attemptStatus,
+          is_retake: course.isRetake,
+          credits: course.credits,
+        };
+      });
+    const attemptResolution = resolveActiveAttempts(attempts);
+
+    return out.map((course) => {
+      if (!isEligibleAttempt(course)) return course;
+      const normalizedCode = normalizeAttemptCode(course.code);
+      if (!duplicateCodes.has(normalizedCode)) return course;
+
+      const replaced = attemptResolution.replacedInstanceIds.has(course.instanceId);
+      const active = attemptResolution.activeInstanceIds.has(course.instanceId);
+      const nextTags = [...(course.tags ?? [])];
+      const removeTag = (tag: string) => {
+        let idx = nextTags.indexOf(tag);
+        while (idx >= 0) {
+          nextTags.splice(idx, 1);
+          idx = nextTags.indexOf(tag);
+        }
+      };
+
+      removeTag('Previous Attempt');
+      if (replaced) {
+        if (!nextTags.includes('Previous Attempt')) nextTags.push('Previous Attempt');
+        return {
+          ...course,
+          credits: 0,
+          tags: nextTags,
+          isRetake: true,
+        };
+      }
+
+      if (active) {
+        const effectiveCredits = Number(course.credits ?? 0) > 0
+          ? Number(course.credits)
+          : getCourseCreditsForDisplay(course.code);
+        if (!nextTags.includes('Retake')) nextTags.push('Retake');
+        return {
+          ...course,
+          credits: effectiveCredits,
+          tags: nextTags,
+          isRetake: true,
+        };
+      }
+
+      return course;
+    });
   }, [
     catalog.courses,
     catalog.course_meta,
@@ -3173,6 +3442,8 @@ export function MainAdvisorScreen({
     return map;
   }, [courseObjects, isFreeElectivePlaceholder]);
 
+  const getFreeElectiveSlotsForTerm = (term: string) => freeElectiveSlotsByTerm[term] ?? [];
+
   const confirmRemoveCourse = () => {
     if (!pendingRemoval) return;
     const { instanceId, code } = pendingRemoval;
@@ -3182,6 +3453,92 @@ export function MainAdvisorScreen({
       courseObjects.find(c => c.code === code) ??
       null;
     if (!targetCourse) return;
+
+    if (targetCourse.isRetake) {
+      const swappedRetake = findSwappedElective(instanceId, targetCourse.semester ?? null, code);
+      setRetakeEntries((prev) => prev.filter((entry) => entry.instance_id !== instanceId));
+      if (swappedRetake) {
+        setOverrides((prev) => {
+          const filteredAdd = (prev.add ?? []).filter((entry) => {
+            if (entry.instance_id && entry.instance_id === instanceId) {
+              return false;
+            }
+            if (
+              entry.instance_id &&
+              entry.instance_id === swappedRetake.replacedPlaceholderInstanceId
+            ) {
+              return false;
+            }
+            if (
+              entry.term === swappedRetake.termLabel &&
+              entry.code === swappedRetake.placeholderCode
+            ) {
+              return false;
+            }
+            return true;
+          });
+          const filteredRemove = (prev.remove ?? []).filter((entry) => {
+            if (entry.instance_id && entry.instance_id === instanceId) {
+              return false;
+            }
+            if (
+              entry.instance_id &&
+              entry.instance_id === swappedRetake.replacedPlaceholderInstanceId
+            ) {
+              return false;
+            }
+            if (
+              (entry.term ?? null) === swappedRetake.termLabel &&
+              !entry.instance_id &&
+              entry.code === swappedRetake.placeholderCode
+            ) {
+              return false;
+            }
+            return true;
+          });
+          const hasPlaceholderAdd = filteredAdd.some(
+            (entry) =>
+              entry.instance_id === swappedRetake.replacedPlaceholderInstanceId ||
+              (entry.term === swappedRetake.termLabel && entry.code === swappedRetake.placeholderCode)
+          );
+          const nextAdd = hasPlaceholderAdd
+            ? filteredAdd
+            : [
+                ...filteredAdd,
+                {
+                  term: swappedRetake.termLabel,
+                  code: swappedRetake.placeholderCode,
+                  instance_id: swappedRetake.replacedPlaceholderInstanceId,
+                },
+              ];
+          return { ...prev, add: nextAdd, remove: filteredRemove };
+        });
+        removeSwappedElective(swappedRetake);
+        setRemovedCourses((prev) =>
+          prev.filter(
+            (id) => id !== instanceId && id !== swappedRetake.replacedPlaceholderInstanceId
+          )
+        );
+      } else {
+        setRemovedCourses((prev) => prev.filter((id) => id !== instanceId));
+        setOverrides((prev) => ({
+          ...prev,
+          add: (prev.add ?? []).filter((entry) => entry.instance_id !== instanceId),
+          remove: (prev.remove ?? []).filter((entry) => entry.instance_id !== instanceId),
+        }));
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: swappedRetake
+            ? `Removed retake ${code} and restored ${swappedRetake.placeholderCode} in ${swappedRetake.termLabel}.`
+            : `Removed retake ${code}.`,
+          timestamp: new Date()
+        }
+      ]);
+      return;
+    }
 
     if (targetCourse.status === 'completed') {
       setCompletedCourses(prev => prev.filter(c => c !== code));
@@ -3471,6 +3828,7 @@ export function MainAdvisorScreen({
   const handleMoveCourse = (instanceId: string) => {
     const picked = courseObjects.find((course) => course.instanceId === instanceId) ?? null;
     if (!picked || picked.status !== 'remaining') return;
+    if (picked.isRetake) return;
 
     if (!pendingSwapSourceInstanceId) {
       setMoveCourseWarning(null);
@@ -3716,6 +4074,61 @@ export function MainAdvisorScreen({
     setActiveTab('plan');
     setPendingAddCourse({ code });
     setPendingAddTerm(null);
+  };
+
+  const handleAddRetakeCourse = (code: string) => {
+    const normalizedCode = normalizeCourseCode(code);
+    if (!normalizedCode) return;
+    if (isFreeElectivePlaceholder(normalizedCode)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `${code} is an elective placeholder. Retakes can only be added for actual courses already in your record/plan.`,
+          timestamp: new Date()
+        }
+      ]);
+      return;
+    }
+    const existsInRecord = courseObjects.some(
+      (course) =>
+        normalizeCourseCode(course.code) === normalizedCode &&
+        course.courseType !== "FREE_ELECTIVE" &&
+        !isFreeElectivePlaceholder(course.code)
+    );
+    if (!existsInRecord) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `${code} is not in your current record/plan yet. Add it first, then add a retake.`,
+          timestamp: new Date()
+        }
+      ]);
+      return;
+    }
+    const retakeEligibleTerms = Object.keys(freeElectiveSlotsByTerm).sort(
+      (a, b) => termIndexFromLabel(a) - termIndexFromLabel(b)
+    );
+    if (retakeEligibleTerms.length === 0) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `No FREE ELECTIVE placeholder slots are currently available to swap with ${code}.`,
+          timestamp: new Date()
+        }
+      ]);
+      return;
+    }
+    const defaultTerm = retakeEligibleTerms[0];
+    const firstPlaceholder = getFreeElectiveSlotsForTerm(defaultTerm)[0];
+    setActiveTab('plan');
+    setPendingRetakeCourse({
+      code: normalizedCode,
+      term: defaultTerm,
+      placeholderInstanceId: firstPlaceholder?.instance_id ?? null,
+    });
   };
 
   const runAddCourseWithPrereqs = (
@@ -4806,7 +5219,7 @@ export function MainAdvisorScreen({
       minors: selection.minors,
       completed_courses: planningCompleted,
       manual_credits: manualCredits,
-      retake_courses: selection.retakeCourses ?? [],
+      retake_courses: [],
       in_progress_courses: effectiveInProgress,
       in_progress_terms: inProgressOverrides,
       current_term_label: currentTermLabel,
@@ -4816,7 +5229,7 @@ export function MainAdvisorScreen({
       waived_mat1000: selection.waivedMat1000,
       waived_eng1000: selection.waivedEng1000,
       strict_prereqs: selection.strictPrereqs ?? false,
-      overrides
+      overrides: overridesWithRetakes
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4845,6 +5258,12 @@ export function MainAdvisorScreen({
   const termPickerOptions = useMemo(() => {
     return buildTermLabels(startTermSeason, startTermYear, 8);
   }, [startTermSeason, startTermYear]);
+
+  const retakeTermOptions = useMemo(() => {
+    return Object.keys(freeElectiveSlotsByTerm).sort(
+      (a, b) => termIndexFromLabel(a) - termIndexFromLabel(b)
+    );
+  }, [freeElectiveSlotsByTerm]);
 
   const manualCreditTermOptions = useMemo(() => {
     const known = new Set<string>([currentTermLabel, ...termPickerOptions]);
@@ -4901,6 +5320,46 @@ export function MainAdvisorScreen({
 
   const removeManualCredit = (instanceId: string) => {
     setManualCredits((prev) => prev.filter((entry) => entry.instance_id !== instanceId));
+  };
+
+  const savePendingRetake = () => {
+    if (!pendingRetakeCourse) return;
+    if (pendingAtomicAddRef.current) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Please wait for the previous add operation to finish.',
+          timestamp: new Date()
+        }
+      ]);
+      return;
+    }
+    const term = pendingRetakeCourse.term.trim();
+    if (!term) return;
+    const code = normalizeCourseCode(pendingRetakeCourse.code);
+    if (!code) return;
+    const placeholders = getFreeElectiveSlotsForTerm(term);
+    const selectedPlaceholder =
+      placeholders.find((entry) => entry.instance_id === pendingRetakeCourse.placeholderInstanceId) ??
+      placeholders[0];
+    if (!selectedPlaceholder?.instance_id) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `No FREE ELECTIVE placeholder slot is available in ${term} to swap with ${code}.`,
+          timestamp: new Date()
+        }
+      ]);
+      return;
+    }
+    const committed = commitAtomicOverrideAdd(term, code, {
+      replaceFreeElective: { instanceId: selectedPlaceholder.instance_id, code: selectedPlaceholder.code },
+      isRetake: true,
+    });
+    if (!committed) return;
+    setPendingRetakeCourse(null);
   };
 
   const termCreditsMap = useMemo(() => {
@@ -5033,25 +5492,47 @@ export function MainAdvisorScreen({
                   cursor: currentSnapshotToken ? 'pointer' : 'default',
                   opacity: currentSnapshotToken ? 1 : 0.7
                 }}
-                title={currentSnapshotToken ? 'Copy program token' : 'Generating program token...'}
+                title={
+                  currentSnapshotToken
+                    ? 'Copy program token'
+                    : isSnapshotTokenLoading
+                      ? 'Generating program token...'
+                      : snapshotTokenError
+                        ? 'Program token unavailable'
+                        : 'Program token pending'
+                }
               >
                 <span className="font-mono">
-                  {currentSnapshotToken ?? 'Generating token...'}
+                  {currentSnapshotToken
+                    ?? (isSnapshotTokenLoading ? 'Generating token...' : 'Token unavailable')}
                 </span>
-                {tokenCopyStatus === 'copied' ? (
+                {currentSnapshotToken ? (
+                  tokenCopyStatus === 'copied' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Copied</span>
+                    </>
+                  ) : tokenCopyStatus === 'error' ? (
+                    <span>Retry</span>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </>
+                  )
+                ) : isSnapshotTokenLoading ? (
                   <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Copied</span>
+                    <span>Saving</span>
                   </>
-                ) : tokenCopyStatus === 'error' ? (
-                  <span>Retry</span>
                 ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy</span>
-                  </>
+                  <span>Unavailable</span>
                 )}
               </button>
+              {snapshotTokenError && (
+                <span className="text-xs" style={{ color: '#b91c1c' }}>
+                  {snapshotTokenError}
+                </span>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -5238,6 +5719,7 @@ export function MainAdvisorScreen({
                     onToggleCompleted={(instanceId) => {
                       const target = courseObjects.find(c => c.instanceId === instanceId);
                       const code = target?.code;
+                      if (target?.isRetake) return;
                       if (target?.sourceReason === 'MANUAL_TRANSFER_CREDIT') return;
                       if (!code) return;
                       const isCurrentlyCompleted = completedCourses.includes(code);
@@ -5265,6 +5747,7 @@ export function MainAdvisorScreen({
                     onToggleInProgress={(instanceId) => {
                       const target = courseObjects.find(c => c.instanceId === instanceId);
                       const code = target?.code;
+                      if (target?.isRetake) return;
                       if (target?.sourceReason === 'MANUAL_TRANSFER_CREDIT') return;
                       const isCurrentlyInProgress = inProgressCourses.includes(code);
                       if (!target || !code) return;
@@ -5327,6 +5810,7 @@ export function MainAdvisorScreen({
                     onMoveCompleted={(instanceId, term) => {
                       const target = courseObjects.find(c => c.instanceId === instanceId);
                       const code = target?.code;
+                      if (target?.isRetake) return;
                       if (target?.sourceReason === 'MANUAL_TRANSFER_CREDIT') return;
                       if (!code) return;
                       if (term === currentTermLabel) {
@@ -5352,6 +5836,7 @@ export function MainAdvisorScreen({
                       });
                     }}
                     onAddCourse={handleAddCourse}
+                    onAddRetakeCourse={handleAddRetakeCourse}
                     onRemoveCourse={requestRemoveCourse}
                     onMoveCourse={handleMoveCourse}
                     movingCourseInstanceId={pendingSwapSourceInstanceId}
@@ -5934,6 +6419,143 @@ export function MainAdvisorScreen({
                       </div>
                     </div>
                   </div>
+                )}
+
+                {pendingRetakeCourse && (
+                  (() => {
+                    const placeholdersForTerm = getFreeElectiveSlotsForTerm(pendingRetakeCourse.term);
+                    const selectedPlaceholder =
+                      placeholdersForTerm.find(
+                        (entry) => entry.instance_id === pendingRetakeCourse.placeholderInstanceId
+                      ) ?? placeholdersForTerm[0] ?? null;
+                    return (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      inset: 0,
+                      background: 'rgba(0,0,0,0.45)',
+                      zIndex: 1000,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '24px'
+                    }}
+                    onClick={() => setPendingRetakeCourse(null)}
+                  >
+                    <div
+                      style={{
+                        background: 'var(--white)',
+                        borderRadius: '12px',
+                        maxWidth: '460px',
+                        width: '100%',
+                        padding: '20px',
+                        border: '1px solid var(--neutral-border)'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h4 className="mb-1">Add as Retake</h4>
+                          <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                            {pendingRetakeCourse.code} will be added as a visible retake attempt and will replace one
+                            FREE ELECTIVE placeholder. The latest attempt keeps course credits; earlier attempts become 0-credit previous attempts.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-sm"
+                          style={{ color: 'var(--neutral-dark)' }}
+                          onClick={() => setPendingRetakeCourse(null)}
+                        >
+                          X
+                        </button>
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                          Term
+                        </label>
+                        <select
+                          value={pendingRetakeCourse.term}
+                          onChange={(e) =>
+                            setPendingRetakeCourse((prev) => {
+                              if (!prev) return prev;
+                              const nextTerm = e.target.value;
+                              const nextPlaceholder = getFreeElectiveSlotsForTerm(nextTerm)[0];
+                              return {
+                                ...prev,
+                                term: nextTerm,
+                                placeholderInstanceId: nextPlaceholder?.instance_id ?? null,
+                              };
+                            })
+                          }
+                          className="w-full mt-1 px-3 py-2 rounded-lg border"
+                          style={{ borderColor: 'var(--neutral-border)' }}
+                        >
+                          {retakeTermOptions.map((term) => (
+                            <option key={term} value={term}>
+                              {term}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                          FREE ELECTIVE slot to replace
+                        </label>
+                        <select
+                          value={pendingRetakeCourse.placeholderInstanceId ?? ''}
+                          onChange={(e) =>
+                            setPendingRetakeCourse((prev) =>
+                              prev ? { ...prev, placeholderInstanceId: e.target.value || null } : prev
+                            )
+                          }
+                          className="w-full mt-1 px-3 py-2 rounded-lg border"
+                          style={{ borderColor: 'var(--neutral-border)' }}
+                          disabled={placeholdersForTerm.length === 0}
+                        >
+                          {placeholdersForTerm.length === 0 ? (
+                            <option value="">No FREE ELECTIVE slots in this term</option>
+                          ) : (
+                            placeholdersForTerm.map((entry) => (
+                              <option key={entry.instance_id ?? `${pendingRetakeCourse.term}:${entry.code}`} value={entry.instance_id}>
+                                {entry.code}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+
+                      {selectedPlaceholder && (
+                        <p className="text-xs mt-2" style={{ color: 'var(--neutral-dark)' }}>
+                          Swapping out: {selectedPlaceholder.code}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2 mt-4">
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded-lg text-sm font-medium"
+                          style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                          onClick={savePendingRetake}
+                          disabled={!selectedPlaceholder}
+                        >
+                          Add Retake
+                        </button>
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded-lg text-sm font-medium border"
+                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          onClick={() => setPendingRetakeCourse(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                    );
+                  })()
                 )}
 
                 

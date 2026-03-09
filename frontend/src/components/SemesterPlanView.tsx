@@ -17,6 +17,7 @@ interface SemesterPlanViewProps {
   onMoveCourse?: (instanceId: string) => void;
   movingCourseInstanceId?: string | null;
   onAddCourse?: (code: string) => void;
+  onAddRetakeCourse?: (code: string) => void;
   onMoveCompleted?: (instanceId: string, term: string) => void;
   onChangeGenEd?: (instanceId: string, term: string) => void;
   onAddTransferCredit?: () => void;
@@ -59,6 +60,7 @@ export function SemesterPlanView({
   onMoveCourse,
   movingCourseInstanceId,
   onAddCourse,
+  onAddRetakeCourse,
   onMoveCompleted,
   onChangeGenEd,
   onAddTransferCredit,
@@ -142,7 +144,31 @@ export function SemesterPlanView({
   }, [canSearch, normalizedQuery, catalogCourses]);
 
   const planCodeSet = useMemo(() => new Set(courses.map((c) => c.code)), [courses]);
+  const isFreeElectivePlaceholderCode = (code: string) => {
+    const upper = code.toUpperCase();
+    return upper.startsWith('FREE ELECTIVE') || upper.startsWith('FREE_ELECTIVE');
+  };
   const isTransferCredit = (course: Course) => (course.tags ?? []).includes('TRANSFER CREDIT');
+  const isRetakeCourse = (course: Course) =>
+    course.isRetake === true ||
+    (course.tags ?? []).includes('Retake') ||
+    (course.tags ?? []).includes('Previous Attempt');
+  const isPreviousAttemptCourse = (course: Course) =>
+    (course.tags ?? []).includes('Previous Attempt');
+  const retakeEligibleCodeSet = useMemo(
+    () =>
+      new Set(
+        courses
+          .filter(
+            (course) =>
+              !isTransferCredit(course) &&
+              course.courseType !== 'FREE_ELECTIVE' &&
+              !isFreeElectivePlaceholderCode(course.code)
+          )
+          .map((course) => course.code)
+      ),
+    [courses]
+  );
 
   const completedCourses = filteredCourses.filter((c) => c.semester === 'Completed');
   const inProgressCourses = filteredCourses.filter((c) => c.semester === 'In Progress');
@@ -584,7 +610,7 @@ export function SemesterPlanView({
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="text-xs" style={{ color: 'var(--neutral-dark)' }}>
-                        {planCodeSet.has(code) ? 'In plan' : 'Not in plan'}
+                        {planCodeSet.has(code) ? 'In record' : 'Not in plan'}
                       </div>
                       {onAddCourse && !planCodeSet.has(code) && (
                         <button
@@ -601,6 +627,17 @@ export function SemesterPlanView({
                           }
                         >
                           Add
+                        </button>
+                      )}
+                      {onAddRetakeCourse && retakeEligibleCodeSet.has(code) && (
+                        <button
+                          type="button"
+                          onClick={() => onAddRetakeCourse(code)}
+                          className="text-xs px-2 py-1 rounded border"
+                          style={{ borderColor: 'var(--neutral-border)', color: 'var(--navy-dark)' }}
+                          title="Add as Retake (0 credits)"
+                        >
+                          Add as Retake
                         </button>
                       )}
                     </div>
@@ -636,6 +673,26 @@ export function SemesterPlanView({
                     <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
                       {course.name}
                     </div>
+                    {(isRetakeCourse(course) || isPreviousAttemptCourse(course)) && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {isRetakeCourse(course) && !isPreviousAttemptCourse(course) && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{ background: '#e2e8f0', color: '#0f172a' }}
+                          >
+                            Retake
+                          </span>
+                        )}
+                        {isPreviousAttemptCourse(course) && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{ background: '#fee2e2', color: '#7f1d1d' }}
+                          >
+                            Previous Attempt
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="text-xs" style={{ color: 'var(--neutral-dark)' }}>
@@ -689,6 +746,26 @@ export function SemesterPlanView({
                     <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
                       {course.name}
                     </div>
+                    {(isRetakeCourse(course) || isPreviousAttemptCourse(course)) && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {isRetakeCourse(course) && !isPreviousAttemptCourse(course) && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{ background: '#e2e8f0', color: '#0f172a' }}
+                          >
+                            Retake
+                          </span>
+                        )}
+                        {isPreviousAttemptCourse(course) && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{ background: '#fee2e2', color: '#7f1d1d' }}
+                          >
+                            Previous Attempt
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="text-xs" style={{ color: 'var(--neutral-dark)' }}>
@@ -787,8 +864,16 @@ export function SemesterPlanView({
                   key={course.instanceId}
                   className="rounded-lg p-4 border-2 transition-all cursor-pointer relative"
                   style={{
-                    backgroundColor: isTransferCredit(course) ? '#eef6ff' : 'var(--white)',
-                    borderColor: isTransferCredit(course) ? 'var(--navy-blue)' : getStatusColor(course.status)
+                    backgroundColor: isTransferCredit(course)
+                      ? '#eef6ff'
+                      : isRetakeCourse(course)
+                        ? '#f8fafc'
+                        : 'var(--white)',
+                    borderColor: isTransferCredit(course)
+                      ? 'var(--navy-blue)'
+                      : isRetakeCourse(course)
+                        ? '#64748b'
+                        : getStatusColor(course.status)
                   }}
                   onMouseEnter={() => setHoveredCourse(course.instanceId)}
                   onMouseLeave={() => setHoveredCourse(null)}
@@ -798,20 +883,21 @@ export function SemesterPlanView({
                       /major elective|minor elective/i.test(note)
                     );
                     const transferCredit = isTransferCredit(course);
+                    const retake = isRetakeCourse(course);
                     return (
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 flex-1">
                       <button
                         type="button"
                         onClick={() => {
-                          if (!transferCredit) {
+                          if (!transferCredit && !retake) {
                             onToggleCompleted?.(course.instanceId);
                           }
                         }}
-                        className={onToggleCompleted && !transferCredit ? "cursor-pointer" : ""}
+                        className={onToggleCompleted && !transferCredit && !retake ? "cursor-pointer" : ""}
                         style={{ background: "transparent", border: "none", padding: 0 }}
                         aria-label="Toggle completed"
-                        disabled={transferCredit}
+                        disabled={transferCredit || retake}
                       >
                         {getStatusIcon(course.status)}
                       </button>
@@ -857,6 +943,12 @@ export function SemesterPlanView({
                             } else if (tag === 'TRANSFER CREDIT') {
                               background = 'var(--navy-blue)';
                               color = 'var(--white)';
+                            } else if (tag === 'Retake') {
+                              background = '#e2e8f0';
+                              color = '#0f172a';
+                            } else if (tag === 'Previous Attempt') {
+                              background = '#fee2e2';
+                              color = '#7f1d1d';
                             }
                             return (
                             <span
@@ -871,7 +963,7 @@ export function SemesterPlanView({
                             </span>
                           )})}
                         </div>
-                        {onToggleInProgress && course.status !== 'completed' && !transferCredit && (
+                        {onToggleInProgress && course.status !== 'completed' && !transferCredit && !retake && (
                           <div className="mt-2">
                             <button
                               type="button"
@@ -883,7 +975,7 @@ export function SemesterPlanView({
                             </button>
                           </div>
                         )}
-                        {onMoveCompleted && course.status === 'completed' && !transferCredit && (
+                        {onMoveCompleted && course.status === 'completed' && !transferCredit && !retake && (
                           <div className="mt-2">
                             <label className="text-xs mr-2" style={{ color: 'var(--neutral-dark)' }}>
                               Completed term
@@ -910,7 +1002,7 @@ export function SemesterPlanView({
                           {electiveNotes.join(' | ')}
                         </div>
                       )}
-                      {onChangeGenEd && course.status !== 'completed' && !transferCredit && canChangeGenEdCourse(course) && (
+                      {onChangeGenEd && course.status !== 'completed' && !transferCredit && !retake && canChangeGenEdCourse(course) && (
                         <button
                           type="button"
                           onClick={() => onChangeGenEd(course.instanceId, course.semester)}
@@ -936,7 +1028,7 @@ export function SemesterPlanView({
                           Remove
                         </button>
                       )}
-                      {onRemoveCourse && !transferCredit && !isProgramOrGenEdCourse(course) && (
+                      {onRemoveCourse && !transferCredit && (retake || !isProgramOrGenEdCourse(course)) && (
                         <button
                           type="button"
                           onClick={() => onRemoveCourse(course.instanceId)}
@@ -947,7 +1039,7 @@ export function SemesterPlanView({
                           Remove
                         </button>
                       )}
-                      {onMoveCourse && course.status === 'remaining' && !transferCredit && (
+                      {onMoveCourse && course.status === 'remaining' && !transferCredit && !retake && (
                         <button
                           type="button"
                           onClick={() => onMoveCourse(course.instanceId)}

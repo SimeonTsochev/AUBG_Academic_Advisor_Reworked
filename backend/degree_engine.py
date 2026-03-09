@@ -875,6 +875,24 @@ def _ensure_instance_ids(semester_plan: List[Dict]) -> None:
 
 
 
+def _planned_course_credits(catalog: Dict, course: Dict | str) -> int:
+    if isinstance(course, dict):
+        raw_credits = course.get("credits")
+        if isinstance(raw_credits, (int, float)) and math.isfinite(raw_credits):
+            return int(raw_credits)
+        if isinstance(raw_credits, str):
+            text = raw_credits.strip()
+            if re.fullmatch(r"-?\d+", text):
+                return int(text)
+        code = course.get("code")
+        if isinstance(code, str) and code:
+            return 3 if _is_free_elective(code) else _course_credits(catalog, code)
+        return 0
+    if isinstance(course, str) and course:
+        return 3 if _is_free_elective(course) else _course_credits(catalog, course)
+    return 0
+
+
 def _dedupe_semester_plan(
     catalog: Dict,
     semester_plan: List[Dict],
@@ -896,10 +914,144 @@ def _dedupe_semester_plan(
             normalized_courses.append(course)
         term["courses"] = normalized_courses
         term["credits"] = sum(
-            int(c.get("credits") or _course_credits(catalog, c.get("code", "")))
+            _planned_course_credits(catalog, c)
             for c in normalized_courses
         )
     return semester_plan
+
+
+def _resolve_active_attempt_instance_ids(
+    semester_plan: List[Dict],
+    completed_courses: Set[str] | None = None,
+) -> Tuple[Set[str], Set[str], Set[str]]:
+    """Resolve latest active attempt instance IDs by course code.
+
+    Tie-breaker for attempts in the same term:
+    1) COMPLETED > IN_PROGRESS > PLANNED (if status exists)
+    2) later appearance order in the semester_plan traversal
+    """
+    status_rank = {"PLANNED": 0, "IN_PROGRESS": 1, "COMPLETED": 2}
+    attempts_by_code: Dict[str, List[Dict[str, Any]]] = {}
+    sequence = 0
+    for term in semester_plan or []:
+        term_label = term.get("term", "")
+        term_idx = _term_label_index(term_label) if isinstance(term_label, str) else 999999
+        for course in term.get("courses", []) or []:
+            if not isinstance(course, dict):
+                continue
+            code = course.get("code")
+            if not isinstance(code, str) or not code:
+                continue
+            normalized_code = _normalize_course_code(code)
+            if not normalized_code or _is_free_elective(normalized_code):
+                continue
+            instance_id = course.get("instance_id")
+            if not isinstance(instance_id, str) or not instance_id.strip():
+                continue
+            raw_status = course.get("status")
+            normalized_status = ""
+            if isinstance(raw_status, str):
+                normalized_status = raw_status.strip().replace("-", "_").upper()
+            attempts_by_code.setdefault(normalized_code, []).append(
+                {
+                    "instance_id": instance_id.strip(),
+                    "term_idx": term_idx,
+                    "status_rank": status_rank.get(normalized_status, 0),
+                    "seq": sequence,
+                }
+            )
+            sequence += 1
+
+    completed_normalized = {
+        _normalize_course_code(code)
+        for code in (completed_courses or set())
+        if isinstance(code, str)
+    }
+    active_instance_ids: Set[str] = set()
+    replaced_instance_ids: Set[str] = set()
+    duplicate_context_codes: Set[str] = set()
+
+    for code, attempts in attempts_by_code.items():
+        if not attempts:
+            continue
+        has_duplicate_context = len(attempts) > 1 or code in completed_normalized
+        if has_duplicate_context:
+            duplicate_context_codes.add(code)
+        ordered = sorted(
+            attempts,
+            key=lambda entry: (entry["term_idx"], entry["status_rank"], entry["seq"]),
+        )
+        active = ordered[-1]
+        active_instance_ids.add(active["instance_id"])
+        if len(ordered) > 1:
+            for prior in ordered[:-1]:
+                replaced_instance_ids.add(prior["instance_id"])
+
+    return active_instance_ids, replaced_instance_ids, duplicate_context_codes
+
+
+def _apply_latest_attempt_credit_rule(
+    catalog: Dict,
+    semester_plan: List[Dict],
+    completed_courses: Set[str] | None = None,
+) -> None:
+    if not semester_plan:
+        return
+    _ensure_instance_ids(semester_plan)
+    active_ids, replaced_ids, duplicate_context_codes = _resolve_active_attempt_instance_ids(
+        semester_plan,
+        completed_courses=completed_courses,
+    )
+
+    for term in semester_plan:
+        normalized_courses: List[Dict[str, Any]] = []
+        for course in term.get("courses", []) or []:
+            if not isinstance(course, dict):
+                continue
+            code = course.get("code")
+            instance_id = course.get("instance_id")
+            if not isinstance(code, str) or not code:
+                normalized_courses.append(course)
+                continue
+            normalized_code = _normalize_course_code(code)
+            if not normalized_code or _is_free_elective(normalized_code):
+                normalized_courses.append(course)
+                continue
+            if not isinstance(instance_id, str) or not instance_id.strip():
+                normalized_courses.append(course)
+                continue
+            normalized_instance_id = instance_id.strip()
+            tags = course.get("tags")
+            clean_tags = [tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else []
+            clean_tags = [tag for tag in clean_tags if tag != "Previous Attempt"]
+
+            if normalized_instance_id in replaced_ids:
+                course["credits"] = 0
+                course["satisfies"] = []
+                course["is_retake"] = True
+                if "Previous Attempt" not in clean_tags:
+                    clean_tags.append("Previous Attempt")
+                course["tags"] = clean_tags
+                normalized_courses.append(course)
+                continue
+
+            if (
+                normalized_instance_id in active_ids
+                and normalized_code in duplicate_context_codes
+            ):
+                course["credits"] = _course_credits(catalog, normalized_code)
+                course["is_retake"] = True
+                if "Retake" not in clean_tags:
+                    clean_tags.append("Retake")
+                course["tags"] = clean_tags
+                normalized_courses.append(course)
+                continue
+
+            course["tags"] = clean_tags
+            normalized_courses.append(course)
+
+        term["courses"] = normalized_courses
+        term["credits"] = sum(_planned_course_credits(catalog, c) for c in normalized_courses)
 
 def _catalog_courses(catalog: Dict) -> Set[str]:
     return {code for code in catalog.get("courses", {}).keys() if isinstance(code, str)}
@@ -3544,7 +3696,7 @@ def _rebalance_term_mix(
         return "other"
 
     def term_credits(term_courses: List[Dict]) -> int:
-        return sum(int(c.get("credits") or _course_credits(catalog, c.get("code", ""))) for c in term_courses)
+        return sum(_planned_course_credits(catalog, c) for c in term_courses)
 
     def completed_before(term_idx: int) -> Tuple[Set[str], Set[str]]:
         completed = set(completed_courses)
@@ -3677,11 +3829,14 @@ def validate_plan(
 
         term_courses = term.get("courses", []) or []
         codes: List[str] = []
+        normalized_term_courses: List[Dict[str, Any]] = []
         for course in term_courses:
             code = course.get("code") if isinstance(course, dict) else None
             if not code or not isinstance(code, str):
                 errors.append(f"Invalid course entry in {term_label}.")
                 continue
+            if isinstance(course, dict):
+                normalized_term_courses.append(course)
             if isinstance(course, dict):
                 raw_instance_id = course.get("instance_id")
                 if isinstance(raw_instance_id, str) and raw_instance_id.strip():
@@ -3693,8 +3848,12 @@ def validate_plan(
             codes.append(code)
 
         calc_credits = sum(
-            _course_credits(catalog, code) if not _is_free_elective(code) else 3
-            for code in codes
+            _planned_course_credits(catalog, course)
+            for course in normalized_term_courses
+        )
+        term_has_only_retakes = bool(normalized_term_courses) and all(
+            course.get("is_retake") is True and _planned_course_credits(catalog, course) == 0
+            for course in normalized_term_courses
         )
         term_credits = term.get("credits", calc_credits)
         if isinstance(term_credits, int) and term_credits != calc_credits:
@@ -3703,7 +3862,7 @@ def validate_plan(
         total_term_credits = calc_credits + occupied_credits
         if total_term_credits > max_credits:
             errors.append(f"{term_label} exceeds max credits ({total_term_credits} > {max_credits}).")
-        if total_term_credits < min_credits:
+        if total_term_credits < min_credits and not term_has_only_retakes:
             errors.append(f"{term_label} is below the minimum credit load ({total_term_credits} < {min_credits}).")
 
         for code in codes:
@@ -3766,6 +3925,8 @@ def _effective_completed_courses_after_plan(
     semester_plan: List[Dict],
 ) -> Set[str]:
     # Any planned real-course attempt supersedes historical completion for reporting.
+    # This preserves "latest attempt wins" without affecting prerequisite checks,
+    # which continue to rely on the original completed_courses set.
     effective = set(completed_courses)
     ordered_terms = sorted(semester_plan or [], key=lambda t: _term_label_index(t.get("term", "")))
     for term in ordered_terms:
@@ -4400,6 +4561,11 @@ def generate_plan(
 
     semester_plan = _dedupe_semester_plan(catalog, semester_plan, completed_courses)
     _ensure_instance_ids(semester_plan)
+    _apply_latest_attempt_credit_rule(
+        catalog=catalog,
+        semester_plan=semester_plan,
+        completed_courses=completed_courses,
+    )
     effective_completed_courses = _effective_completed_courses_after_plan(completed_courses, semester_plan)
 
     # Computed after overrides/final shaping so alerts reflect the final plan state.
@@ -4513,11 +4679,21 @@ def generate_plan(
 
     semester_plan = _dedupe_semester_plan(catalog, semester_plan, completed_courses)
     _ensure_instance_ids(semester_plan)
+    _apply_latest_attempt_credit_rule(
+        catalog=catalog,
+        semester_plan=semester_plan,
+        completed_courses=completed_courses,
+    )
     effective_completed_courses = _effective_completed_courses_after_plan(completed_courses, semester_plan)
 
     # Enforce hard cap on total terms
     if len(semester_plan) > max_terms_remaining:
         semester_plan = semester_plan[:max_terms_remaining]
+    _apply_latest_attempt_credit_rule(
+        catalog=catalog,
+        semester_plan=semester_plan,
+        completed_courses=completed_courses,
+    )
 
     minor_alerts = _compute_minor_alerts(
         catalog=catalog,
@@ -4874,13 +5050,14 @@ def _apply_plan_overrides(
         term = a.get("term")
         instance_id = a.get("instance_id")
         gen_ed_category = a.get("gen_ed_category")
+        is_retake = bool(a.get("is_retake"))
         if not code or not term:
             continue
         normalized_code = _normalize_course_code(code)
-        if normalized_code in completed_courses and normalized_code not in retake_set:
+        if not is_retake and normalized_code in completed_courses and normalized_code not in retake_set:
             override_warnings.append(_make_warning("OVERRIDE_ADD_ALREADY_COMPLETED", course=code, term=term))
             continue
-        if code in excel_only_codes:
+        if code in excel_only_codes and not is_retake:
             offered_terms = _offered_terms_for_course(code)
             normalized_target = _normalize_term_for_compare(_normalize_term_label(term) or term)
             if offered_terms and normalized_target and not any(
@@ -4909,20 +5086,35 @@ def _apply_plan_overrides(
         if term not in term_map:
             ensure_term(term)
         # Preserve existing occurrences for explicit retakes.
-        if normalized_code not in retake_set:
+        if not is_retake and normalized_code not in retake_set:
             for t in semester_plan:
                 if t["term"] == term:
                     continue
                 t["courses"] = [c for c in t["courses"] if c.get("code") != code]
         if instance_id:
-            exists = any(
-                c.get("instance_id") == instance_id or c.get("code") == code
-                for c in term_map[term]["courses"]
-            )
+            if is_retake:
+                exists = any(c.get("instance_id") == instance_id for c in term_map[term]["courses"])
+            else:
+                exists = any(
+                    c.get("instance_id") == instance_id or c.get("code") == code
+                    for c in term_map[term]["courses"]
+                )
         else:
-            exists = any(c.get("code") == code for c in term_map[term]["courses"])
+            if is_retake:
+                exists = False
+            else:
+                exists = any(c.get("code") == code for c in term_map[term]["courses"])
         if not exists:
-            if gen_ed_category:
+            if is_retake:
+                retake_obj = ensure_course_obj(code, term=term, instance_id=instance_id)
+                tags = retake_obj.get("tags") if isinstance(retake_obj.get("tags"), list) else []
+                tags = [tag for tag in tags if isinstance(tag, str)]
+                if "Retake" not in tags:
+                    tags.append("Retake")
+                retake_obj["tags"] = tags
+                retake_obj["is_retake"] = True
+                term_map[term]["courses"].append(retake_obj)
+            elif gen_ed_category:
                 source_reasons[code] = SOURCE_REASON_GENED
                 term_map[term]["courses"].append({
                     "code": code,
@@ -4939,6 +5131,11 @@ def _apply_plan_overrides(
 
     semester_plan = _dedupe_semester_plan(catalog, semester_plan, completed_courses)
     _ensure_instance_ids(semester_plan)
+    _apply_latest_attempt_credit_rule(
+        catalog=catalog,
+        semester_plan=semester_plan,
+        completed_courses=completed_courses,
+    )
 
     # Recompute credits and enforce max/min via warnings and FREE ELECTIVE placeholders
     used_codes: Set[str] = set()
@@ -4970,10 +5167,22 @@ def _apply_plan_overrides(
         term_obj["credits"] += 3
         return True
 
+    def term_has_only_retakes(term_obj: Dict) -> bool:
+        courses = term_obj.get("courses", []) or []
+        has_retake = False
+        for course in courses:
+            if not isinstance(course, dict):
+                return False
+            if course.get("is_retake") is True and _planned_course_credits(catalog, course) == 0:
+                has_retake = True
+                continue
+            return False
+        return has_retake
+
     for term_obj in semester_plan:
         credits = 0
         for c in term_obj["courses"]:
-            credits += int(c.get("credits") or 3)
+            credits += _planned_course_credits(catalog, c)
         term_obj["credits"] = credits
         occupied_credits = occupied_credits_for_term(term_obj.get("term", ""))
         total_credits = credits + occupied_credits
@@ -4989,6 +5198,8 @@ def _apply_plan_overrides(
                 )
             )
         if total_credits < min_credits:
+            if term_has_only_retakes(term_obj):
+                continue
             # top up only planned credits budget left after in-progress occupancy.
             if term_obj.get("term") not in suppressed_terms:
                 while term_obj["credits"] < available_min:

@@ -13,6 +13,7 @@ export interface Course {
   electiveNotes?: string[];
   courseType?: 'PROGRAM' | 'GENED' | 'FREE' | 'FOUNDATION' | 'FREE_ELECTIVE';
   sourceReason?: string;
+  isRetake?: boolean;
   prereqWarning?: {
     unmet: string[];
   };
@@ -27,6 +28,14 @@ export interface ManualCreditEntry {
   gened_category?: string;
   program?: string;
   note?: string;
+}
+
+export interface RetakeEntry {
+  instance_id: string;
+  code: string;
+  term: string;
+  status: "PLANNED" | "IN_PROGRESS" | "COMPLETED";
+  label: "Retake";
 }
 
 export interface Major {

@@ -51,6 +51,7 @@ class PlanOverrideAdd(BaseModel):
     code: str
     instance_id: Optional[str] = None
     gen_ed_category: Optional[str] = None
+    is_retake: bool = False
 
 class PlanOverrideRemove(BaseModel):
     term: Optional[str] = None  # if None, remove from any term
@@ -92,6 +93,7 @@ class PlanCourse(BaseModel):
     type: str
     source_reason: str
     instance_id: str
+    is_retake: Optional[bool] = None
 
 class SemesterPlan(BaseModel):
     term: str

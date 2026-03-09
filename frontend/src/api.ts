@@ -1,4 +1,4 @@
-import type { ManualCreditEntry } from "./types";
+import type { ManualCreditEntry, RetakeEntry } from "./types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -129,7 +129,7 @@ export async function listCourses(term?: string): Promise<CourseCatalogRecord[]>
 }
 
 
-export interface PlanOverrideAdd { term: string; code: string; instance_id?: string | null; gen_ed_category?: string | null; }
+export interface PlanOverrideAdd { term: string; code: string; instance_id?: string | null; gen_ed_category?: string | null; is_retake?: boolean; }
 export interface PlanOverrideRemove { term?: string | null; code?: string | null; instance_id?: string | null; }
 export interface PlanOverrideMove { from_term: string; to_term: string; code?: string | null; instance_id?: string | null; }
 
@@ -174,6 +174,7 @@ export interface ProgramSnapshotPayload {
   waived_eng1000: boolean;
   strict_prereqs: boolean;
   retakeCourses: string[];
+  retakeEntries: RetakeEntry[];
   current_term_label?: string | null;
   lastRolloverTermApplied?: string;
 }
@@ -229,6 +230,7 @@ export interface PlanCourse {
   type: "PROGRAM" | "GENED" | "FREE" | "FOUNDATION" | "FREE_ELECTIVE";
   source_reason?: string;
   instance_id: string;
+  is_retake?: boolean;
 }
 
 export interface MinorAlert {

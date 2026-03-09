@@ -33,6 +33,32 @@ def _manual_credit_label(entry: Dict[str, Any]) -> str:
         suffix = "Transfer Credit; Free Elective"
     return f"OTH 0001 - {suffix} ({credits} cr)"
 
+
+def _course_label_for_pdf(course: Dict[str, Any]) -> str:
+    code = str(course.get("code") or "").strip()
+    name = str(course.get("name") or "").strip()
+    tags = course.get("tags") if isinstance(course.get("tags"), list) else []
+    credits = int(course.get("credits", 0) or 0)
+    is_retake = bool(course.get("is_retake")) or any(
+        isinstance(tag, str) and tag.strip().lower() == "retake"
+        for tag in tags
+    )
+    is_previous_attempt = any(
+        isinstance(tag, str) and tag.strip().lower() == "previous attempt"
+        for tag in tags
+    )
+    if not code:
+        return ""
+    if is_previous_attempt:
+        if name and name != code:
+            return f"{code} - {name} (Replaced by Retake, 0 cr)"
+        return f"{code} (Replaced by Retake, 0 cr)"
+    if is_retake:
+        if name and name != code:
+            return f"{code} - {name} (Retake, {credits} cr)"
+        return f"{code} (Retake, {credits} cr)"
+    return code
+
 def plan_to_pdf_bytes(plan: Dict) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=letter, title="Degree Plan")
@@ -68,9 +94,9 @@ def plan_to_pdf_bytes(plan: Dict) -> bytes:
         row = term_rows.setdefault(term, {"courses": [], "credits": 0})
         for c in sem.get("courses", []):
             if isinstance(c, dict):
-                code = c.get("code", "")
-                if code:
-                    row["courses"].append(str(code))
+                label = _course_label_for_pdf(c)
+                if label:
+                    row["courses"].append(label)
             elif c:
                 row["courses"].append(str(c))
         row["credits"] += int(sem.get("credits", 0) or 0)

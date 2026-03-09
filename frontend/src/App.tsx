@@ -11,7 +11,7 @@ import {
   type ProgramSnapshotSwappedElective,
   type UploadCatalogResponse,
 } from './api';
-import type { ManualCreditEntry } from './types';
+import type { ManualCreditEntry, RetakeEntry } from './types';
 
 type Screen = 'welcome' | 'setup' | 'advisor';
 
@@ -27,6 +27,7 @@ interface AcademicSelection {
   lastRolloverTermApplied?: string;
   strictPrereqs?: boolean;
   retakeCourses?: string[];
+  retakeEntries?: RetakeEntry[];
   maxCreditsPerSemester: number;
   startTermSeason: string;
   startTermYear: number;
@@ -156,6 +157,32 @@ const normalizeManualCredits = (value: unknown): ManualCreditEntry[] => {
     );
 };
 
+const normalizeRetakeEntries = (value: unknown): RetakeEntry[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
+    .map((entry) => {
+      const instanceId = typeof entry.instance_id === 'string' ? entry.instance_id.trim() : '';
+      const code = typeof entry.code === 'string' ? entry.code.trim().toUpperCase() : '';
+      const term = typeof entry.term === 'string' ? entry.term.trim() : '';
+      const statusRaw = typeof entry.status === 'string' ? entry.status.trim().toUpperCase() : '';
+      const status: RetakeEntry['status'] =
+        statusRaw === 'COMPLETED'
+          ? 'COMPLETED'
+          : statusRaw === 'IN_PROGRESS'
+            ? 'IN_PROGRESS'
+            : 'PLANNED';
+      return {
+        instance_id: instanceId,
+        code,
+        term,
+        status,
+        label: 'Retake' as const,
+      };
+    })
+    .filter((entry) => entry.instance_id.length > 0 && entry.code.length > 0 && entry.term.length > 0);
+};
+
 const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload => {
   const raw = value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -169,6 +196,22 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
       ? raw.economicsIntermediateChoice
       : null;
 
+  const normalizedOverrides = normalizePlanOverrides(raw.overrides);
+  const retakeEntriesFromOverrides = normalizedOverrides.add
+    .filter((entry) => entry.is_retake === true)
+    .map((entry) => ({
+      instance_id: entry.instance_id?.trim() ?? '',
+      code: typeof entry.code === 'string' ? entry.code.trim().toUpperCase() : '',
+      term: typeof entry.term === 'string' ? entry.term.trim() : '',
+      status: 'PLANNED' as const,
+      label: 'Retake' as const,
+    }))
+    .filter((entry) => entry.instance_id.length > 0 && entry.code.length > 0 && entry.term.length > 0);
+  const normalizedRetakeEntries = normalizeRetakeEntries(raw.retakeEntries);
+  const retakeEntries = normalizedRetakeEntries.length > 0
+    ? normalizedRetakeEntries
+    : retakeEntriesFromOverrides;
+
   return {
     majors: toStringArray(raw.majors),
     minors: toStringArray(raw.minors),
@@ -178,7 +221,7 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
     manualCredits: normalizeManualCredits(raw.manualCredits),
     completedOverrides: toStringMap(raw.completedOverrides),
     inProgressOverrides: toStringMap(raw.inProgressOverrides),
-    overrides: normalizePlanOverrides(raw.overrides),
+    overrides: normalizedOverrides,
     swappedElectives: normalizeSwappedElectives(raw.swappedElectives),
     removedCourses: toStringArray(raw.removedCourses),
     start_term_season: startSeason,
@@ -194,6 +237,7 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
     waived_eng1000: raw.waived_eng1000 === true,
     strict_prereqs: raw.strict_prereqs === true,
     retakeCourses: toStringArray(raw.retakeCourses),
+    retakeEntries,
     current_term_label: typeof raw.current_term_label === 'string' ? raw.current_term_label : null,
     lastRolloverTermApplied:
       typeof raw.lastRolloverTermApplied === 'string' && raw.lastRolloverTermApplied.trim().length > 0
@@ -223,6 +267,7 @@ export default function App() {
     lastRolloverTermApplied: undefined,
     strictPrereqs: false,
     retakeCourses: [],
+    retakeEntries: [],
     maxCreditsPerSemester: DEFAULT_MAX_CREDITS,
     startTermSeason: "Fall",
     startTermYear: new Date().getFullYear(),
@@ -273,6 +318,7 @@ export default function App() {
           lastRolloverTermApplied: normalized.lastRolloverTermApplied,
           strictPrereqs: normalized.strict_prereqs,
           retakeCourses: normalized.retakeCourses,
+          retakeEntries: normalized.retakeEntries,
           maxCreditsPerSemester: normalized.max_credits_per_semester,
           startTermSeason: normalized.start_term_season,
           startTermYear: normalized.start_term_year,
