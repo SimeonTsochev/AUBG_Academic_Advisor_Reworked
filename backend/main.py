@@ -33,7 +33,7 @@ from excel_course_catalog import (
     search_courses as search_excel_courses,
     list_courses as list_excel_courses,
 )
-from snapshots_db import SnapshotExpiredError, create_snapshot, get_snapshot, init_db
+from snapshots_db import SnapshotExpiredError, create_snapshot, get_snapshot, init_db, snapshot_storage_enabled
 
 app = FastAPI(title="AUBG Academic Advisor API", version="0.1.0")
 
@@ -177,6 +177,9 @@ def _startup_preload_excel_course_universe() -> None:
 
 @app.on_event("startup")
 def _startup_init_snapshot_db() -> None:
+    if not snapshot_storage_enabled():
+        logging.warning("Program snapshot storage disabled: Supabase environment variables are not configured.")
+        return
     init_db()
     logging.info("Program snapshot database initialized.")
 
@@ -306,6 +309,15 @@ def _catalog_course_meta_for_response(catalog: Dict[str, Any]) -> Dict[str, Dict
         entry["is_excel_only"] = code in excel_only_codes
     return merged
 
+def _ensure_snapshot_storage_available() -> None:
+    if snapshot_storage_enabled():
+        return
+    raise HTTPException(
+        status_code=503,
+        detail="Program snapshot storage is disabled because Supabase is not configured.",
+    )
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -313,6 +325,7 @@ def health():
 
 @app.post("/program-snapshots", response_model=CreateSnapshotResponse)
 def program_snapshots_create(req: CreateSnapshotRequest):
+    _ensure_snapshot_storage_available()
     payload_json = json.dumps(req.payload, separators=(",", ":"), ensure_ascii=False)
     if len(payload_json.encode("utf-8")) > 1_000_000:
         raise HTTPException(status_code=413, detail="Snapshot payload is too large.")
@@ -328,6 +341,7 @@ def program_snapshots_create(req: CreateSnapshotRequest):
 
 @app.get("/program-snapshots/{token}", response_model=GetSnapshotResponse)
 def program_snapshots_get(token: str):
+    _ensure_snapshot_storage_available()
     try:
         snapshot = get_snapshot(token)
     except SnapshotExpiredError:

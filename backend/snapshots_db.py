@@ -17,6 +17,13 @@ class SnapshotExpiredError(KeyError):
     pass
 
 
+def snapshot_storage_enabled() -> bool:
+    return bool(
+        os.getenv("SUPABASE_URL", "").strip()
+        and os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
+
+
 def _now_ts() -> int:
     return int(time.time())
 
