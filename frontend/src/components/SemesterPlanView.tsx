@@ -1039,7 +1039,7 @@ export function SemesterPlanView({
                           Remove
                         </button>
                       )}
-                      {onMoveCourse && course.status === 'remaining' && !transferCredit && !retake && (
+                      {onMoveCourse && course.status === 'remaining' && !transferCredit && (
                         <button
                           type="button"
                           onClick={() => onMoveCourse(course.instanceId)}

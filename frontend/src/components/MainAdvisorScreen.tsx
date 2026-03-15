@@ -3828,7 +3828,6 @@ export function MainAdvisorScreen({
   const handleMoveCourse = (instanceId: string) => {
     const picked = courseObjects.find((course) => course.instanceId === instanceId) ?? null;
     if (!picked || picked.status !== 'remaining') return;
-    if (picked.isRetake) return;
 
     if (!pendingSwapSourceInstanceId) {
       setMoveCourseWarning(null);
@@ -3985,6 +3984,32 @@ export function MainAdvisorScreen({
       return null;
     };
 
+    const moveRetakeInstance = (retakeCourse: Course, targetTerm: string) => {
+      setRetakeEntries((prev) =>
+        prev.map((entry) =>
+          entry.instance_id === retakeCourse.instanceId
+            ? { ...entry, term: targetTerm }
+            : entry
+        )
+      );
+      setOverrides((prev) => ({
+        ...prev,
+        add: (prev.add ?? []).map((entry) =>
+          entry.instance_id === retakeCourse.instanceId && entry.is_retake === true
+            ? { ...entry, term: targetTerm }
+            : entry
+        ),
+        move: (prev.move ?? []).filter((entry) => entry.instance_id !== retakeCourse.instanceId),
+      }));
+      setSwappedElectives((prev) =>
+        prev.map((entry) =>
+          entry.addedCourseInstanceId === retakeCourse.instanceId
+            ? { ...entry, termLabel: targetTerm }
+            : entry
+        )
+      );
+    };
+
     const sourcePlacementIssue = validateCoursePlacement(source, picked.semester);
     if (sourcePlacementIssue) {
       setMoveCourseWarning(sourcePlacementIssue);
@@ -4013,8 +4038,18 @@ export function MainAdvisorScreen({
       return;
     }
 
-    addOverrideMove(source.semester, picked.semester, source.code, source.instanceId);
-    addOverrideMove(picked.semester, source.semester, picked.code, picked.instanceId);
+    if (source.isRetake) {
+      moveRetakeInstance(source, picked.semester);
+    } else {
+      addOverrideMove(source.semester, picked.semester, source.code, source.instanceId);
+    }
+
+    if (picked.isRetake) {
+      moveRetakeInstance(picked, source.semester);
+    } else {
+      addOverrideMove(picked.semester, source.semester, picked.code, picked.instanceId);
+    }
+
     setMoveCourseWarning(null);
     setPendingSwapSourceInstanceId(null);
     setMessages((prev) => [
@@ -5359,6 +5394,19 @@ export function MainAdvisorScreen({
       isRetake: true,
     });
     if (!committed) return;
+    const retakeInstanceId = pendingAtomicAddRef.current?.expectedInstanceId;
+    if (typeof retakeInstanceId === 'string' && retakeInstanceId.trim().length > 0) {
+      setRetakeEntries((prev) => [
+        ...prev,
+        {
+          instance_id: retakeInstanceId,
+          code,
+          term,
+          status: 'PLANNED',
+          label: 'Retake',
+        },
+      ]);
+    }
     setPendingRetakeCourse(null);
   };
 
