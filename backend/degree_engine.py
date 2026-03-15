@@ -1057,6 +1057,14 @@ def _catalog_courses(catalog: Dict) -> Set[str]:
     return {code for code in catalog.get("courses", {}).keys() if isinstance(code, str)}
 
 
+def _excel_catalog_by_code(catalog: Dict) -> Dict[str, Dict[str, Any]]:
+    excel_catalog = catalog.get("excel_catalog") or catalog.get("excel_course_catalog") or {}
+    by_code = excel_catalog.get("by_code") if isinstance(excel_catalog, dict) else {}
+    if not isinstance(by_code, dict):
+        return {}
+    return by_code
+
+
 def _planning_course_pool(catalog: Dict) -> Set[str]:
     courses = set(_catalog_courses(catalog))
     # Opt into Excel-only GenEd courses only when a paired Excel catalog is present.
@@ -1071,7 +1079,11 @@ def _planning_course_pool(catalog: Dict) -> Set[str]:
     if isinstance(gen_ed.get("categories"), dict):
         categories.update([c for c in gen_ed["categories"].keys() if isinstance(c, str)])
 
-    for code in get_excel_course_codes():
+    excel_codes = set(_excel_catalog_by_code(catalog).keys())
+    if not excel_codes:
+        excel_codes = get_excel_course_codes()
+
+    for code in excel_codes:
         if not isinstance(code, str):
             continue
         cats = _course_gened_categories(catalog, code)
@@ -1087,7 +1099,10 @@ def _course_entry(catalog: Dict, code: str) -> Dict:
     return catalog.get("courses", {}).get(code, {})
 
 
-def _excel_course_record(code: str) -> Dict:
+def _excel_course_record(catalog: Dict, code: str) -> Dict:
+    course = _excel_catalog_by_code(catalog).get(code)
+    if isinstance(course, dict):
+        return course
     course = get_excel_course_record(code)
     if isinstance(course, dict):
         return course
@@ -1095,7 +1110,7 @@ def _excel_course_record(code: str) -> Dict:
 
 
 def _course_is_wic(catalog: Dict, code: str) -> bool:
-    excel_wic = _excel_course_record(code).get("wic")
+    excel_wic = _excel_course_record(catalog, code).get("wic")
     if isinstance(excel_wic, bool):
         return excel_wic
     meta = catalog.get("course_meta", {}).get(code, {})
@@ -1116,7 +1131,7 @@ def _planned_course_tags(catalog: Dict, code: str) -> List[str]:
 
 
 def _course_name(catalog: Dict, code: str) -> str:
-    excel_title = _excel_course_record(code).get("title")
+    excel_title = _excel_course_record(catalog, code).get("title")
     if isinstance(excel_title, str) and excel_title:
         return excel_title
     meta_title = catalog.get("course_meta", {}).get(code, {}).get("title")
@@ -1126,7 +1141,7 @@ def _course_name(catalog: Dict, code: str) -> str:
 
 
 def _course_credits(catalog: Dict, code: str) -> int:
-    excel_credits = _excel_course_record(code).get("credits")
+    excel_credits = _excel_course_record(catalog, code).get("credits")
     if isinstance(excel_credits, (int, float)) and excel_credits > 0:
         return int(excel_credits)
     meta = catalog.get("course_meta", {}).get(code, {})
@@ -1141,7 +1156,7 @@ def _course_credits(catalog: Dict, code: str) -> int:
 
 
 def _course_gened_categories(catalog: Dict, code: str) -> List[str]:
-    excel = _excel_course_record(code)
+    excel = _excel_course_record(catalog, code)
     excel_tags = _coerce_gened_labels(excel.get("gen_ed_tags"))
     if excel_tags:
         return _canonicalize_gened_labels(catalog, excel_tags)
@@ -1972,7 +1987,7 @@ def _completed_credit_total(catalog: Dict, completed: Set[str]) -> int:
         if _is_free_elective(code):
             total += 3
             continue
-        if code not in base_catalog_courses and not _excel_course_record(code):
+        if code not in base_catalog_courses and not _excel_course_record(catalog, code):
             continue
         total += _course_credits(catalog, code)
     return total
@@ -3917,6 +3932,8 @@ def validate_plan(
             + (f" Examples: {sample}" if sample else "")
         )
 
+    errors.extend(_textual_analysis_sequence_errors(catalog, semester_plan, completed_courses))
+
     return errors
 
 
@@ -3941,6 +3958,52 @@ def _effective_completed_courses_after_plan(
                 continue
             effective.discard(normalized)
     return effective
+
+
+def _textual_analysis_sequence_errors(
+    catalog: Dict,
+    semester_plan: List[Dict],
+    completed_courses: Set[str],
+) -> List[str]:
+    principles_label = "Principles of Textual Analysis"
+    case_studies_label = "Case Studies in Textual Analysis"
+    lookup = _catalog_gened_lookup(catalog)
+    if principles_label.lower() not in lookup or case_studies_label.lower() not in lookup:
+        return []
+
+    principles_satisfied_earlier = any(
+        principles_label in _course_gened_categories(catalog, code)
+        for code in completed_courses
+        if isinstance(code, str)
+    )
+
+    errors: List[str] = []
+    ordered_terms = sorted(semester_plan or [], key=lambda t: _term_label_index(t.get("term", "")))
+    for term in ordered_terms:
+        term_label = str(term.get("term") or "").strip()
+        has_principles_this_term = False
+        has_case_studies_this_term = False
+        for course in term.get("courses", []) or []:
+            if not isinstance(course, dict):
+                continue
+            code = course.get("code")
+            if not isinstance(code, str):
+                continue
+            categories = _course_gened_categories(catalog, code)
+            if principles_label in categories:
+                has_principles_this_term = True
+            if case_studies_label in categories:
+                has_case_studies_this_term = True
+
+        if has_case_studies_this_term and not principles_satisfied_earlier:
+            errors.append(
+                f"{case_studies_label} must be scheduled after {principles_label} "
+                f"(invalid term: {term_label})."
+            )
+        if has_principles_this_term:
+            principles_satisfied_earlier = True
+
+    return errors
 
 
 def _gen_ed_status(
@@ -4894,7 +4957,7 @@ def _apply_plan_overrides(
             )
         if terms:
             return list(dict.fromkeys(terms))
-        excel_record = _excel_course_record(code)
+        excel_record = _excel_course_record(catalog, code)
         excel_terms = excel_record.get("semester_availability") if isinstance(excel_record, dict) else None
         if isinstance(excel_terms, list):
             terms.extend(
@@ -5027,6 +5090,8 @@ def _apply_plan_overrides(
                 )
             )
             continue
+        original_from_courses = list(term_map[from_term]["courses"])
+        original_to_courses = list(term_map[to_term]["courses"])
         if instance_id:
             term_map[from_term]["courses"] = [
                 c for c in from_courses if c.get("instance_id") != instance_id
@@ -5043,6 +5108,17 @@ def _apply_plan_overrides(
             exists = False
         if not exists:
             term_map[to_term]["courses"].append(course_obj)
+        sequence_errors = _textual_analysis_sequence_errors(catalog, semester_plan, completed_courses)
+        if sequence_errors:
+            term_map[from_term]["courses"] = original_from_courses
+            term_map[to_term]["courses"] = original_to_courses
+            override_warnings.append(
+                _make_warning(
+                    "OVERRIDE_MOVE_INELIGIBLE",
+                    course=code,
+                    **{"from": from_term, "to": to_term},
+                )
+            )
 
     # Apply adds
     for a in adds:
@@ -5074,7 +5150,7 @@ def _apply_plan_overrides(
                 )
                 continue
         manual_gened_override_known = bool(gen_ed_category) and bool(
-            _excel_course_record(normalized_code)
+            _excel_course_record(catalog, normalized_code)
         )
         if not _is_free_elective(code) and code not in allowed_auto:
             if code not in catalog_courses and not manual_gened_override_known:

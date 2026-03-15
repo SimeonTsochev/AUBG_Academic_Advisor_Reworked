@@ -4,14 +4,12 @@ from fastapi import FastAPI, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from typing import Any, Dict, Optional
-import uuid
 import json
 import inspect
-from pathlib import Path
 import logging
 import os
 
-from catalog_parser import parse_catalog
+from catalog_cache import getCatalogCache
 from degree_engine import generate_plan
 from pdf_export import plan_to_pdf_bytes
 from models import (
@@ -22,13 +20,7 @@ from models import (
     CreateSnapshotResponse,
     GetSnapshotResponse,
 )
-from excel_catalog import (
-    load_excel_catalog,
-    compute_catalog_integrity,
-    get_excel_course_codes,
-)
 from excel_course_catalog import (
-    load_course_catalog as load_excel_course_universe,
     get_course as get_excel_course_record,
     search_courses as search_excel_courses,
     list_courses as list_excel_courses,
@@ -36,13 +28,6 @@ from excel_course_catalog import (
 from snapshots_db import SnapshotExpiredError, create_snapshot, get_snapshot, init_db, snapshot_storage_enabled
 
 app = FastAPI(title="AUBG Academic Advisor API", version="0.1.0")
-
-# CORS:
-# - default: local frontend dev servers
-# - override with CORS_ORIGINS="https://app.example.com,https://admin.example.com"
-# - set CORS_ALLOW_ALL=true to allow all origins
-from fastapi.middleware.cors import CORSMiddleware
-import os
 
 DEFAULT_CORS_ORIGINS = [
     "http://localhost:3000",
@@ -67,19 +52,6 @@ app.add_middleware(
 )
 
 CATALOGS: Dict[str, Dict] = {}
-DEFAULT_CATALOG_PATH = Path(__file__).resolve().parent / "AY-2025-26-3rd-ed.pdf"
-DEFAULT_CATALOG: Optional[Dict] = None
-DEFAULT_CATALOG_ID: Optional[str] = None
-DEFAULT_CATALOG_MTIME: Optional[float] = None
-DEFAULT_CATALOG_VERSION: Optional[str] = None
-DEFAULT_CATALOG_YEAR = "2025-26"
-PARSER_VERSION = "2026-02-17-prereq-expr-v3"
-EXCEL_CATALOG_BASENAME = "course_catalog_012526"
-EXCEL_CATALOG_PATHS = [
-    Path(__file__).resolve().parent / f"{EXCEL_CATALOG_BASENAME}.xlsx",
-    Path(__file__).resolve().parent / f"{EXCEL_CATALOG_BASENAME}.xls",
-]
-EXCEL_COURSE_UNIVERSE_PATH: Optional[Path] = None
 FORCE_OPTIMIZE_PLAN = True
 FORCE_OPTIMIZATION_PASSES = 25
 INTERACTIVE_OPTIMIZATION_PASSES = 8
@@ -144,35 +116,21 @@ def _generate_plan_with_compatible_kwargs(catalog: Dict[str, Any], req: Generate
     return generate_plan(**kwargs)
 
 
-def _resolve_excel_catalog_path() -> Optional[Path]:
-    for path in EXCEL_CATALOG_PATHS:
-        if path.exists():
-            return path
-    return None
-
-
-def _ensure_excel_course_universe_loaded() -> Path:
-    global EXCEL_COURSE_UNIVERSE_PATH
-    excel_path = _resolve_excel_catalog_path()
-    if excel_path is None:
-        candidates = ", ".join(str(path) for path in EXCEL_CATALOG_PATHS)
-        raise RuntimeError(
-            f"Excel course catalog was not found. Checked: {candidates}"
-        )
+def _require_catalog_cache():
     try:
-        load_excel_course_universe(excel_path)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to load Excel course catalog from '{excel_path}': {exc}"
-        ) from exc
-    EXCEL_COURSE_UNIVERSE_PATH = excel_path
-    return excel_path
+        return getCatalogCache()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.on_event("startup")
-def _startup_preload_excel_course_universe() -> None:
-    excel_path = _ensure_excel_course_universe_loaded()
-    logging.info("Excel course universe preloaded from %s.", excel_path)
+def _startup_preload_catalog_cache() -> None:
+    cache = getCatalogCache()
+    logging.info(
+        "Backend startup preload complete for catalog_year=%s in %.2f ms.",
+        cache.catalog_year,
+        cache.preload_ms,
+    )
 
 
 @app.on_event("startup")
@@ -183,49 +141,10 @@ def _startup_init_snapshot_db() -> None:
     init_db()
     logging.info("Program snapshot database initialized.")
 
+
 def _load_default_catalog() -> Dict:
-    global DEFAULT_CATALOG, DEFAULT_CATALOG_ID, DEFAULT_CATALOG_MTIME, DEFAULT_CATALOG_VERSION
-    try:
-        excel_path = _ensure_excel_course_universe_loaded()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    if not DEFAULT_CATALOG_PATH.exists():
-        raise HTTPException(status_code=500, detail=f"Default catalog not found: {DEFAULT_CATALOG_PATH}")
-    mtime = DEFAULT_CATALOG_PATH.stat().st_mtime
-    if (
-        DEFAULT_CATALOG is not None
-        and DEFAULT_CATALOG_MTIME == mtime
-        and DEFAULT_CATALOG_VERSION == PARSER_VERSION
-    ):
-        return DEFAULT_CATALOG
-    try:
-        with open(DEFAULT_CATALOG_PATH, "rb") as f:
-            catalog = parse_catalog(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Catalog parsing failed: {e}")
-    excel_catalog = load_excel_catalog(excel_path)
-    catalog["excel_catalog"] = excel_catalog
-    pdf_codes = set(catalog.get("courses", {}).keys())
-    excel_codes = get_excel_course_codes(excel_catalog)
-    if excel_codes:
-        integrity = compute_catalog_integrity(pdf_codes, excel_codes)
-        catalog["excel_integrity"] = integrity
-        if integrity["excel_only"] or integrity["pdf_only"]:
-            logging.warning(
-                "Excel/PDF catalog mismatch (excel_only=%s, pdf_only=%s)",
-                len(integrity["excel_only"]),
-                len(integrity["pdf_only"]),
-            )
-    else:
-        catalog["excel_integrity"] = {"excel_only": [], "pdf_only": []}
-    catalog["catalog_year"] = DEFAULT_CATALOG_YEAR
-    DEFAULT_CATALOG = catalog
-    DEFAULT_CATALOG_MTIME = mtime
-    DEFAULT_CATALOG_VERSION = PARSER_VERSION
-    PLAN_CACHE.clear()
-    if DEFAULT_CATALOG_ID is None:
-        DEFAULT_CATALOG_ID = str(uuid.uuid4())
-    return catalog
+    return _require_catalog_cache().default_catalog
+
 
 def _ensure_catalog(catalog_id: str) -> Dict:
     catalog = CATALOGS.get(catalog_id)
@@ -362,10 +281,7 @@ def courses_search(
     term: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
 ):
-    try:
-        _ensure_excel_course_universe_loaded()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    _require_catalog_cache()
     excel_only_codes = _excel_only_code_set()
     results = search_excel_courses(query=q, term=term, limit=limit)
     return [_with_excel_only_flag(record, excel_only_codes) for record in results]
@@ -373,10 +289,7 @@ def courses_search(
 
 @app.get("/courses")
 def courses_list(term: Optional[str] = None):
-    try:
-        _ensure_excel_course_universe_loaded()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    _require_catalog_cache()
     excel_only_codes = _excel_only_code_set()
     results = list_excel_courses(term=term)
     return [_with_excel_only_flag(record, excel_only_codes) for record in results]
@@ -384,10 +297,7 @@ def courses_list(term: Optional[str] = None):
 
 @app.get("/courses/{code}")
 def courses_get(code: str):
-    try:
-        _ensure_excel_course_universe_loaded()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    _require_catalog_cache()
 
     course = get_excel_course_record(code)
     if not course:
@@ -397,15 +307,17 @@ def courses_get(code: str):
 
 
 @app.get("/catalog/load-default", response_model=UploadCatalogResponse)
+@app.post("/catalog/load-default", response_model=UploadCatalogResponse, include_in_schema=False)
 def load_default_catalog():
+    cache = _require_catalog_cache()
     catalog = _load_default_catalog()
-    catalog_id = DEFAULT_CATALOG_ID or str(uuid.uuid4())
+    catalog_id = cache.default_catalog_id
     CATALOGS[catalog_id] = catalog
     excel_only_codes = sorted(_excel_only_code_set(catalog))
 
     return UploadCatalogResponse(
         catalog_id=catalog_id,
-        catalog_year=DEFAULT_CATALOG_YEAR,
+        catalog_year=cache.catalog_year,
         majors=list(catalog.get("majors", {}).keys()),
         minors=list(catalog.get("minors", {}).keys()),
         courses=_catalog_courses_for_response(catalog),
@@ -419,16 +331,9 @@ def load_default_catalog():
 def catalog_integrity(catalog_id: str):
     catalog = _ensure_catalog(catalog_id)
     integrity = catalog.get("excel_integrity")
-    if not isinstance(integrity, dict):
-        pdf_codes = set(catalog.get("courses", {}).keys())
-        excel_catalog = catalog.get("excel_catalog") or {}
-        excel_codes = get_excel_course_codes(excel_catalog)
-        if excel_codes:
-            integrity = compute_catalog_integrity(pdf_codes, excel_codes)
-        else:
-            integrity = {"excel_only": [], "pdf_only": []}
-        catalog["excel_integrity"] = integrity
-    return integrity
+    if isinstance(integrity, dict):
+        return integrity
+    return {"excel_only": [], "pdf_only": []}
 
 # Legacy upload endpoint (kept for future multi-university support)
 """

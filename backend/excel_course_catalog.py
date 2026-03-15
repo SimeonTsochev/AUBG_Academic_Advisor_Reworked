@@ -10,6 +10,11 @@ courses_by_code: Dict[str, Dict[str, Any]] = {}
 _courses_sorted: List[Dict[str, Any]] = []
 _loaded_path: Optional[str] = None
 _loaded_mtime: Optional[float] = None
+_catalog_payload: Dict[str, Any] = {
+    "courses": [],
+    "by_code": {},
+    "codes": [],
+}
 
 _CODE_RE = re.compile(r"([A-Z]{2,4})\s*[-/]?\s*(\d{3,4}[A-Z]?)")
 _CREDITS_RE = re.compile(r"credits?\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*CR", re.IGNORECASE)
@@ -243,6 +248,7 @@ def _availability_indices(headers: List[str], reserved: set[int]) -> Dict[str, i
 def _clone_course(course: Dict[str, Any]) -> Dict[str, Any]:
     clone = dict(course)
     clone["area_of_study_tags"] = list(course.get("area_of_study_tags") or [])
+    clone["tags"] = list(course.get("tags") or [])
     clone["gen_ed_tags"] = list(course.get("gen_ed_tags") or [])
     clone["semester_availability"] = list(course.get("semester_availability") or [])
     availability_fields = course.get("availability_fields") or {}
@@ -266,6 +272,7 @@ def _merge_course(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[st
     merged["area_of_study_tags"] = list(
         dict.fromkeys((merged.get("area_of_study_tags") or []) + (incoming.get("area_of_study_tags") or []))
     )
+    merged["tags"] = list(dict.fromkeys((merged.get("tags") or []) + (incoming.get("tags") or [])))
     merged["gen_ed_tags"] = list(dict.fromkeys((merged.get("gen_ed_tags") or []) + (incoming.get("gen_ed_tags") or [])))
     merged["wic"] = bool(merged.get("wic") or incoming.get("wic"))
     merged["semester_availability"] = list(
@@ -287,11 +294,134 @@ def _build_search_blob(course: Dict[str, Any]) -> str:
     parts: List[str] = [
         course.get("code", ""),
         course.get("title", ""),
+        " ".join(course.get("tags") or []),
         " ".join(course.get("area_of_study_tags") or []),
         " ".join(course.get("gen_ed_tags") or []),
         " ".join(course.get("semester_availability") or []),
     ]
     return _normalize_space(" ".join([str(p) for p in parts if p])).lower()
+
+
+def _normalize_course_from_payload(raw_course: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw_course, dict):
+        return None
+
+    code = normalize_course_code(str(raw_course.get("code") or ""))
+    if not code:
+        return None
+
+    title = _clean_cell(raw_course.get("title")) or code
+    department = _clean_cell(raw_course.get("department")) or code.split(" ", 1)[0]
+    prefix = _clean_cell(raw_course.get("prefix")) or department
+    level = _clean_cell(raw_course.get("level"))
+
+    credits_raw = raw_course.get("credits")
+    credits = None
+    if isinstance(credits_raw, bool):
+        credits = None
+    elif isinstance(credits_raw, (int, float)) and credits_raw > 0:
+        credits = int(round(float(credits_raw)))
+    else:
+        parsed_credits = _parse_numeric(credits_raw)
+        if parsed_credits is not None and parsed_credits > 0:
+            credits = int(round(parsed_credits))
+
+    area_of_study_tags = [
+        _normalize_space(str(tag))
+        for tag in (raw_course.get("area_of_study_tags") or [])
+        if _normalize_space(str(tag))
+    ]
+    tags = [
+        _normalize_space(str(tag))
+        for tag in (raw_course.get("tags") or area_of_study_tags)
+        if _normalize_space(str(tag))
+    ]
+    gen_ed_tags = [
+        _normalize_space(str(tag))
+        for tag in (raw_course.get("gen_ed_tags") or [])
+        if _normalize_space(str(tag))
+    ]
+    semester_availability = [
+        _normalize_space(str(term))
+        for term in (raw_course.get("semester_availability") or [])
+        if _normalize_space(str(term))
+    ]
+
+    availability_fields_raw = raw_course.get("availability_fields") or {}
+    availability_fields: Dict[str, List[str]] = {}
+    if isinstance(availability_fields_raw, dict):
+        for key, values in availability_fields_raw.items():
+            cleaned_key = _clean_cell(key)
+            if not cleaned_key or not isinstance(values, list):
+                continue
+            cleaned_values = [
+                _normalize_space(str(value))
+                for value in values
+                if _normalize_space(str(value))
+            ]
+            if cleaned_values:
+                availability_fields[cleaned_key] = list(dict.fromkeys(cleaned_values))
+
+    record = {
+        "code": code,
+        "title": title,
+        "credits": credits,
+        "department": department,
+        "prefix": prefix,
+        "level": level,
+        "area_of_study_tags": list(dict.fromkeys(area_of_study_tags)),
+        "tags": list(dict.fromkeys(tags or area_of_study_tags)),
+        "gen_ed_tags": list(dict.fromkeys(gen_ed_tags)),
+        "wic": bool(raw_course.get("wic")),
+        "semester_availability": list(dict.fromkeys(semester_availability)),
+        "availability_fields": availability_fields,
+    }
+    record["_search_blob"] = _normalize_space(str(raw_course.get("_search_blob") or "")) or _build_search_blob(record)
+    return record
+
+
+def _normalize_catalog_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    by_code_raw = data.get("by_code")
+    course_entries: List[Dict[str, Any]] = []
+    if isinstance(by_code_raw, dict):
+        for raw_course in by_code_raw.values():
+            if isinstance(raw_course, dict):
+                course_entries.append(raw_course)
+    else:
+        for raw_course in data.get("courses") or []:
+            if isinstance(raw_course, dict):
+                course_entries.append(raw_course)
+
+    normalized_by_code: Dict[str, Dict[str, Any]] = {}
+    for raw_course in course_entries:
+        course = _normalize_course_from_payload(raw_course)
+        if course is None:
+            continue
+        existing = normalized_by_code.get(course["code"])
+        normalized_by_code[course["code"]] = _merge_course(existing, course) if existing else course
+
+    courses_sorted = [normalized_by_code[code] for code in sorted(normalized_by_code.keys())]
+    data["by_code"] = normalized_by_code
+    data["courses"] = courses_sorted
+    data["codes"] = [course["code"] for course in courses_sorted]
+    return data
+
+
+def _apply_catalog_payload(
+    payload: Dict[str, Any],
+    *,
+    source_label: Optional[str],
+    source_mtime: Optional[float],
+) -> int:
+    global courses_by_code, _courses_sorted, _loaded_path, _loaded_mtime, _catalog_payload
+
+    normalized = _normalize_catalog_payload(payload)
+    courses_by_code = normalized["by_code"]
+    _courses_sorted = normalized["courses"]
+    _loaded_path = source_label
+    _loaded_mtime = source_mtime
+    _catalog_payload = normalized
+    return len(courses_by_code)
 
 
 def _build_course_record(
@@ -328,6 +458,7 @@ def _build_course_record(
         "prefix": prefix,
         "level": level,
         "area_of_study_tags": area_tags,
+        "tags": list(area_tags),
         "gen_ed_tags": _gen_ed_from_area_tags(area_tags),
         "wic": _is_wic(area_tags, notes_value),
         "semester_availability": semester_availability,
@@ -337,17 +468,12 @@ def _build_course_record(
     return record
 
 
-def load_course_catalog(path: Path | str) -> int:
-    global courses_by_code, _courses_sorted, _loaded_path, _loaded_mtime
-
+def build_course_catalog_data(path: Path | str) -> Dict[str, Any]:
     source = Path(path)
     if not source.exists():
         raise RuntimeError(f"Excel course catalog not found: {source}")
 
     mtime = source.stat().st_mtime
-    if _loaded_path == str(source) and _loaded_mtime == mtime and courses_by_code:
-        return len(courses_by_code)
-
     headers, rows = _load_raw_rows(source)
     if not headers:
         raise RuntimeError(f"Excel course catalog is empty: {source}")
@@ -372,12 +498,41 @@ def load_course_catalog(path: Path | str) -> int:
         existing = parsed.get(code)
         parsed[code] = _merge_course(existing, record) if existing else record
 
-    courses_by_code = parsed
-    _courses_sorted = [courses_by_code[code] for code in sorted(courses_by_code.keys())]
-    _loaded_path = str(source)
-    _loaded_mtime = mtime
+    return {
+        "courses": [parsed[code] for code in sorted(parsed.keys())],
+        "by_code": parsed,
+        "codes": list(sorted(parsed.keys())),
+        "source_path": str(source),
+        "source_mtime": mtime,
+    }
+
+
+def load_course_catalog(path: Path | str) -> int:
+    source = Path(path)
+    mtime = source.stat().st_mtime
+    if _loaded_path == str(source) and _loaded_mtime == mtime and courses_by_code:
+        return len(courses_by_code)
+
+    payload = build_course_catalog_data(source)
+    count = _apply_catalog_payload(
+        payload,
+        source_label=str(source),
+        source_mtime=mtime,
+    )
     logging.info("Loaded Excel course catalog from %s (%s courses).", source, len(courses_by_code))
-    return len(courses_by_code)
+    return count
+
+
+def load_course_catalog_from_data(data: Dict[str, Any], source_label: str = "excel_catalog.json") -> int:
+    return _apply_catalog_payload(
+        data,
+        source_label=source_label,
+        source_mtime=None,
+    )
+
+
+def get_catalog_data() -> Dict[str, Any]:
+    return _catalog_payload
 
 
 def _term_matches(course: Dict[str, Any], term: Optional[str]) -> bool:
