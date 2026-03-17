@@ -1,1 +1,124 @@
-{"catalog_year":null,"course_meta":{},"courses":{},"foundation_courses_add":[],"foundation_courses_remove":[],"gen_ed":{"categories":{},"categories_add":{},"categories_remove":{},"rules":{}},"majors":{},"minors":{}}
+{
+  "catalog_year": null,
+  "course_meta": {
+    "PSY 2002": {
+      "prereq_blocks": [
+        {
+          "code": "PSY 1001",
+          "type": "course"
+        },
+        {
+          "code": "PSY 1002",
+          "type": "course"
+        }
+      ],
+      "prereq_codes": [
+        "PSY 1001",
+        "PSY 1002"
+      ],
+      "prereq_expr": {
+        "and": [
+          "PSY 1001",
+          "PSY 1002"
+        ]
+      },
+      "prereq_text": "Grades of C- or better in PSY 1001 and PSY 1002",
+      "prereqs": [
+        "PSY 1001",
+        "PSY 1002"
+      ]
+    },
+    "PSY 2003": {
+      "prereq_blocks": [
+        {
+          "code": "PSY 1001",
+          "type": "course"
+        },
+        {
+          "code": "PSY 1002",
+          "type": "course"
+        }
+      ],
+      "prereq_codes": [
+        "PSY 1001",
+        "PSY 1002"
+      ],
+      "prereq_expr": {
+        "and": [
+          "PSY 1001",
+          "PSY 1002"
+        ]
+      },
+      "prereq_text": "Grades of C- or better in PSY 1001 and PSY 1002",
+      "prereqs": [
+        "PSY 1001",
+        "PSY 1002"
+      ]
+    },
+    "PSY 2004": {
+      "prereq_blocks": [
+        {
+          "code": "PSY 1001",
+          "type": "course"
+        },
+        {
+          "code": "PSY 1002",
+          "type": "course"
+        }
+      ],
+      "prereq_codes": [
+        "PSY 1001",
+        "PSY 1002"
+      ],
+      "prereq_expr": {
+        "and": [
+          "PSY 1001",
+          "PSY 1002"
+        ]
+      },
+      "prereq_text": "Grades of C- or better in PSY 1001 and PSY 1002",
+      "prereqs": [
+        "PSY 1001",
+        "PSY 1002"
+      ]
+    },
+    "PSY 2005": {
+      "prereq_blocks": [
+        {
+          "code": "PSY 1001",
+          "type": "course"
+        },
+        {
+          "code": "PSY 1002",
+          "type": "course"
+        }
+      ],
+      "prereq_codes": [
+        "PSY 1001",
+        "PSY 1002"
+      ],
+      "prereq_expr": {
+        "and": [
+          "PSY 1001",
+          "PSY 1002"
+        ]
+      },
+      "prereq_text": "Grades of C- or better in PSY 1001 and PSY 1002",
+      "prereqs": [
+        "PSY 1001",
+        "PSY 1002"
+      ]
+    }
+  },
+  "courses": {},
+  "foundation_courses_add": [],
+  "foundation_courses_remove": [],
+  "gen_ed": {
+    "categories": {},
+    "categories_add": {},
+    "categories_remove": {},
+    "rules": {}
+  },
+  "majors": {},
+  "minors": {}
+}
