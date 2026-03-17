@@ -632,45 +632,48 @@ def _extract_required_from_program_choice_blocks(
             continue
 
         rule_text = str(raw_block.get("rule_text") or "")
+        rule_text_norm = re.sub(r"\s+", " ", rule_text).strip().lower()
+        placement_test_block = "placement test" in rule_text_norm
 
         grouped_codes: Set[str] = set()
         # Prefer explicit OR groups from prose (e.g., BUS 2060 OR ENT 2061).
         or_groups: List[Set[str]] = []
         seen_or_signatures: Set[Tuple[str, ...]] = set()
 
-        # Adjacent-code OR detection avoids over-grouping unrelated codes.
-        text_upper = rule_text.upper()
-        code_matches = list(COURSE_CODE_PATTERN.finditer(text_upper))
-        for idx in range(len(code_matches) - 1):
-            left = _normalize_course_code(code_matches[idx].group(0))
-            right = _normalize_course_code(code_matches[idx + 1].group(0))
-            if left not in allowed_set or right not in allowed_set or left == right:
-                continue
-            between = text_upper[code_matches[idx].end() : code_matches[idx + 1].start()]
-            if len(between) > 120:
-                continue
-            if re.search(r"\bOR\b|/", between):
-                signature = tuple(sorted({left, right}))
-                if signature in seen_or_signatures:
+        if not placement_test_block:
+            # Adjacent-code OR detection avoids over-grouping unrelated codes.
+            text_upper = rule_text.upper()
+            code_matches = list(COURSE_CODE_PATTERN.finditer(text_upper))
+            for idx in range(len(code_matches) - 1):
+                left = _normalize_course_code(code_matches[idx].group(0))
+                right = _normalize_course_code(code_matches[idx + 1].group(0))
+                if left not in allowed_set or right not in allowed_set or left == right:
                     continue
-                seen_or_signatures.add(signature)
-                or_groups.append(set(signature))
+                between = text_upper[code_matches[idx].end() : code_matches[idx + 1].start()]
+                if len(between) > 120:
+                    continue
+                if re.search(r"\bOR\b|/", between):
+                    signature = tuple(sorted({left, right}))
+                    if signature in seen_or_signatures:
+                        continue
+                    seen_or_signatures.add(signature)
+                    or_groups.append(set(signature))
 
-        # Conservative fallback for slash/or chains.
-        if not or_groups:
-            for raw_group in _extract_or_prereq_groups(rule_text):
-                group = {
-                    _normalize_course_code(code)
-                    for code in raw_group
-                    if isinstance(code, str)
-                } & allowed_set
-                if len(group) < 2:
-                    continue
-                signature = tuple(sorted(group))
-                if signature in seen_or_signatures:
-                    continue
-                seen_or_signatures.add(signature)
-                or_groups.append(set(group))
+            # Conservative fallback for slash/or chains.
+            if not or_groups:
+                for raw_group in _extract_or_prereq_groups(rule_text):
+                    group = {
+                        _normalize_course_code(code)
+                        for code in raw_group
+                        if isinstance(code, str)
+                    } & allowed_set
+                    if len(group) < 2:
+                        continue
+                    signature = tuple(sorted(group))
+                    if signature in seen_or_signatures:
+                        continue
+                    seen_or_signatures.add(signature)
+                    or_groups.append(set(group))
 
         for group in or_groups:
             if len(group) < 2:
@@ -696,6 +699,8 @@ def _extract_required_from_program_choice_blocks(
                     choose_count = int(rounded)
             if choose_count is None:
                 choose_count = _choice_count_hint_from_text(rule_text)
+            if choose_count is None and len(allowed_set) == 2 and rule_text_norm.startswith("or "):
+                choose_count = 1
 
             if choose_count is not None and 0 < choose_count < len(allowed_set):
                 signature = (tuple(sorted(allowed_set)), int(choose_count))
@@ -2095,20 +2100,83 @@ def build_requirement_slots(catalog: Dict, majors: List[str], minors: List[str])
                 fixed = [r for r in reqs.get("fixed", []) if isinstance(r, str)]
                 fixed += [r for r in reqs.get("required", []) if isinstance(r, str)]
                 fixed += [r for r in reqs.get("courses", []) if isinstance(r, str)]
-        elective_codes: Set[str] = set()
-        for block in program_data.get("elective_requirements", []) or []:
-            if not isinstance(block, dict):
-                continue
-            for code in block.get("allowed_courses", []) or []:
-                if isinstance(code, str):
-                    elective_codes.add(code)
-        if elective_codes:
-            fixed = [c for c in fixed if c not in elective_codes]
+        fixed = [
+            code for code in (
+                _normalize_course_code(raw_code)
+                for raw_code in fixed
+                if isinstance(raw_code, str)
+            )
+            if code
+        ]
+        fixed = list(dict.fromkeys(fixed))
         return fixed, choices
+
+    def merge_program_choice_requirements(
+        program_name: str,
+        program_data: Dict,
+        fixed: List[str],
+        choices: List[Dict],
+    ) -> Tuple[List[str], List[Dict]]:
+        if _is_fine_arts_minor(program_name):
+            return fixed, choices
+
+        block_fixed_required, block_choice_groups = _extract_required_from_program_choice_blocks(
+            minor_data=program_data,
+            catalog_courses=catalog_courses,
+        )
+        fixed_seen = {
+            _normalize_course_code(code)
+            for code in fixed
+            if isinstance(code, str)
+        }
+        merged_fixed = list(fixed)
+        for course in sorted(block_fixed_required):
+            normalized = _normalize_course_code(course)
+            if normalized in fixed_seen:
+                continue
+            merged_fixed.append(normalized)
+            fixed_seen.add(normalized)
+
+        merged_choices = list(choices)
+        if block_choice_groups:
+            existing_choice_signatures = {
+                (
+                    tuple(
+                        sorted(
+                            _normalize_course_code(code)
+                            for code in (group.get("courses", []) or [])
+                            if isinstance(code, str)
+                        )
+                    ),
+                    int(_coerce_positive_int(group.get("count"), default=1)),
+                )
+                for group in merged_choices
+                if isinstance(group, dict)
+            }
+            for group in block_choice_groups:
+                if not isinstance(group, dict):
+                    continue
+                signature = (
+                    tuple(
+                        sorted(
+                            _normalize_course_code(code)
+                            for code in (group.get("courses", []) or [])
+                            if isinstance(code, str)
+                        )
+                    ),
+                    int(_coerce_positive_int(group.get("count"), default=1)),
+                )
+                if not signature[0] or signature in existing_choice_signatures:
+                    continue
+                existing_choice_signatures.add(signature)
+                merged_choices.append(group)
+
+        return merged_fixed, merged_choices
 
     for major in majors:
         data = catalog.get("majors", {}).get(major, {})
         fixed, choices = parse_requirements(data)
+        fixed, choices = merge_program_choice_requirements(major, data, fixed, choices)
         for course in fixed:
             add_fixed_course(course, major, "major")
         for group in choices:
@@ -2117,6 +2185,7 @@ def build_requirement_slots(catalog: Dict, majors: List[str], minors: List[str])
     for minor in minors:
         data = catalog.get("minors", {}).get(minor, {})
         fixed, choices = parse_requirements(data)
+        fixed, choices = merge_program_choice_requirements(minor, data, fixed, choices)
 
         # Economics minor special case from catalog:
         # Required: ECO 1001, ECO 1002, and (ECO 3001 OR ECO 3002).
@@ -2128,6 +2197,78 @@ def build_requirement_slots(catalog: Dict, majors: List[str], minors: List[str])
             if fixed_set & or_group:
                 fixed = [c for c in fixed if c not in or_group]
                 add_choice_group(sorted(or_group), 1, minor, "minor", "Economics minor: ECO 3001 OR ECO 3002")
+
+        if _is_cs_minor(minor):
+            for course in sorted(CS_MINOR_REQUIRED_COURSES):
+                normalized = _normalize_course_code(course)
+                if normalized in catalog_courses and normalized not in fixed:
+                    fixed.append(normalized)
+            existing_choice_signatures = {
+                (
+                    tuple(
+                        sorted(
+                            _normalize_course_code(code)
+                            for code in (group.get("courses", []) or [])
+                            if isinstance(code, str)
+                        )
+                    ),
+                    int(_coerce_positive_int(group.get("count"), default=1)),
+                )
+                for group in choices
+                if isinstance(group, dict)
+            }
+            for label, group_codes in CS_MINOR_GROUPS.items():
+                normalized_group_codes = sorted(
+                    {
+                        _normalize_course_code(code)
+                        for code in group_codes
+                        if _normalize_course_code(code) in catalog_courses
+                    }
+                )
+                signature = (tuple(normalized_group_codes), 1)
+                if not normalized_group_codes or signature in existing_choice_signatures:
+                    continue
+                existing_choice_signatures.add(signature)
+                choices.append({
+                    "courses": normalized_group_codes,
+                    "count": 1,
+                    "label": f"Computer Science group ({label})",
+                })
+
+        if _is_fine_arts_minor(minor):
+            existing_choice_signatures = {
+                (
+                    tuple(
+                        sorted(
+                            _normalize_course_code(code)
+                            for code in (group.get("courses", []) or [])
+                            if isinstance(code, str)
+                        )
+                    ),
+                    int(_coerce_positive_int(group.get("count"), default=1)),
+                )
+                for group in choices
+                if isinstance(group, dict)
+            }
+            fine_arts_groups = [
+                ("Fine Arts group A", sorted(c for c in FINE_ARTS_GROUP_A if c in catalog_courses), 1),
+                ("Fine Arts group B", sorted(c for c in FINE_ARTS_GROUP_B if c in catalog_courses), 1),
+                (
+                    "Fine Arts group C",
+                    sorted(c for c in FINE_ARTS_GROUP_C if c in catalog_courses),
+                    max(1, int(math.ceil(FINE_ARTS_GROUP_C_CREDITS_REQUIRED / 3.0))),
+                ),
+            ]
+            for label, group_codes, count in fine_arts_groups:
+                signature = (tuple(group_codes), int(count))
+                if not group_codes or signature in existing_choice_signatures:
+                    continue
+                existing_choice_signatures.add(signature)
+                choices.append({
+                    "courses": group_codes,
+                    "count": int(count),
+                    "label": label,
+                })
 
         for course in fixed:
             add_fixed_course(course, minor, "minor")
@@ -4262,6 +4403,9 @@ def _collect_elective_placeholders(catalog: Dict, majors: List[str], minors: Lis
             data = catalog.get("majors" if program_type == "major" else "minors", {}).get(name, {}) or {}
             for block in data.get("elective_requirements", []) or []:
                 if not isinstance(block, dict):
+                    continue
+                label = str(block.get("label") or "").strip().lower()
+                if "program choice" in label and not bool(block.get("is_total")):
                     continue
                 placeholders.append({
                     "id": block.get("id") or f"{name}-{program_type}-elective",
