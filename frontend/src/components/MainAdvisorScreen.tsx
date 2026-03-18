@@ -3910,7 +3910,7 @@ export function MainAdvisorScreen({
 
       const minTermOffset = minTermIndexForCourse(course.code);
       if (minTermOffset > 0) {
-        const baseIdx = termIndex(effectiveStartForPlanning.season, effectiveStartForPlanning.year);
+        const baseIdx = termIndex(startTermSeason, startTermYear);
         const minAllowedIdx = baseIdx + minTermOffset;
         if (targetIdx < minAllowedIdx) {
           const earliest = termFromIndex(minAllowedIdx);
