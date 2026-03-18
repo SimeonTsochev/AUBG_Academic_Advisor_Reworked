@@ -2007,6 +2007,8 @@ def _min_term_index_for_course(
     text = (meta.get("prereq_text") or "").lower()
     min_term = 0
 
+    if "declared" in text and "major" in text:
+        min_term = max(min_term, 2)
     if "junior standing" in text:
         if completed_credits is None or completed_credits < 60:
             min_term = max(min_term, 4)
@@ -2028,6 +2030,8 @@ def _min_term_reasons(catalog: Dict, code: str) -> List[str]:
     meta = catalog.get("course_meta", {}).get(code, {})
     text = (meta.get("prereq_text") or "").lower()
     reasons: List[str] = []
+    if "declared" in text and "major" in text:
+        reasons.append("declared major")
     if "junior standing" in text:
         reasons.append("junior standing")
     if "sophomore standing" in text:

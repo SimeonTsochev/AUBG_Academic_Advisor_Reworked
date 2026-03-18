@@ -8,7 +8,7 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-from degree_engine import generate_plan, validate_plan  # noqa: E402
+from degree_engine import generate_plan, validate_plan, _min_term_index_for_course  # noqa: E402
 
 
 def build_sample_catalog():
@@ -251,6 +251,21 @@ class PlanValidationTests(unittest.TestCase):
             strict_prereqs=True,
         )
         self.assertTrue(any("prerequisite" in e.lower() for e in errors))
+
+    def test_declared_major_prereq_starts_in_third_semester(self):
+        catalog = build_sample_catalog()
+        catalog["courses"]["BUS 2500"] = {
+            "name": "Major Gateway",
+            "credits": 3,
+            "gen_ed": [],
+        }
+        catalog["course_meta"]["BUS 2500"] = {
+            "credits": 3,
+            "prereq_codes": [],
+            "prereq_text": "Declared BUS major",
+        }
+
+        self.assertEqual(_min_term_index_for_course(catalog, "BUS 2500"), 2)
 
     def test_choice_group_with_insufficient_courses_is_clamped(self):
         catalog = build_sample_catalog()
