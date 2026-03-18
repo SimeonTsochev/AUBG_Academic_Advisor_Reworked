@@ -27,6 +27,11 @@ const normalizeTermLabel = (value: string) =>
     .toLowerCase()
     .replace(/\s+/g, " ");
 
+const extractSeason = (value: string): string | null => {
+  const match = value.trim().match(/^(Spring|Fall)\s+\d{4}$/i);
+  return match?.[1]?.toLowerCase() ?? null;
+};
+
 export function getCourseAvailabilityInfo(
   course: CourseAvailabilitySource,
   context: CourseAvailabilityContext
@@ -38,8 +43,18 @@ export function getCourseAvailabilityInfo(
 
   const computeUnavailable = (termToCheck: string | null) => {
     if (!termToCheck || offeredTerms.length === 0) return false;
-    const normalizedTarget = normalizeTermLabel(termToCheck);
-    return !offeredTerms.some((term) => normalizeTermLabel(term) === normalizedTarget);
+    if (isExcelOnly === true) {
+      const normalizedTarget = normalizeTermLabel(termToCheck);
+      return !offeredTerms.some((term) => normalizeTermLabel(term) === normalizedTarget);
+    }
+
+    const targetSeason = extractSeason(termToCheck);
+    if (!targetSeason) return false;
+
+    return !offeredTerms.some((term) => {
+      const offeredSeason = extractSeason(term);
+      return offeredSeason ? offeredSeason === targetSeason : true;
+    });
   };
 
   if (mode === "completed") {

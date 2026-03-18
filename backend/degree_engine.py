@@ -2453,7 +2453,7 @@ def select_courses_for_slots(
             covered=covered,
             selected=selected,
             completed=completed,
-            prefer_high_credits=False,
+            prefer_high_credits=True,
             retake_courses=retakes,
         )
         if not code:

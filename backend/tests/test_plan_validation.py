@@ -182,6 +182,50 @@ class PlanValidationTests(unittest.TestCase):
         }
         self.assertNotIn("ART 1000", planned_codes)
 
+    def test_aesthetic_expression_prefers_highest_credit_course(self):
+        catalog = build_sample_catalog()
+        catalog["courses"]["ART 1001"] = {
+            "name": "Studio Basics",
+            "credits": 2,
+            "gen_ed": ["Aesthetic Expression"],
+        }
+        catalog["courses"]["THR 1001"] = {
+            "name": "Intro to Theater",
+            "credits": 3,
+            "gen_ed": ["Aesthetic Expression"],
+        }
+        catalog["course_meta"]["ART 1001"] = {
+            "credits": 2,
+            "gen_ed": "Aesthetic Expression",
+            "prereq_codes": [],
+        }
+        catalog["course_meta"]["THR 1001"] = {
+            "credits": 3,
+            "gen_ed": "Aesthetic Expression",
+            "prereq_codes": [],
+        }
+        catalog["gen_ed"]["categories"]["Aesthetic Expression"] = ["ART 1001", "THR 1001"]
+        catalog["gen_ed"]["rules"]["Aesthetic Expression"] = 1
+
+        plan = generate_plan(
+            catalog=catalog,
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=set(),
+            max_credits_per_semester=16,
+            start_term_season="Fall",
+            start_term_year=2025,
+        )
+
+        planned_codes = {
+            course.get("code")
+            for term in plan.get("semester_plan", [])
+            for course in term.get("courses", [])
+            if isinstance(course, dict)
+        }
+        self.assertIn("THR 1001", planned_codes)
+        self.assertNotIn("ART 1001", planned_codes)
+
     def test_validate_plan_catches_prereq_violation(self):
         catalog = build_sample_catalog()
         semester_plan = [
