@@ -27,34 +27,20 @@ const normalizeTermLabel = (value: string) =>
     .toLowerCase()
     .replace(/\s+/g, " ");
 
-const extractSeason = (value: string): string | null => {
-  const match = value.trim().match(/^(Spring|Fall)\s+\d{4}$/i);
-  return match?.[1]?.toLowerCase() ?? null;
-};
-
 export function getCourseAvailabilityInfo(
   course: CourseAvailabilitySource,
   context: CourseAvailabilityContext
 ): CourseAvailabilityInfo {
   const { mode, isExcelOnly, currentTermLabel, targetTermLabel } = context;
+  const shouldEnforceTermAvailability = isExcelOnly === true;
   const offeredTerms = (course?.semester_availability ?? [])
     .filter((term): term is string => typeof term === "string" && term.trim().length > 0)
     .map((term) => term.trim());
 
   const computeUnavailable = (termToCheck: string | null) => {
-    if (!termToCheck || offeredTerms.length === 0) return false;
-    if (isExcelOnly === true) {
-      const normalizedTarget = normalizeTermLabel(termToCheck);
-      return !offeredTerms.some((term) => normalizeTermLabel(term) === normalizedTarget);
-    }
-
-    const targetSeason = extractSeason(termToCheck);
-    if (!targetSeason) return false;
-
-    return !offeredTerms.some((term) => {
-      const offeredSeason = extractSeason(term);
-      return offeredSeason ? offeredSeason === targetSeason : true;
-    });
+    if (!shouldEnforceTermAvailability || !termToCheck || offeredTerms.length === 0) return false;
+    const normalizedTarget = normalizeTermLabel(termToCheck);
+    return !offeredTerms.some((term) => normalizeTermLabel(term) === normalizedTarget);
   };
 
   if (mode === "completed") {
@@ -86,7 +72,7 @@ export function getCourseAvailabilityInfo(
       ? targetTermLabel?.trim() || currentTermLabel?.trim() || null
       : currentTermLabel?.trim() || null;
   const isUnavailable = computeUnavailable(termToCheck);
-  const shouldBlock = mode === "plan_add" && isUnavailable && isExcelOnly === true;
+  const shouldBlock = mode === "plan_add" && isUnavailable && shouldEnforceTermAvailability;
 
   if (!isUnavailable) {
     return {

@@ -813,20 +813,8 @@ export function MainAdvisorScreen({
     if (!term) return true;
     const availableTerms = getCourseSemesterAvailability(courseCode);
     if (availableTerms.length === 0) return true;
-
-    const isExcelOnly = catalog.course_meta?.[courseCode]?.is_excel_only === true;
-    if (isExcelOnly) {
-      return availableTerms.includes(term);
-    }
-
-    const targetSeason = term.match(/^(Spring|Fall)\s+\d{4}$/)?.[1] ?? null;
-    if (!targetSeason) return true;
-
-    return availableTerms.some((availableTerm) => {
-      const availableSeason = availableTerm.match(/^(Spring|Fall)\s+\d{4}$/)?.[1] ?? null;
-      if (!availableSeason) return true;
-      return availableSeason === targetSeason;
-    });
+    if (!isExcelOnlyCourse(courseCode)) return true;
+    return availableTerms.includes(term);
   };
   const getExcelElectiveNotes = (courseCode: string) => {
     const tags = plan?.excel_elective_tags?.[courseCode] ?? [];
