@@ -20,6 +20,7 @@ _CODE_RE = re.compile(r"([A-Z]{2,4})\s*[-/]?\s*(\d{3,4}[A-Z]?)")
 _CREDITS_RE = re.compile(r"credits?\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*CR", re.IGNORECASE)
 _TAG_SPLIT_RE = re.compile(r"[;\r\n]+")
 _SPACE_RE = re.compile(r"\s+")
+_EXCEL_ESCAPE_RE = re.compile(r"_x([0-9A-Fa-f]{4})_")
 
 _HEADER_ALIASES = {
     "department": {"department", "dept", "prefix", "subject"},
@@ -47,7 +48,22 @@ _GEN_ED_STANDALONE_TAGS = {
 
 
 def _normalize_space(text: str) -> str:
-    return _SPACE_RE.sub(" ", text).strip()
+    return _SPACE_RE.sub(" ", _decode_excel_escapes(text)).strip()
+
+
+def _decode_excel_escapes(text: str) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        try:
+            char = chr(int(match.group(1), 16))
+        except ValueError:
+            return match.group(0)
+        if char in "\r\n":
+            return "\n"
+        if char == "\t" or ord(char) < 32:
+            return " "
+        return char
+
+    return _EXCEL_ESCAPE_RE.sub(_replace, text)
 
 
 def _clean_header(value: object) -> str:
@@ -72,7 +88,7 @@ def _raw_cell(value: object) -> str:
         return ""
     if isinstance(value, float) and value.is_integer():
         value = int(value)
-    return str(value)
+    return _decode_excel_escapes(str(value))
 
 
 def normalize_course_code(code: str) -> str:

@@ -94,6 +94,28 @@ class ExcelCatalogTests(unittest.TestCase):
         finally:
             path.unlink(missing_ok=True)
 
+    def test_excel_escape_sequences_are_normalized_in_tags(self):
+        path = _write_xlsx([
+            [
+                "ECO",
+                "3000",
+                "Case Studies in Textual Analysis Gen Ed_x000D_\nLIT Major Elective_x000D_\nWriting Intensive Course",
+            ],
+        ])
+        try:
+            catalog = load_excel_catalog(path)
+            tags = catalog["by_code"]["ECO 3000"]["tags"]
+            self.assertEqual(
+                tags,
+                [
+                    "Case Studies in Textual Analysis Gen Ed",
+                    "LIT Major Elective",
+                    "Writing Intensive Course",
+                ],
+            )
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_recommended_electives_exclude_required(self):
         path = _write_xlsx([
             ["BUS", "1000", "BUS Major Elective"],

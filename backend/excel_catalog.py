@@ -26,6 +26,7 @@ PROGRAM_TAG_ALIASES: Dict[str, List[str]] = {
 
 TARGET_CASE_STUDIES_TAG = "Case Studies in Textual Analysis Gen Ed"
 TARGET_WIC_TAG = "Writing Intensive Course"
+_EXCEL_ESCAPE_RE = re.compile(r"_x([0-9A-Fa-f]{4})_")
 
 _EXCEL_CACHE: Dict[str, object] = {
     "path": None,
@@ -42,20 +43,35 @@ def _empty_catalog() -> Dict[str, object]:
     }
 
 
+def _decode_excel_escapes(text: str) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        try:
+            char = chr(int(match.group(1), 16))
+        except ValueError:
+            return match.group(0)
+        if char in "\r\n":
+            return "\n"
+        if char == "\t" or ord(char) < 32:
+            return " "
+        return char
+
+    return _EXCEL_ESCAPE_RE.sub(_replace, text)
+
+
 def _clean_header(value: object) -> str:
-    text = str(value or "")
+    text = _decode_excel_escapes(str(value or ""))
     return re.sub(r"\s+", " ", text).strip()
 
 
 def _clean_cell(value: object) -> str:
     if isinstance(value, float) and value.is_integer():
         value = int(value)
-    text = str(value or "")
+    text = _decode_excel_escapes(str(value or ""))
     return re.sub(r"\s+", " ", text).strip()
 
 
 def _split_tags(value: object) -> List[str]:
-    text = str(value or "")
+    text = _decode_excel_escapes(str(value or ""))
     if not text.strip():
         return []
     lines = re.split(r"[\r\n]+", text)
