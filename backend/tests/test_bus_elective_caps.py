@@ -159,6 +159,7 @@ class BusinessAdministrationElectiveCapTests(unittest.TestCase):
             catalog=catalog,
             majors=["Business Administration"],
             minors=[],
+            business_concentration=None,
             completed_courses=set(),
             planned_courses=[],
             limit=30,

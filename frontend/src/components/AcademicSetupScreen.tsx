@@ -5,7 +5,17 @@ import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 import type { ManualCreditEntry } from '../types';
 
+const BUSINESS_CONCENTRATION_OPTIONS = [
+  'General',
+  'Accounting',
+  'Finance',
+  'Marketing',
+  'Management',
+  'Tourism and Hospitality'
+] as const;
+
 interface AcademicSetupScreenProps {
+  catalogId?: string;
   catalogYear?: string;
   majors: string[];
   minors: string[];
@@ -19,6 +29,7 @@ interface AcademicSetupScreenProps {
   onComplete: (data: {
     majors: string[];
     minors: string[];
+    businessConcentration: string | null;
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     completedCourses: string[];
     inProgressCourses: string[];
@@ -36,6 +47,7 @@ interface AcademicSetupScreenProps {
 }
 
 export function AcademicSetupScreen({
+  catalogId,
   catalogYear,
   majors,
   minors,
@@ -49,6 +61,7 @@ export function AcademicSetupScreen({
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedMajors, setSelectedMajors] = useState<string[]>([]);
   const [selectedMinors, setSelectedMinors] = useState<string[]>([]);
+  const [businessConcentration, setBusinessConcentration] = useState<string>('General');
   const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(null);
   const [maxCreditsPerSemester, setMaxCreditsPerSemester] = useState(17);
   const [maxCreditsInput, setMaxCreditsInput] = useState('17');
@@ -100,7 +113,15 @@ export function AcademicSetupScreen({
     !selectedMajors.includes(m) && (selectedMinors.includes(m) || selectedMinors.length < MAX_PROGRAMS_PER_TYPE);
 
   const economicsMinorSelected = selectedMinors.includes("Economics");
-  const canSubmit = selectedMajors.length > 0 && (!economicsMinorSelected || economicsIntermediateChoice !== null);
+  const businessMajorSelected = selectedMajors.includes("Business Administration");
+  const marketingImcConflict =
+    businessMajorSelected
+    && businessConcentration === 'Marketing'
+    && selectedMinors.includes('Integrated Marketing Communications');
+  const canSubmit =
+    selectedMajors.length > 0
+    && (!economicsMinorSelected || economicsIntermediateChoice !== null)
+    && !marketingImcConflict;
 
   const availableMinors = useMemo(
     () => minors.filter((m) => !selectedMajors.includes(m)),
@@ -114,7 +135,13 @@ export function AcademicSetupScreen({
 
   const handleToggleMajor = (major: string) => {
     if (selectedMajors.includes(major)) {
-      setSelectedMajors((prev) => prev.filter((m) => m !== major));
+      setSelectedMajors((prev) => {
+        const next = prev.filter((m) => m !== major);
+        if (!next.includes('Business Administration')) {
+          setBusinessConcentration('General');
+        }
+        return next;
+      });
       return;
     }
     if (!canToggleMajor(major)) return;
@@ -295,6 +322,7 @@ export function AcademicSetupScreen({
     onComplete({
       majors: selectedMajors,
       minors: selectedMinors,
+      businessConcentration: businessMajorSelected ? businessConcentration : null,
       economicsIntermediateChoice,
       completedCourses: completedForPlan,
       inProgressCourses,
@@ -330,7 +358,12 @@ export function AcademicSetupScreen({
 
     const timer = window.setTimeout(async () => {
       try {
-        const results = await searchCourses(queryNormalized, undefined, 20);
+        const results = await searchCourses(queryNormalized, undefined, 20, {
+          catalogId,
+          majors: selectedMajors,
+          minors: selectedMinors,
+          businessConcentration: businessMajorSelected ? businessConcentration : null,
+        });
         if (cancelled) return;
         setCourseSearchResults(results);
         setCourseLookupByCode((prev) => {
@@ -375,7 +408,7 @@ export function AcademicSetupScreen({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [canSearch, queryNormalized, courses, courseMeta]);
+  }, [businessConcentration, businessMajorSelected, canSearch, catalogId, queryNormalized, courses, courseMeta, selectedMajors, selectedMinors]);
 
   useEffect(() => {
     if (!dropdownOpen) {
@@ -541,6 +574,32 @@ export function AcademicSetupScreen({
               </div>
             </div>
 
+            {businessMajorSelected && (
+              <div className="p-6 rounded-2xl border" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
+                <h3 className="mb-3">Business Concentration</h3>
+                <p className="text-sm mb-4" style={{ color: 'var(--neutral-dark)' }}>
+                  Keep Business Administration as one shared major and apply concentration-specific audit, search labels, and recommendations.
+                </p>
+                <div className="max-w-md">
+                  <select
+                    className="w-full px-3 py-2 rounded-lg border"
+                    style={{ borderColor: 'var(--neutral-border)' }}
+                    value={businessConcentration}
+                    onChange={(e) => setBusinessConcentration(e.target.value)}
+                  >
+                    {BUSINESS_CONCENTRATION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="text-xs mt-3" style={{ color: 'var(--neutral-dark)' }}>
+                  General keeps the shared BUS core and broad BUS electives. Other choices add concentration-specific required and elective rules.
+                </div>
+              </div>
+            )}
+
             {programConflictMsg && (
               <div
                 className="px-4 py-3 rounded-xl border text-sm"
@@ -627,6 +686,16 @@ export function AcademicSetupScreen({
                 </div>
               )}
             </div>
+
+            {marketingImcConflict && (
+              <div
+                className="px-4 py-3 rounded-xl border text-sm"
+                style={{ background: '#fff7ed', borderColor: '#fdba74', color: '#9a3412' }}
+                role="alert"
+              >
+                Marketing concentration cannot be combined with IMC minor. Choose a different BUS concentration or remove the Integrated Marketing Communications minor.
+              </div>
+            )}
 
             {/* Max credits */}
             <div className="p-6 rounded-2xl border" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
@@ -735,6 +804,13 @@ export function AcademicSetupScreen({
                       ? entry.credits
                       : courseCredit(code);
                     const genEdTags = (entry.gen_ed_tags ?? []).filter((tag) => typeof tag === 'string' && tag.trim().length > 0);
+                    const businessBadges = (entry.business_classification?.badges ?? []).filter(
+                      (badge): badge is string =>
+                        typeof badge === 'string'
+                        && badge.trim().length > 0
+                        && badge !== 'Required for BUS Core'
+                        && badge !== 'Counts as BUS elective'
+                    );
                     const availability = getCourseAvailabilityInfo(entry, {
                       mode: "completed",
                       isExcelOnly: entry.is_excel_only === true,
@@ -793,6 +869,23 @@ export function AcademicSetupScreen({
                         {genEdTags.length > 0 && (
                           <div className="text-xs mt-1" style={{ color: 'var(--neutral-dark)' }}>
                             Gen-Ed: {genEdTags.join(' | ')}
+                          </div>
+                        )}
+                        {businessBadges.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {businessBadges.map((badge) => (
+                              <span
+                                key={`${code}:${badge}`}
+                                className="text-[10px] leading-4 px-2 py-0.5 rounded-lg border"
+                                style={{
+                                  borderColor: 'var(--neutral-border)',
+                                  background: '#f8fafc',
+                                  color: 'var(--navy-dark)'
+                                }}
+                              >
+                                {badge}
+                              </span>
+                            ))}
                           </div>
                         )}
                         {hasWarning && availability.detailsLabel && (

@@ -27,6 +27,7 @@ class GeneratePlanRequest(BaseModel):
     catalog_id: str
     majors: List[str] = Field(default_factory=list)
     minors: List[str] = Field(default_factory=list)
+    business_concentration: Optional[str] = None
     completed_courses: List[str] = Field(default_factory=list)
     manual_credits: List[ManualCredit] = Field(default_factory=list)
     retake_courses: List[str] = Field(default_factory=list)
@@ -169,6 +170,7 @@ class GeneratePlanResponse(BaseModel):
     catalog_year: Optional[str] = None
     majors: List[str]
     minors: List[str]
+    business_concentration: Optional[str] = None
     completed_courses: List[str]
     remaining_courses: List[str]
     semester_plan: List[SemesterPlan]
@@ -181,6 +183,7 @@ class GeneratePlanResponse(BaseModel):
     gened_discovery: GenEdDiscovery = Field(default_factory=GenEdDiscovery)
     summary: Dict[str, int]
     course_reasons: Dict[str, str] = Field(default_factory=dict)
+    business_concentration_audit: Optional[Dict[str, Any]] = None
     gen_ed_status: Dict[str, Dict[str, int]] = Field(default_factory=dict)
     category_progress: Dict[str, Dict] = Field(default_factory=dict)
     warnings: List[PlanWarning] = Field(default_factory=list)

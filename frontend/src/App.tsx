@@ -18,6 +18,7 @@ type Screen = 'welcome' | 'setup' | 'advisor';
 interface AcademicSelection {
   majors: string[];       // supports multiple majors
   minors: string[];       // supports multiple minors
+  businessConcentration: string | null;
   economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
   completedCourses: string[];
   inProgressCourses: string[];
@@ -195,6 +196,11 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
     raw.economicsIntermediateChoice === 'ECO 3001' || raw.economicsIntermediateChoice === 'ECO 3002'
       ? raw.economicsIntermediateChoice
       : null;
+  const majors = toStringArray(raw.majors);
+  const businessConcentrationRaw =
+    typeof raw.businessConcentration === 'string' && raw.businessConcentration.trim().length > 0
+      ? raw.businessConcentration.trim()
+      : null;
 
   const normalizedOverrides = normalizePlanOverrides(raw.overrides);
   const retakeEntriesFromOverrides = normalizedOverrides.add
@@ -213,8 +219,11 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
     : retakeEntriesFromOverrides;
 
   return {
-    majors: toStringArray(raw.majors),
+    majors,
     minors: toStringArray(raw.minors),
+    businessConcentration: majors.includes('Business Administration')
+      ? (businessConcentrationRaw ?? 'General')
+      : null,
     economicsIntermediateChoice,
     completedCourses: toStringArray(raw.completedCourses),
     inProgressCourses: toStringArray(raw.inProgressCourses),
@@ -258,6 +267,7 @@ export default function App() {
   const [selection, setSelection] = useState<AcademicSelection>({
     majors: [],
     minors: [],
+    businessConcentration: null,
     economicsIntermediateChoice: null,
     completedCourses: [],
     inProgressCourses: [],
@@ -309,6 +319,7 @@ export default function App() {
           ...prev,
           majors: normalized.majors,
           minors: normalized.minors,
+          businessConcentration: normalized.businessConcentration,
           economicsIntermediateChoice: normalized.economicsIntermediateChoice ?? null,
           completedCourses: normalized.completedCourses,
           inProgressCourses: normalized.inProgressCourses,
@@ -387,6 +398,7 @@ export default function App() {
 
       {currentScreen === 'setup' && catalog && (
         <AcademicSetupScreen
+          catalogId={catalog.catalog_id}
           catalogYear={catalog.catalog_year ?? undefined}
           majors={catalog.majors}
           minors={catalog.minors}

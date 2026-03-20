@@ -38,6 +38,16 @@ export interface UploadCatalogResponse {
   };
 }
 
+export interface BusinessCourseClassification {
+  concentration?: string | null;
+  required_for_bus_core?: boolean;
+  required_for_concentration?: boolean;
+  elective_for_concentration?: boolean;
+  counts_as_bus_elective?: boolean;
+  manual_review?: boolean;
+  badges?: string[];
+}
+
 export interface CourseCatalogRecord {
   code: string;
   title: string;
@@ -51,6 +61,14 @@ export interface CourseCatalogRecord {
   wic?: boolean;
   semester_availability?: string[];
   availability_fields?: Record<string, string[]>;
+  business_classification?: BusinessCourseClassification;
+}
+
+export interface SearchCoursesContext {
+  catalogId?: string;
+  majors?: string[];
+  minors?: string[];
+  businessConcentration?: string | null;
 }
 
 // Legacy upload flow (kept for future multi-university support)
@@ -86,12 +104,23 @@ export async function loadDefaultCatalog(): Promise<UploadCatalogResponse> {
 export async function searchCourses(
   query: string,
   term?: string,
-  limit = 50
+  limit = 50,
+  context?: SearchCoursesContext
 ): Promise<CourseCatalogRecord[]> {
   const q = query.trim();
   if (!q) return [];
   const params = new URLSearchParams({ q, limit: String(limit) });
   if (term?.trim()) params.set("term", term.trim());
+  if (context?.catalogId?.trim()) params.set("catalog_id", context.catalogId.trim());
+  if (context?.businessConcentration?.trim()) {
+    params.set("business_concentration", context.businessConcentration.trim());
+  }
+  for (const major of context?.majors ?? []) {
+    if (major.trim()) params.append("major", major.trim());
+  }
+  for (const minor of context?.minors ?? []) {
+    if (minor.trim()) params.append("minor", minor.trim());
+  }
 
   const res = await fetch(`${API_BASE}/courses/search?${params.toString()}`, {
     method: "GET",
@@ -158,6 +187,7 @@ export interface ProgramSnapshotSwappedElective {
 export interface ProgramSnapshotPayload {
   majors: string[];
   minors: string[];
+  businessConcentration?: string | null;
   economicsIntermediateChoice?: "ECO 3001" | "ECO 3002" | null;
   completedCourses: string[];
   inProgressCourses: string[];
@@ -195,6 +225,7 @@ export interface GeneratePlanRequest {
   catalog_id: string;
   majors: string[];
   minors: string[];
+  business_concentration?: string | null;
   completed_courses: string[];
   manual_credits?: ManualCreditEntry[];
   retake_courses?: string[];
@@ -272,6 +303,7 @@ export interface GeneratePlanResponse {
   catalog_year?: string | null;
   majors: string[];
   minors: string[];
+  business_concentration?: string | null;
   completed_courses: string[];
   remaining_courses: string[];
   semester_plan: SemesterPlan[];
@@ -298,6 +330,38 @@ export interface GeneratePlanResponse {
     rule_text?: string;
     is_total?: boolean;
   }[];
+  business_concentration_audit?: {
+    selected?: string;
+    required_courses?: {
+      code: string;
+      title: string;
+      credits: number;
+      status: "completed" | "planned" | "missing";
+    }[];
+    elective_pools?: {
+      id: string;
+      label: string;
+      required_credits?: number;
+      counted_credits?: number;
+      remaining_credits?: number;
+      courses_required?: number;
+      counted_courses?: number;
+      remaining_courses?: number;
+      matched_courses?: {
+        code: string;
+        title: string;
+        credits: number;
+        counted_credits: number;
+        status: "completed" | "planned";
+      }[];
+      notes?: string[];
+    }[];
+    messages?: {
+      kind: string;
+      message: string;
+    }[];
+    summary?: Record<string, number>;
+  } | null;
   summary: Record<string, number>;
   gen_ed_status?: Record<string, { required: number; completed: number; planned: number }>;
   category_progress?: {

@@ -28,6 +28,7 @@ interface MainAdvisorScreenProps {
   selection: {
     majors: string[];
     minors: string[];
+    businessConcentration: string | null;
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     completedCourses: string[];
     inProgressCourses: string[];
@@ -77,6 +78,7 @@ function buildSnapshotPayload(params: {
   return {
     majors: [...params.selection.majors],
     minors: [...params.selection.minors],
+    businessConcentration: params.selection.businessConcentration,
     economicsIntermediateChoice: params.selection.economicsIntermediateChoice,
     completedCourses: [...params.completedCourses],
     inProgressCourses: [...params.inProgressCourses],
@@ -2180,6 +2182,7 @@ export function MainAdvisorScreen({
           catalog_id: catalog.catalog_id,
           majors: selection.majors,
           minors: selection.minors,
+          business_concentration: selection.businessConcentration,
           completed_courses: planningCompleted,
           manual_credits: manualCredits,
           retake_courses: [],
@@ -5240,6 +5243,7 @@ export function MainAdvisorScreen({
       catalog_id: catalog.catalog_id,
       majors: selection.majors,
       minors: selection.minors,
+      business_concentration: selection.businessConcentration,
       completed_courses: planningCompleted,
       manual_credits: manualCredits,
       retake_courses: [],
@@ -5747,7 +5751,11 @@ export function MainAdvisorScreen({
                     )}
                     <SemesterPlanView
                     courses={courseObjects}
+                    catalogId={catalog.catalog_id}
                     catalogCourses={catalog.courses}
+                    selectedMajors={selection.majors}
+                    selectedMinors={selection.minors}
+                    businessConcentration={selection.businessConcentration}
                     startTermSeason={startTermSeason}
                     startTermYear={startTermYear}
                     totalTerms={maxPlanTerms}
@@ -7209,6 +7217,128 @@ export function MainAdvisorScreen({
         {/* Right: Progress + Alerts */}
         <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
           <div className="p-4 border-b" style={{ borderColor: 'var(--neutral-border)' }}>
+            {plan?.business_concentration_audit?.selected && plan.business_concentration_audit.selected !== 'General' && (
+              <div
+                className="p-3 rounded-lg border mb-4"
+                style={{ borderColor: 'var(--neutral-border)', background: 'var(--neutral-cream)' }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold" style={{ color: 'var(--navy-dark)' }}>
+                      BUS Concentration
+                    </div>
+                    <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                      {plan.business_concentration_audit.selected}
+                    </div>
+                  </div>
+                  <span
+                    className="px-2 py-0.5 rounded text-xs font-medium"
+                    style={
+                      Number(plan.business_concentration_audit.summary?.missing_required_courses ?? 0) === 0
+                      && Number(plan.business_concentration_audit.summary?.remaining_pool_credits ?? 0) === 0
+                      && Number(plan.business_concentration_audit.summary?.remaining_pool_courses ?? 0) === 0
+                        ? { background: '#D7F4E6', color: '#0B6E4F' }
+                        : { background: '#FCE8B2', color: '#6A4B00' }
+                    }
+                  >
+                    {Number(plan.business_concentration_audit.summary?.missing_required_courses ?? 0) === 0
+                    && Number(plan.business_concentration_audit.summary?.remaining_pool_credits ?? 0) === 0
+                    && Number(plan.business_concentration_audit.summary?.remaining_pool_courses ?? 0) === 0
+                      ? 'Satisfied'
+                      : 'In progress'}
+                  </span>
+                </div>
+
+                {(plan.business_concentration_audit.messages ?? []).length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {(plan.business_concentration_audit.messages ?? []).map((message, index) => (
+                      <div
+                        key={`${message.kind}:${index}`}
+                        className="text-xs px-2 py-2 rounded border"
+                        style={{
+                          borderColor: message.kind === 'conflict' ? '#fdba74' : 'var(--neutral-border)',
+                          background: message.kind === 'conflict' ? '#fff7ed' : 'var(--white)',
+                          color: message.kind === 'conflict' ? '#9a3412' : 'var(--navy-dark)'
+                        }}
+                      >
+                        {message.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(plan.business_concentration_audit.required_courses ?? []).length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-xs font-semibold" style={{ color: 'var(--navy-dark)' }}>
+                      Required courses
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {(plan.business_concentration_audit.required_courses ?? []).map((course) => (
+                        <div key={course.code} className="flex items-center justify-between gap-2 text-xs">
+                          <span style={{ color: 'var(--neutral-dark)' }}>{course.code}</span>
+                          <span
+                            className="px-2 py-0.5 rounded"
+                            style={
+                              course.status === 'completed'
+                                ? { background: '#D7F4E6', color: '#0B6E4F' }
+                                : course.status === 'planned'
+                                  ? { background: '#DBEAFE', color: '#1D4ED8' }
+                                  : { background: '#FCE8B2', color: '#6A4B00' }
+                            }
+                          >
+                            {course.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(plan.business_concentration_audit.elective_pools ?? []).length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {(plan.business_concentration_audit.elective_pools ?? []).map((pool) => (
+                      <div
+                        key={pool.id}
+                        className="p-2 rounded border"
+                        style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                      >
+                        <div className="text-xs font-semibold" style={{ color: 'var(--navy-dark)' }}>
+                          {pool.label}
+                        </div>
+                        <div className="text-xs mt-1" style={{ color: 'var(--neutral-dark)' }}>
+                          {(pool.required_credits ?? 0) > 0
+                            ? `${pool.counted_credits ?? 0}/${pool.required_credits ?? 0} credits counted`
+                            : `${pool.counted_courses ?? 0}/${pool.courses_required ?? 0} courses counted`}
+                        </div>
+                        {(pool.matched_courses ?? []).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {(pool.matched_courses ?? []).map((course) => (
+                              <span
+                                key={`${pool.id}:${course.code}`}
+                                className="text-[11px] px-2 py-0.5 rounded-full border"
+                                style={{ borderColor: 'var(--neutral-border)', color: 'var(--navy-dark)' }}
+                              >
+                                {course.code}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {(pool.notes ?? []).length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {(pool.notes ?? []).map((note, index) => (
+                              <div key={`${pool.id}:note:${index}`} className="text-[11px]" style={{ color: 'var(--neutral-dark)' }}>
+                                {note}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center gap-3 mb-3">
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center"

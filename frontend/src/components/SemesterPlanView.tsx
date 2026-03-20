@@ -6,7 +6,11 @@ import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
 
 interface SemesterPlanViewProps {
   courses: Course[];
+  catalogId?: string;
   catalogCourses?: Record<string, string>;
+  selectedMajors?: string[];
+  selectedMinors?: string[];
+  businessConcentration?: string | null;
   startTermSeason?: string;
   startTermYear?: number;
   totalTerms?: number;
@@ -49,7 +53,11 @@ const ELECTIVE_TAG_ALIASES: Record<string, string[]> = {
 
 export function SemesterPlanView({
   courses,
+  catalogId,
   catalogCourses,
+  selectedMajors,
+  selectedMinors,
+  businessConcentration,
   startTermSeason,
   startTermYear,
   totalTerms = 8,
@@ -108,7 +116,12 @@ export function SemesterPlanView({
 
     const timer = window.setTimeout(async () => {
       try {
-        const results = await searchCourses(normalizedQuery, undefined, 20);
+        const results = await searchCourses(normalizedQuery, undefined, 20, {
+          catalogId,
+          majors: selectedMajors,
+          minors: selectedMinors,
+          businessConcentration,
+        });
         if (cancelled) return;
         setCatalogResults(results);
       } catch (error: any) {
@@ -141,7 +154,7 @@ export function SemesterPlanView({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [canSearch, normalizedQuery, catalogCourses]);
+  }, [businessConcentration, canSearch, catalogCourses, catalogId, normalizedQuery, selectedMajors, selectedMinors]);
 
   const planCodeSet = useMemo(() => new Set(courses.map((c) => c.code)), [courses]);
   const isFreeElectivePlaceholderCode = (code: string) => {
@@ -560,6 +573,13 @@ export function SemesterPlanView({
               const title = result.title;
               const credits = typeof result.credits === 'number' && result.credits > 0 ? result.credits : 3;
               const genEdTags = (result.gen_ed_tags ?? []).filter((tag) => typeof tag === 'string' && tag.trim().length > 0);
+              const businessBadges = (result.business_classification?.badges ?? []).filter(
+                (badge): badge is string =>
+                  typeof badge === 'string'
+                  && badge.trim().length > 0
+                  && badge !== 'Required for BUS Core'
+                  && badge !== 'Counts as BUS elective'
+              );
               const availability = getCourseAvailabilityInfo(result, {
                 mode: "plan_add",
                 isExcelOnly: result.is_excel_only === true,
@@ -597,6 +617,23 @@ export function SemesterPlanView({
                       {genEdTags.length > 0 && (
                         <div className="text-xs mt-1" style={{ color: 'var(--neutral-dark)' }}>
                           Gen-Ed: {genEdTags.join(' | ')}
+                        </div>
+                      )}
+                      {businessBadges.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {businessBadges.map((badge) => (
+                            <span
+                              key={`${code}:${badge}`}
+                              className="text-[10px] leading-4 px-2 py-0.5 rounded-lg border"
+                              style={{
+                                borderColor: 'var(--neutral-border)',
+                                background: '#f8fafc',
+                                color: 'var(--navy-dark)'
+                              }}
+                            >
+                              {badge}
+                            </span>
+                          ))}
                         </div>
                       )}
                       {hasWarning && availability.detailsLabel && (

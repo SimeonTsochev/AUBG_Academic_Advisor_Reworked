@@ -10,6 +10,7 @@ import logging
 import os
 
 from catalog_cache import getCatalogCache
+from business_concentrations import classify_business_course
 from degree_engine import generate_plan
 from pdf_export import plan_to_pdf_bytes
 from models import (
@@ -91,6 +92,7 @@ def _generate_plan_with_compatible_kwargs(catalog: Dict[str, Any], req: Generate
         "catalog": catalog,
         "majors": req.majors,
         "minors": req.minors,
+        "business_concentration": req.business_concentration,
         "completed_courses": set(req.completed_courses),
         "manual_credits": [entry.dict() for entry in req.manual_credits],
         "retake_courses": set(req.retake_courses or []),
@@ -279,12 +281,30 @@ def program_snapshots_get(token: str):
 def courses_search(
     q: str = Query(..., min_length=1),
     term: Optional[str] = None,
+    catalog_id: Optional[str] = None,
+    major: list[str] = Query(default=[]),
+    minor: list[str] = Query(default=[]),
+    business_concentration: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
 ):
     _require_catalog_cache()
     excel_only_codes = _excel_only_code_set()
     results = search_excel_courses(query=q, term=term, limit=limit)
-    return [_with_excel_only_flag(record, excel_only_codes) for record in results]
+    catalog = _ensure_catalog(catalog_id) if isinstance(catalog_id, str) and catalog_id.strip() else _load_default_catalog()
+    payload: list[dict[str, Any]] = []
+    for record in results:
+        enriched = _with_excel_only_flag(record, excel_only_codes)
+        classification = classify_business_course(
+            catalog=catalog,
+            code=enriched.get("code", ""),
+            majors=major,
+            minors=minor,
+            business_concentration=business_concentration,
+        )
+        if classification:
+            enriched["business_classification"] = classification
+        payload.append(enriched)
+    return payload
 
 
 @app.get("/courses")

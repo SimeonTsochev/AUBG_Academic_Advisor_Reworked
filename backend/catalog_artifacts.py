@@ -31,6 +31,7 @@ DEFAULT_POLICY_OVERRIDES: Dict[str, Any] = {
     "course_meta": {},
     "majors": {},
     "minors": {},
+    "business_concentration_manual_matches": {},
     "foundation_courses_add": [],
     "foundation_courses_remove": [],
     "gen_ed": {
@@ -125,7 +126,7 @@ def normalize_policy_overrides(payload: Dict[str, Any] | None) -> Dict[str, Any]
     if payload.get("catalog_year") is not None:
         normalized["catalog_year"] = payload.get("catalog_year")
 
-    for key in ("courses", "course_meta", "majors", "minors"):
+    for key in ("courses", "course_meta", "majors", "minors", "business_concentration_manual_matches"):
         value = payload.get(key)
         if isinstance(value, dict):
             normalized[key] = deepcopy(value)

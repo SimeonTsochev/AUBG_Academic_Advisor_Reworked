@@ -14,6 +14,12 @@ from excel_catalog import (
     get_case_studies_gened_courses,
     get_selected_program_elective_tags,
 )
+from business_concentrations import (
+    active_business_concentration,
+    build_business_concentration_audit,
+    get_business_concentration_required_courses,
+    get_business_concentration_recommendations,
+)
 from excel_course_catalog import (
     get_course as get_excel_course_record,
     get_course_codes as get_excel_course_codes,
@@ -160,10 +166,14 @@ def _is_business_administration_bus_ent_upper_level(code: str) -> bool:
     return number is not None and 3000 <= int(number) <= 4999
 
 
-def _business_administration_required_courses(catalog: Dict) -> Set[str]:
+def _business_administration_required_courses(
+    catalog: Dict,
+    business_concentration: str | None = None,
+) -> Set[str]:
     majors = catalog.get("majors", {}) or {}
+    required_courses: Set[str] = set()
     if not isinstance(majors, dict):
-        return set()
+        return required_courses
     for major_name, major_data in majors.items():
         if not isinstance(major_name, str) or not _is_business_administration_major(major_name):
             continue
@@ -172,21 +182,34 @@ def _business_administration_required_courses(catalog: Dict) -> Set[str]:
         required = major_data.get("required_courses") or []
         if not isinstance(required, list):
             continue
-        return {
+        required_courses = {
             _normalize_course_code(code)
             for code in required
             if isinstance(code, str) and _normalize_course_code(code)
         }
-    return set()
+        break
+
+    required_courses.update(
+        get_business_concentration_required_courses(
+            catalog=catalog,
+            majors=["Business Administration"],
+            business_concentration=business_concentration,
+        )
+    )
+    return required_courses
 
 
-def _business_administration_elective_credit_breakdown(catalog: Dict, taken_courses: Set[str]) -> Dict[str, int]:
+def _business_administration_elective_credit_breakdown(
+    catalog: Dict,
+    taken_courses: Set[str],
+    business_concentration: str | None = None,
+) -> Dict[str, int]:
     taken = {
         _normalize_course_code(code)
         for code in (taken_courses or set())
         if isinstance(code, str) and _normalize_course_code(code)
     }
-    required_courses = _business_administration_required_courses(catalog)
+    required_courses = _business_administration_required_courses(catalog, business_concentration)
 
     non_bus_earned = sum(
         _course_credits(catalog, code)
@@ -2046,7 +2069,12 @@ def _min_term_reasons(catalog: Dict, code: str) -> List[str]:
     return reasons
 
 
-def build_requirement_slots(catalog: Dict, majors: List[str], minors: List[str]) -> Dict:
+def build_requirement_slots(
+    catalog: Dict,
+    majors: List[str],
+    minors: List[str],
+    business_concentration: str | None = None,
+) -> Dict:
     slots: List[Dict] = []
     by_id: Dict[str, Dict] = {}
     slot_id = 0
@@ -2181,6 +2209,22 @@ def build_requirement_slots(catalog: Dict, majors: List[str], minors: List[str])
         data = catalog.get("majors", {}).get(major, {})
         fixed, choices = parse_requirements(data)
         fixed, choices = merge_program_choice_requirements(major, data, fixed, choices)
+        if _is_business_administration_major(major):
+            fixed_seen = {
+                _normalize_course_code(code)
+                for code in fixed
+                if isinstance(code, str) and _normalize_course_code(code)
+            }
+            for course in get_business_concentration_required_courses(
+                catalog=catalog,
+                majors=majors,
+                business_concentration=business_concentration,
+            ):
+                normalized = _normalize_course_code(course)
+                if not normalized or normalized in fixed_seen:
+                    continue
+                fixed.append(normalized)
+                fixed_seen.add(normalized)
         for course in fixed:
             add_fixed_course(course, major, "major")
         for group in choices:
@@ -4179,6 +4223,7 @@ def _category_credit_progress(
     completed_courses: Set[str],
     waived_courses: Set[str] | None = None,
     selected_majors: List[str] | None = None,
+    business_concentration: str | None = None,
 ) -> Dict[str, Dict]:
     majors: Dict[str, Dict[str, int]] = {}
     minors: Dict[str, Dict[str, int]] = {}
@@ -4227,7 +4272,11 @@ def _category_credit_progress(
     for major_name in sorted(set(selected_major_names) | set(slot_major_names)):
         if not _is_business_administration_major(major_name):
             continue
-        progress = _business_administration_elective_credit_breakdown(catalog, completed_non_waived)
+        progress = _business_administration_elective_credit_breakdown(
+            catalog,
+            completed_non_waived,
+            business_concentration,
+        )
         bucket = majors.setdefault(major_name, {"required": 0, "completed": 0})
         bucket["required"] += int(progress.get("required") or 0)
         bucket["completed"] += int(progress.get("counted_total") or 0)
@@ -4431,6 +4480,7 @@ def compute_elective_recommendations(
     catalog: Dict,
     majors: List[str],
     minors: List[str],
+    business_concentration: str | None,
     completed_courses: Set[str],
     planned_courses: List[str],
     limit: int = 30,
@@ -4444,7 +4494,23 @@ def compute_elective_recommendations(
     catalog_courses = _catalog_courses(catalog)
     result_by_code: Dict[str, Dict] = {}
 
-    def _merge_recommendation(code: str, tags: List[str], program_keys: Set[str]) -> None:
+    def _priority_int(value: object, default: int) -> int:
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _merge_recommendation(
+        code: str,
+        tags: List[str],
+        program_keys: Set[str],
+        *,
+        priority_bucket: int = 2,
+        priority_score: int = 0,
+        explanation: str | None = None,
+    ) -> None:
         normalized_code = _normalize_course_code(code)
         if not normalized_code or normalized_code in taken or normalized_code not in catalog_courses:
             return
@@ -4457,6 +4523,9 @@ def compute_elective_recommendations(
                 "credits": _course_credits(catalog, normalized_code),
                 "tags": [],
                 "_program_keys": set(),
+                "_priority_bucket": priority_bucket,
+                "_priority_score": priority_score,
+                "_explanation_override": explanation,
             }
             result_by_code[normalized_code] = entry
 
@@ -4467,6 +4536,20 @@ def compute_elective_recommendations(
             key for key in program_keys
             if isinstance(key, str) and key
         })
+        existing_bucket = _priority_int(entry.get("_priority_bucket"), 9)
+        incoming_bucket = _priority_int(priority_bucket, 9)
+        existing_score = _priority_int(entry.get("_priority_score"), 0)
+        incoming_score = _priority_int(priority_score, 0)
+
+        entry["_priority_bucket"] = min(existing_bucket, incoming_bucket)
+        if incoming_bucket < existing_bucket:
+            entry["_priority_score"] = incoming_score
+            if explanation:
+                entry["_explanation_override"] = explanation
+        elif incoming_bucket == existing_bucket:
+            entry["_priority_score"] = max(existing_score, incoming_score)
+            if explanation and incoming_score >= existing_score:
+                entry["_explanation_override"] = explanation
 
     if excel_catalog:
         candidates = get_recommended_electives(
@@ -4598,6 +4681,36 @@ def compute_elective_recommendations(
         for code in allowed_courses:
             _merge_recommendation(code, [display_tag], {program_key})
 
+    concentration = active_business_concentration(majors, business_concentration, catalog=catalog)
+    concentration_recommendations = get_business_concentration_recommendations(
+        catalog=catalog,
+        majors=majors,
+        minors=minors,
+        business_concentration=concentration,
+        completed_courses=completed_courses,
+        planned_courses=planned_courses,
+        limit=limit,
+    )
+    for rec in concentration_recommendations:
+        code = rec.get("code")
+        if not isinstance(code, str):
+            continue
+        tags = rec.get("tags") or []
+        if not isinstance(tags, list):
+            tags = []
+        explanation = rec.get("explanation")
+        priority_bucket = 1
+        if any(isinstance(tag, str) and tag.startswith("Required for ") for tag in tags):
+            priority_bucket = 0
+        _merge_recommendation(
+            code,
+            [tag for tag in tags if isinstance(tag, str)],
+            {f"major:BUS-CONCENTRATION:{concentration or ''}"},
+            priority_bucket=priority_bucket,
+            priority_score=int(rec.get("_priority_score") or rec.get("requirementsSatisfied") or 1),
+            explanation=str(explanation) if isinstance(explanation, str) else None,
+        )
+
     results = list(result_by_code.values())
     for entry in results:
         program_keys = entry.get("_program_keys") or set()
@@ -4606,7 +4719,9 @@ def compute_elective_recommendations(
         has_major = any(isinstance(key, str) and key.startswith("major:") for key in program_keys)
         has_minor = any(isinstance(key, str) and key.startswith("minor:") for key in program_keys)
         entry["requirementsSatisfied"] = len(program_keys)
-        if has_major and has_minor:
+        if entry.get("_explanation_override"):
+            entry["explanation"] = str(entry.get("_explanation_override"))
+        elif has_major and has_minor:
             entry["explanation"] = "Matches electives for your majors and minors."
         elif has_major:
             entry["explanation"] = "Matches electives for your selected major(s)."
@@ -4617,11 +4732,23 @@ def compute_elective_recommendations(
             if isinstance(key, str) and key.startswith("major:")
         )
 
-    results.sort(key=lambda r: (-r["_major_matches"], -r["requirementsSatisfied"], -r["credits"], r["code"]))
+    results.sort(
+        key=lambda r: (
+            _priority_int(r.get("_priority_bucket"), 9),
+            -_priority_int(r.get("_priority_score"), 0),
+            -_priority_int(r.get("_major_matches"), 0),
+            -_priority_int(r.get("requirementsSatisfied"), 0),
+            -_priority_int(r.get("credits"), 0),
+            r["code"],
+        )
+    )
     trimmed = results[:limit]
     for r in trimmed:
         r.pop("_major_matches", None)
         r.pop("_program_keys", None)
+        r.pop("_priority_bucket", None)
+        r.pop("_priority_score", None)
+        r.pop("_explanation_override", None)
     return trimmed
 
 
@@ -4639,6 +4766,7 @@ def generate_plan(
     majors: List[str],
     minors: List[str],
     completed_courses: Set[str],
+    business_concentration: str | None = None,
     manual_credits: List[Dict[str, Any]] | None = None,
     retake_courses: Set[str] | List[str] | None = None,
     max_credits_per_semester: int = 16,
@@ -4696,7 +4824,7 @@ def generate_plan(
         catalog_gened_categories=(catalog.get("gen_ed", {}) or {}).get("categories", {}) or {},
     )
 
-    slots = build_requirement_slots(catalog, majors, minors)
+    slots = build_requirement_slots(catalog, majors, minors, business_concentration=business_concentration)
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
     max_terms_remaining = 8
@@ -4799,6 +4927,7 @@ def generate_plan(
         effective_completed_courses,
         waived_courses,
         selected_majors=majors,
+        business_concentration=business_concentration,
     )
     total_manual_credits = int(manual_credit_breakdown.get("total", 0) or 0)
 
@@ -4827,6 +4956,7 @@ def generate_plan(
         catalog=catalog,
         majors=majors,
         minors=minors,
+        business_concentration=business_concentration,
         completed_courses=completed_courses,
         planned_courses=planned_courses,
     )
@@ -4896,6 +5026,21 @@ def generate_plan(
         completed_courses=completed_courses,
     )
     effective_completed_courses = _effective_completed_courses_after_plan(completed_courses, semester_plan)
+    planned_courses_for_audit = [
+        course.get("code")
+        for term in semester_plan
+        for course in (term.get("courses") or [])
+        if isinstance(course, dict) and isinstance(course.get("code"), str)
+    ]
+    planned_courses_for_audit.extend(list(normalized_in_progress))
+    business_concentration_audit = build_business_concentration_audit(
+        catalog=catalog,
+        majors=majors,
+        minors=minors,
+        business_concentration=business_concentration,
+        completed_courses=effective_completed_courses,
+        planned_courses=planned_courses_for_audit,
+    )
 
     # Enforce hard cap on total terms
     if len(semester_plan) > max_terms_remaining:
@@ -4971,6 +5116,7 @@ def generate_plan(
         effective_completed_courses,
         waived_courses,
         selected_majors=majors,
+        business_concentration=business_concentration,
     )
     total_required_credits = (
         sum(v.get("required", 0) for v in category_progress.get("majors", {}).values())
@@ -4990,6 +5136,11 @@ def generate_plan(
     return {
         "majors": majors,
         "minors": minors,
+        "business_concentration": active_business_concentration(
+            majors,
+            business_concentration,
+            catalog=catalog,
+        ),
         "completed_courses": sorted(completed_courses),
         "remaining_courses": [
             c for term in semester_plan
@@ -5006,6 +5157,7 @@ def generate_plan(
         "gened_discovery": {
             "case_studies_textual_analysis": case_studies,
         },
+        "business_concentration_audit": business_concentration_audit,
         "summary": {
             "total_required": total_required,
             "completed": completed_count,

@@ -1,0 +1,261 @@
+{
+  "major": "Business Administration",
+  "general_label": "General",
+  "concentrations": {
+    "General": {
+      "label": "General",
+      "rules": []
+    },
+    "Accounting": {
+      "label": "Accounting",
+      "rules": [
+        {
+          "type": "required_course",
+          "course": "BUS 2020"
+        },
+        {
+          "type": "required_course",
+          "course": "BUS 2021"
+        },
+        {
+          "type": "credits_from_pool",
+          "id": "accounting-electives",
+          "label": "Accounting electives",
+          "required_credits": 6,
+          "selectors": [
+            {
+              "type": "course",
+              "course": "BUS 3020"
+            },
+            {
+              "type": "course",
+              "course": "BUS 3021"
+            }
+          ]
+        }
+      ]
+    },
+    "Finance": {
+      "label": "Finance",
+      "rules": [
+        {
+          "type": "required_course",
+          "course": "BUS 3030"
+        },
+        {
+          "type": "required_course",
+          "course": "BUS 4030"
+        },
+        {
+          "type": "credits_from_pool",
+          "id": "finance-electives",
+          "label": "Finance electives",
+          "required_credits": 6,
+          "selectors": [
+            {
+              "type": "course",
+              "course": "BUS 4031"
+            },
+            {
+              "type": "course",
+              "course": "BUS 4033"
+            },
+            {
+              "type": "topic_pattern",
+              "pattern": "topics in finance",
+              "prefixes": [
+                "BUS"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Marketing": {
+      "label": "Marketing",
+      "rules": [
+        {
+          "type": "required_course",
+          "course": "BUS 2060"
+        },
+        {
+          "type": "required_course",
+          "course": "BUS 3061"
+        },
+        {
+          "type": "credits_from_pool",
+          "id": "marketing-electives",
+          "label": "Marketing electives",
+          "required_credits": 6,
+          "selectors": [
+            {
+              "type": "course",
+              "course": "BUS 3062"
+            },
+            {
+              "type": "topic_pattern",
+              "pattern": "topics in marketing practice",
+              "prefixes": [
+                "BUS"
+              ]
+            },
+            {
+              "type": "topic_pattern",
+              "pattern": "topics in marketing",
+              "prefixes": [
+                "BUS"
+              ]
+            },
+            {
+              "type": "course",
+              "course": "JMC 2020"
+            },
+            {
+              "type": "course",
+              "course": "JMC 3070"
+            },
+            {
+              "type": "course",
+              "course": "JMC 3089"
+            }
+          ]
+        },
+        {
+          "type": "subset_credit_cap",
+          "pool": "marketing-electives",
+          "label": "Non-BUS JMC subset",
+          "max_credits": 3,
+          "note": "Max 3 non-BUS credits",
+          "selectors": [
+            {
+              "type": "course",
+              "course": "JMC 2020"
+            },
+            {
+              "type": "course",
+              "course": "JMC 3070"
+            },
+            {
+              "type": "course",
+              "course": "JMC 3089"
+            }
+          ]
+        },
+        {
+          "type": "forbidden_with_minor",
+          "minor": "Integrated Marketing Communications",
+          "note": "Marketing concentration cannot be combined with IMC minor."
+        }
+      ]
+    },
+    "Management": {
+      "label": "Management",
+      "rules": [
+        {
+          "type": "required_course",
+          "course": "BUS 3000"
+        },
+        {
+          "type": "required_course",
+          "course": "BUS 3040"
+        },
+        {
+          "type": "required_course",
+          "course": "BUS 4048"
+        },
+        {
+          "type": "credits_from_pool",
+          "id": "management-electives",
+          "label": "Management electives",
+          "required_credits": 6,
+          "selectors": [
+            {
+              "type": "course",
+              "course": "BUS 4050"
+            },
+            {
+              "type": "topic_pattern",
+              "pattern": "topics in management",
+              "prefixes": [
+                "BUS"
+              ]
+            },
+            {
+              "type": "course",
+              "course": "ENT 3000"
+            },
+            {
+              "type": "course",
+              "course": "ENT 4040"
+            },
+            {
+              "type": "topic_pattern",
+              "pattern": "topics in entrepreneurship",
+              "prefixes": [
+                "ENT"
+              ]
+            },
+            {
+              "type": "course",
+              "course": "SUS 3001"
+            },
+            {
+              "type": "course",
+              "course": "SUS 4500"
+            }
+          ]
+        }
+      ]
+    },
+    "Tourism and Hospitality": {
+      "label": "Tourism and Hospitality",
+      "rules": [
+        {
+          "type": "required_course",
+          "course": "BUS 2021"
+        },
+        {
+          "type": "required_course",
+          "course": "BUS 2060"
+        },
+        {
+          "type": "required_course",
+          "course": "BUS 3040"
+        },
+        {
+          "type": "credits_from_pool",
+          "id": "tourism-special-topics",
+          "label": "Approved Tourism and Hospitality special topics / independent study",
+          "courses_required": 2,
+          "note": "Manual review needed",
+          "selectors": [
+            {
+              "type": "manual_match",
+              "key": "tourism_special_topics"
+            }
+          ]
+        },
+        {
+          "type": "credits_from_pool",
+          "id": "tourism-supporting-elective",
+          "label": "Tourism and Hospitality supporting elective",
+          "required_credits": 3,
+          "prefixes": [
+            "BUS",
+            "ENT"
+          ],
+          "selectors": [
+            {
+              "type": "course",
+              "course": "HTY 2021"
+            },
+            {
+              "type": "course",
+              "course": "HTY 2022"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

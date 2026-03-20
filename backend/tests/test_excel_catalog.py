@@ -161,6 +161,7 @@ class ExcelCatalogTests(unittest.TestCase):
             catalog=self._finance_minor_catalog(),
             majors=[],
             minors=["Finance"],
+            business_concentration=None,
             completed_courses=set(),
             planned_courses=[],
         )
@@ -175,6 +176,7 @@ class ExcelCatalogTests(unittest.TestCase):
             catalog=self._finance_minor_catalog(),
             majors=[],
             minors=["Finance"],
+            business_concentration=None,
             completed_courses={"BUS 4090", "ECO 2012"},
             planned_courses=[],
         )
