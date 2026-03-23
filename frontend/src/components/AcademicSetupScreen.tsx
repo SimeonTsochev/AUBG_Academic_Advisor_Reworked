@@ -944,7 +944,7 @@ export function AcademicSetupScreen({
               )}
             </div>
 
-            {/* Back/Generate */}
+            {/* Back/Continue */}
             <div className="flex justify-between">
               <button
                 onClick={() => setStep(1)}
@@ -969,7 +969,7 @@ export function AcademicSetupScreen({
                 }}
               >
                 <CheckCircle2 className="w-5 h-5" />
-                Generate Plan
+                Continue
                 <ArrowRight className="w-5 h-5" />
               </button>
             </div>

@@ -3,6 +3,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { AcademicSetupScreen } from './components/AcademicSetupScreen';
 import { MainAdvisorScreen } from './components/MainAdvisorScreen';
 import { HowItWorksModal } from './components/HowItWorksModal';
+import { DisclaimerModal } from './components/DisclaimerModal';
 import {
   getProgramSnapshot,
   loadDefaultCatalog,
@@ -37,6 +38,25 @@ interface AcademicSelection {
 }
 
 const DEFAULT_MAX_CREDITS = 16;
+const DISCLAIMER_SESSION_KEY = 'disclaimerAccepted';
+
+const readDisclaimerAccepted = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(DISCLAIMER_SESSION_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const persistDisclaimerAccepted = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(DISCLAIMER_SESSION_KEY, 'true');
+  } catch {
+    // Ignore session storage failures and continue with in-memory state.
+  }
+};
 
 const toStringArray = (value: unknown): string[] =>
   Array.isArray(value)
@@ -260,10 +280,12 @@ export default function App() {
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState<boolean>(() => readDisclaimerAccepted());
 
   const [catalog, setCatalog] = useState<UploadCatalogResponse | null>(null);
   const [restoredSnapshot, setRestoredSnapshot] = useState<ProgramSnapshotPayload | null>(null);
   const [restoredSnapshotToken, setRestoredSnapshotToken] = useState<string | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<AcademicSelection | null>(null);
   const [selection, setSelection] = useState<AcademicSelection>({
     majors: [],
     minors: [],
@@ -378,11 +400,32 @@ export default function App() {
     }
   };
 
-  const handleSetupComplete = (data: AcademicSelection) => {
+  const openAdvisorWithSelection = (data: AcademicSelection) => {
     setRestoredSnapshot(null);
     setRestoredSnapshotToken(null);
     setSelection((prev) => ({ ...prev, ...data }));
     setCurrentScreen('advisor');
+  };
+
+  const handleSetupComplete = (data: AcademicSelection) => {
+    if (disclaimerAccepted) {
+      openAdvisorWithSelection(data);
+      return;
+    }
+    setPendingSelection(data);
+  };
+
+  const handleDisclaimerClose = () => {
+    setPendingSelection(null);
+  };
+
+  const handleDisclaimerConfirm = () => {
+    if (!pendingSelection) return;
+    persistDisclaimerAccepted();
+    setDisclaimerAccepted(true);
+    const nextSelection = pendingSelection;
+    setPendingSelection(null);
+    openAdvisorWithSelection(nextSelection);
   };
 
   return (
@@ -416,6 +459,13 @@ export default function App() {
           initialSnapshot={restoredSnapshot}
           initialSnapshotToken={restoredSnapshotToken}
           onBack={() => setCurrentScreen('setup')}
+        />
+      )}
+
+      {pendingSelection && !disclaimerAccepted && (
+        <DisclaimerModal
+          onClose={handleDisclaimerClose}
+          onConfirm={handleDisclaimerConfirm}
         />
       )}
 
