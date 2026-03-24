@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, Copy, Download, ArrowLeft, Sparkles, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { Calendar, Copy, Download, ArrowLeft, Sparkles, ChevronDown, ChevronUp, Check, Lock } from 'lucide-react';
 import { ChatInterface } from './ChatInterface';
 import { ProgressDashboard } from './ProgressDashboard';
 import { SemesterPlanView } from './SemesterPlanView';
@@ -129,6 +129,8 @@ export function MainAdvisorScreen({
   onBack,
 }: MainAdvisorScreenProps) {
   const SEMESTERS_PER_YEAR = 2;
+  const advisorChatLocked = true;
+  const advisorChatLockMessage = 'Advisor chat is temporarily locked while it is being updated.';
   const [activeTab, setActiveTab] = useState<'plan' | 'electives' | 'chat'>('plan');
   const [plan, setPlan] = useState<GeneratePlanResponse | null>(null);
   const [overrides, setOverrides] = useState<PlanOverrides>(() => {
@@ -5597,14 +5599,26 @@ export function MainAdvisorScreen({
                 Recommended Electives
               </button>
               <button
-                className="px-4 py-2 rounded-lg text-sm font-medium"
+                className="px-4 py-2 rounded-lg text-sm font-medium inline-flex items-center gap-2 disabled:cursor-not-allowed"
                 onClick={() => setActiveTab('chat')}
+                disabled={advisorChatLocked}
+                title={advisorChatLockMessage}
                 style={{
-                  backgroundColor: activeTab === 'chat' ? 'var(--academic-gold)' : 'transparent',
-                  color: activeTab === 'chat' ? 'var(--navy-dark)' : 'var(--neutral-dark)'
+                  backgroundColor: advisorChatLocked
+                    ? 'var(--neutral-gray)'
+                    : activeTab === 'chat'
+                      ? 'var(--academic-gold)'
+                      : 'transparent',
+                  color: advisorChatLocked
+                    ? 'var(--neutral-dark)'
+                    : activeTab === 'chat'
+                      ? 'var(--navy-dark)'
+                      : 'var(--neutral-dark)',
+                  opacity: advisorChatLocked ? 0.72 : 1
                 }}
               >
-                Advisor Chat
+                {advisorChatLocked && <Lock className="w-4 h-4" />}
+                <span>Advisor Chat</span>
               </button>
             </div>
           </div>
@@ -7193,23 +7207,43 @@ export function MainAdvisorScreen({
             )}
 
             {activeTab === 'chat' && (
-              <ChatInterface
-                messages={messages}
-                onSendMessage={(msg) => {
-                  // For now, chat is explanatory; we append the question and a deterministic reply.
-                  setMessages(prev => [
-                    ...prev,
-                    { role: 'user', content: msg, timestamp: new Date() },
-                    {
-                      role: 'assistant',
-                      content:
-                        'Right now, the advisor chat is connected to the real plan engine but does not change your plan. ' +
-                        "In the next iteration we can add actions like \"add minor\", \"recompute\", and \"why this course?\".",
-                      timestamp: new Date()
-                    }
-                  ]);
-                }}
-              />
+              advisorChatLocked ? (
+                <div className="h-full flex items-center justify-center p-6">
+                  <div
+                    className="w-full max-w-md rounded-2xl border p-6 text-center"
+                    style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}
+                  >
+                    <div
+                      className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+                      style={{ background: 'var(--neutral-gray)' }}
+                    >
+                      <Lock className="w-5 h-5" style={{ color: 'var(--navy-dark)' }} />
+                    </div>
+                    <h3 style={{ color: 'var(--navy-dark)' }}>Advisor Chat Locked</h3>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                      {advisorChatLockMessage}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <ChatInterface
+                  messages={messages}
+                  onSendMessage={(msg) => {
+                    // For now, chat is explanatory; we append the question and a deterministic reply.
+                    setMessages(prev => [
+                      ...prev,
+                      { role: 'user', content: msg, timestamp: new Date() },
+                      {
+                        role: 'assistant',
+                        content:
+                          'Right now, the advisor chat is connected to the real plan engine but does not change your plan. ' +
+                          "In the next iteration we can add actions like \"add minor\", \"recompute\", and \"why this course?\".",
+                        timestamp: new Date()
+                      }
+                    ]);
+                  }}
+                />
+              )
             )}
           </div>
         </div>
