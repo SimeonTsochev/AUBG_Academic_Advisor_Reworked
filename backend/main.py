@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from typing import Any, Dict, Optional
@@ -15,12 +15,14 @@ from degree_engine import generate_plan
 from pdf_export import plan_to_pdf_bytes
 from models import (
     UploadCatalogResponse,
+    TranscriptImportResponse,
     GeneratePlanRequest,
     GeneratePlanResponse,
     CreateSnapshotRequest,
     CreateSnapshotResponse,
     GetSnapshotResponse,
 )
+from transcript_import import import_transcript_document
 from excel_course_catalog import (
     get_course as get_excel_course_record,
     search_courses as search_excel_courses,
@@ -324,6 +326,25 @@ def courses_get(code: str):
         raise HTTPException(status_code=404, detail=f"Course not found in Excel catalog: {code}")
     excel_only_codes = _excel_only_code_set()
     return _with_excel_only_flag(course, excel_only_codes)
+
+
+@app.post("/transcript/import", response_model=TranscriptImportResponse)
+async def transcript_import(
+    file: UploadFile = File(...),
+    catalog_id: Optional[str] = Form(default=None),
+):
+    _require_catalog_cache()
+    if isinstance(catalog_id, str) and catalog_id.strip():
+        _ensure_catalog(catalog_id.strip())
+
+    try:
+        payload = import_transcript_document(await file.read(), file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return TranscriptImportResponse(**payload)
 
 
 @app.get("/catalog/load-default", response_model=UploadCatalogResponse)

@@ -71,6 +71,31 @@ export interface SearchCoursesContext {
   businessConcentration?: string | null;
 }
 
+export interface TranscriptImportMatchCandidate {
+  code: string;
+  title: string;
+  confidence: number;
+}
+
+export interface TranscriptImportCourse {
+  raw_code: string;
+  matched_code?: string | null;
+  title?: string | null;
+  raw_title?: string | null;
+  status: "completed" | "in_progress";
+  term?: string | null;
+  confidence: number;
+  matched_confidently: boolean;
+  match_candidates: TranscriptImportMatchCandidate[];
+}
+
+export interface TranscriptImportResponse {
+  completed: TranscriptImportCourse[];
+  in_progress: TranscriptImportCourse[];
+  unmatched: TranscriptImportCourse[];
+  warnings: string[];
+}
+
 // Legacy upload flow (kept for future multi-university support)
 /*
 export async function uploadCatalog(file: File): Promise<UploadCatalogResponse> {
@@ -153,6 +178,27 @@ export async function listCourses(term?: string): Promise<CourseCatalogRecord[]>
   if (!res.ok) {
     const detail = await safeDetail(res);
     throw new Error(detail ?? `Course list failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function importTranscript(
+  file: File,
+  catalogId?: string
+): Promise<TranscriptImportResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (catalogId?.trim()) {
+    form.append("catalog_id", catalogId.trim());
+  }
+
+  const res = await fetch(`${API_BASE}/transcript/import`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const detail = (await readErrorDetail(res)) ?? (await safeDetail(res));
+    throw new Error(detail ?? `Transcript import failed (${res.status})`);
   }
   return res.json();
 }

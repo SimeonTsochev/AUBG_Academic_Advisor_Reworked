@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { searchCourses, type CourseCatalogRecord } from '../api';
+import {
+  importTranscript,
+  searchCourses,
+  type CourseCatalogRecord,
+  type TranscriptImportCourse,
+  type TranscriptImportResponse,
+} from '../api';
 import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 import type { ManualCreditEntry } from '../types';
+import {
+  TranscriptImportReviewDialog,
+  type TranscriptImportReviewEntry,
+} from './TranscriptImportReviewDialog';
 
 const BUSINESS_CONCENTRATION_OPTIONS = [
   'General',
@@ -13,6 +23,45 @@ const BUSINESS_CONCENTRATION_OPTIONS = [
   'Management',
   'Tourism and Hospitality'
 ] as const;
+
+type TranscriptImportPhase = 'idle' | 'uploading' | 'extracting' | 'matching' | 'ready' | 'error';
+
+const TRANSCRIPT_ACCEPT = '.pdf,.png,.jpg,.jpeg';
+const SUPPORTED_TRANSCRIPT_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
+
+const buildTranscriptReviewEntries = (response: TranscriptImportResponse): TranscriptImportReviewEntry[] => {
+  const toEntry = (course: TranscriptImportCourse, index: number): TranscriptImportReviewEntry => ({
+    reviewId: `${course.status}:${course.matched_code ?? course.raw_code}:${course.term ?? 'none'}:${index}`,
+    rawCode: course.raw_code,
+    matchedCode: course.matched_code ?? null,
+    title: course.title ?? null,
+    rawTitle: course.raw_title ?? null,
+    status: course.status,
+    term: course.term ?? null,
+    confidence: course.confidence,
+    matchedConfidently: course.matched_confidently,
+    matchCandidates: course.match_candidates ?? [],
+  });
+
+  return [...response.completed, ...response.in_progress].map(toEntry);
+};
+
+const transcriptStatusLabel = (phase: TranscriptImportPhase) => {
+  switch (phase) {
+    case 'uploading':
+      return 'Uploading transcript...';
+    case 'extracting':
+      return 'Extracting transcript data...';
+    case 'matching':
+      return 'Matching courses...';
+    case 'ready':
+      return 'Ready for review.';
+    case 'error':
+      return null;
+    default:
+      return null;
+  }
+};
 
 interface AcademicSetupScreenProps {
   catalogId?: string;
@@ -73,9 +122,22 @@ export function AcademicSetupScreen({
   const [courseSearchLoading, setCourseSearchLoading] = useState(false);
   const [courseSearchError, setCourseSearchError] = useState<string | null>(null);
   const [courseLookupByCode, setCourseLookupByCode] = useState<Record<string, CourseCatalogRecord>>({});
+  const [importedCompletedCourses, setImportedCompletedCourses] = useState<string[]>([]);
+  const [importedInProgressCourses, setImportedInProgressCourses] = useState<string[]>([]);
+  const [importedCompletedTerms, setImportedCompletedTerms] = useState<Record<string, string>>({});
+  const [importedInProgressTerms, setImportedInProgressTerms] = useState<Record<string, string>>({});
+  const [transcriptImportPhase, setTranscriptImportPhase] = useState<TranscriptImportPhase>('idle');
+  const [transcriptImportError, setTranscriptImportError] = useState<string | null>(null);
+  const [transcriptImportWarnings, setTranscriptImportWarnings] = useState<string[]>([]);
+  const [selectedTranscriptName, setSelectedTranscriptName] = useState<string | null>(null);
+  const [isTranscriptDragging, setIsTranscriptDragging] = useState(false);
+  const [transcriptReviewEntries, setTranscriptReviewEntries] = useState<TranscriptImportReviewEntry[]>([]);
+  const [isTranscriptReviewOpen, setIsTranscriptReviewOpen] = useState(false);
   const [programConflictMsg, setProgramConflictMsg] = useState<string | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const transcriptInputRef = useRef<HTMLInputElement | null>(null);
+  const transcriptPhaseTimersRef = useRef<number[]>([]);
 
   const termOptions = useMemo(() => {
     const today = new Date();
@@ -207,7 +269,7 @@ export function AcademicSetupScreen({
     return courseMeta?.[code]?.credits ?? 3;
   };
 
-  const { completedForPlan, inProgressCourses } = useMemo(() => {
+  const { completedForPlan: manualCompletedForPlan, inProgressCourses: manualInProgressCourses } = useMemo(() => {
     const threshold = maxCreditsPerSemester * termsCompleted;
     let running = 0;
     const completed: string[] = [];
@@ -223,6 +285,30 @@ export function AcademicSetupScreen({
     }
     return { completedForPlan: completed, inProgressCourses: inProgress };
   }, [completedCourses, maxCreditsPerSemester, termsCompleted, courseMeta, courseLookupByCode]);
+
+  const { completedForPlan, inProgressCourses } = useMemo(() => {
+    const importedCompletedSet = new Set(importedCompletedCourses.map(normalizeCourseCode));
+    const importedInProgressSet = new Set(importedInProgressCourses.map(normalizeCourseCode));
+
+    const adjustedManualCompleted = manualCompletedForPlan.filter((code) => !importedInProgressSet.has(code));
+    const adjustedManualInProgress = manualInProgressCourses.filter((code) => !importedCompletedSet.has(code));
+
+    const nextInProgress = Array.from(new Set([...adjustedManualInProgress, ...importedInProgressCourses]));
+    const nextInProgressSet = new Set(nextInProgress.map(normalizeCourseCode));
+    const nextCompleted = Array.from(new Set([...adjustedManualCompleted, ...importedCompletedCourses])).filter(
+      (code) => !nextInProgressSet.has(normalizeCourseCode(code))
+    );
+
+    return {
+      completedForPlan: nextCompleted,
+      inProgressCourses: nextInProgress,
+    };
+  }, [
+    importedCompletedCourses,
+    importedInProgressCourses,
+    manualCompletedForPlan,
+    manualInProgressCourses,
+  ]);
 
   const economicsTrackEstimate = useMemo(() => {
     const progressPool = new Set(
@@ -311,14 +397,142 @@ export function AcademicSetupScreen({
     };
   }, [courseMeta]);
 
+  const searchContext = useMemo(
+    () => ({
+      catalogId,
+      majors: selectedMajors,
+      minors: selectedMinors,
+      businessConcentration: businessMajorSelected ? businessConcentration : null,
+    }),
+    [businessConcentration, businessMajorSelected, catalogId, selectedMajors, selectedMinors]
+  );
+
+  useEffect(() => () => {
+    transcriptPhaseTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    transcriptPhaseTimersRef.current = [];
+  }, []);
+
+  const clearTranscriptPhaseTimers = () => {
+    transcriptPhaseTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    transcriptPhaseTimersRef.current = [];
+  };
+
+  const queueTranscriptPhaseSequence = () => {
+    clearTranscriptPhaseTimers();
+    setTranscriptImportPhase('uploading');
+    transcriptPhaseTimersRef.current = [
+      window.setTimeout(() => setTranscriptImportPhase('extracting'), 250),
+      window.setTimeout(() => setTranscriptImportPhase('matching'), 900),
+    ];
+  };
+
+  const isSupportedTranscriptFile = (file: File) =>
+    SUPPORTED_TRANSCRIPT_EXTENSIONS.some((extension) => file.name.toLowerCase().endsWith(extension));
+
+  const handleConfirmTranscriptImport = () => {
+    const nextCompleted = new Set(importedCompletedCourses.map(normalizeCourseCode));
+    const nextInProgress = new Set(importedInProgressCourses.map(normalizeCourseCode));
+    const nextCompletedTerms = { ...importedCompletedTerms };
+    const nextInProgressTerms = { ...importedInProgressTerms };
+
+    transcriptReviewEntries.forEach((entry) => {
+      const code = entry.matchedCode ? normalizeCourseCode(entry.matchedCode) : '';
+      if (!code) return;
+
+      if (entry.status === 'in_progress') {
+        nextCompleted.delete(code);
+        delete nextCompletedTerms[code];
+        nextInProgress.add(code);
+        if (entry.term) {
+          nextInProgressTerms[code] = entry.term;
+        } else if (currentTermLabel) {
+          nextInProgressTerms[code] = currentTermLabel;
+        }
+        return;
+      }
+
+      nextInProgress.delete(code);
+      delete nextInProgressTerms[code];
+      nextCompleted.add(code);
+      if (entry.term) {
+        nextCompletedTerms[code] = entry.term;
+      } else {
+        delete nextCompletedTerms[code];
+      }
+    });
+
+    setImportedCompletedCourses(Array.from(nextCompleted));
+    setImportedInProgressCourses(Array.from(nextInProgress));
+    setImportedCompletedTerms(
+      Object.fromEntries(Object.entries(nextCompletedTerms).filter(([code]) => nextCompleted.has(code)))
+    );
+    setImportedInProgressTerms(
+      Object.fromEntries(Object.entries(nextInProgressTerms).filter(([code]) => nextInProgress.has(code)))
+    );
+    setTranscriptImportWarnings([]);
+    setTranscriptReviewEntries([]);
+    setIsTranscriptReviewOpen(false);
+    setTranscriptImportPhase('idle');
+  };
+
+  const handleCancelTranscriptImport = () => {
+    setTranscriptImportWarnings([]);
+    setTranscriptReviewEntries([]);
+    setIsTranscriptReviewOpen(false);
+    setTranscriptImportPhase('idle');
+  };
+
+  const handleTranscriptFile = async (file: File | null) => {
+    if (!file) return;
+    if (!isSupportedTranscriptFile(file)) {
+      setTranscriptImportError('Unsupported file type. Please upload a PDF, PNG, JPG, or JPEG transcript.');
+      setTranscriptImportPhase('error');
+      return;
+    }
+
+    setTranscriptImportError(null);
+    setTranscriptImportWarnings([]);
+    setSelectedTranscriptName(file.name);
+    queueTranscriptPhaseSequence();
+
+    try {
+      const response = await importTranscript(file, catalogId);
+      clearTranscriptPhaseTimers();
+      const nextEntries = buildTranscriptReviewEntries(response);
+      if (nextEntries.length === 0) {
+        throw new Error('No course rows could be detected from this file. Please try another transcript or add courses manually.');
+      }
+      setTranscriptImportWarnings(response.warnings ?? []);
+      setTranscriptReviewEntries(nextEntries);
+      setTranscriptImportPhase('ready');
+      setIsTranscriptReviewOpen(true);
+    } catch (error: any) {
+      clearTranscriptPhaseTimers();
+      setTranscriptImportError(
+        error?.message ?? 'No course rows could be detected from this file. Please try another transcript or add courses manually.'
+      );
+      setTranscriptImportPhase('error');
+    }
+  };
+
   const handleSubmit = () => {
     if (!canSubmit) return;
+
+    const importedCompletedSet = new Set(importedCompletedCourses.map(normalizeCourseCode));
+    const manualExplicitInProgress = manualInProgressCourses.filter((code) => !importedCompletedSet.has(code));
     const nextInProgressOverrides = currentTermLabel
-      ? inProgressCourses.reduce<Record<string, string>>((acc, code) => {
+      ? manualExplicitInProgress.reduce<Record<string, string>>((acc, code) => {
           acc[code] = currentTermLabel;
           return acc;
         }, {})
       : {};
+
+    Object.entries(importedInProgressTerms).forEach(([code, term]) => {
+      if (inProgressCourses.includes(code) && term) {
+        nextInProgressOverrides[code] = term;
+      }
+    });
+
     onComplete({
       majors: selectedMajors,
       minors: selectedMinors,
@@ -328,7 +542,9 @@ export function AcademicSetupScreen({
       inProgressCourses,
       manualCredits: [],
       inProgressOverrides: nextInProgressOverrides,
-      completedOverrides: {},
+      completedOverrides: Object.fromEntries(
+        Object.entries(importedCompletedTerms).filter(([code]) => completedForPlan.includes(code))
+      ),
       lastRolloverTermApplied: currentTermLabel ?? undefined,
       maxCreditsPerSemester,
       startTermSeason: selectedStartTerm?.season ?? "Fall",
@@ -358,12 +574,7 @@ export function AcademicSetupScreen({
 
     const timer = window.setTimeout(async () => {
       try {
-        const results = await searchCourses(queryNormalized, undefined, 20, {
-          catalogId,
-          majors: selectedMajors,
-          minors: selectedMinors,
-          businessConcentration: businessMajorSelected ? businessConcentration : null,
-        });
+        const results = await searchCourses(queryNormalized, undefined, 20, searchContext);
         if (cancelled) return;
         setCourseSearchResults(results);
         setCourseLookupByCode((prev) => {
@@ -408,7 +619,7 @@ export function AcademicSetupScreen({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [businessConcentration, businessMajorSelected, canSearch, catalogId, queryNormalized, courses, courseMeta, selectedMajors, selectedMinors]);
+  }, [canSearch, queryNormalized, courses, courseMeta, searchContext]);
 
   useEffect(() => {
     if (!dropdownOpen) {
@@ -469,6 +680,81 @@ export function AcademicSetupScreen({
 
   };
 
+  const handleRemoveTranscriptReviewEntry = (reviewId: string) => {
+    setTranscriptReviewEntries((prev) => prev.filter((entry) => entry.reviewId !== reviewId));
+  };
+
+  const handleUpdateTranscriptReviewStatus = (
+    reviewId: string,
+    nextStatus: 'completed' | 'in_progress'
+  ) => {
+    setTranscriptReviewEntries((prev) =>
+      prev.map((entry) => {
+        if (entry.reviewId !== reviewId) return entry;
+        if (entry.status === nextStatus) return entry;
+        return {
+          ...entry,
+          status: nextStatus,
+          term:
+            nextStatus === 'in_progress'
+              ? currentTermLabel ?? entry.term ?? null
+              : entry.term,
+        };
+      })
+    );
+  };
+
+  const handleUpdateTranscriptReviewMatch = (
+    reviewId: string,
+    nextMatch: {
+      code: string;
+      title: string;
+      confidence: number;
+      matchedConfidently: boolean;
+      matchCandidates?: Array<{ code: string; title: string; confidence: number }>;
+    } | null
+  ) => {
+    setTranscriptReviewEntries((prev) =>
+      prev.map((entry) => {
+        if (entry.reviewId !== reviewId) return entry;
+        if (!nextMatch) {
+          return {
+            ...entry,
+            matchedCode: null,
+            matchedConfidently: false,
+            title: entry.rawTitle ?? entry.title,
+          };
+        }
+        return {
+          ...entry,
+          matchedCode: nextMatch.code,
+          title: nextMatch.title,
+          confidence: nextMatch.confidence,
+          matchedConfidently: nextMatch.matchedConfidently,
+          matchCandidates: nextMatch.matchCandidates ?? entry.matchCandidates,
+        };
+      })
+    );
+  };
+
+  const removeImportedCompletedCourse = (code: string) => {
+    setImportedCompletedCourses((prev) => prev.filter((courseCode) => courseCode !== code));
+    setImportedCompletedTerms((prev) => {
+      const next = { ...prev };
+      delete next[code];
+      return next;
+    });
+  };
+
+  const removeImportedInProgressCourse = (code: string) => {
+    setImportedInProgressCourses((prev) => prev.filter((courseCode) => courseCode !== code));
+    setImportedInProgressTerms((prev) => {
+      const next = { ...prev };
+      delete next[code];
+      return next;
+    });
+  };
+
   return (
     <div className="min-h-screen py-12 px-6">
       <div className="max-w-4xl mx-auto">
@@ -500,9 +786,9 @@ export function AcademicSetupScreen({
           <div className="grid gap-6">
             {/* Waivers */}
             <div className="p-6 rounded-2xl border" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
-              <h3 className="mb-3">Waivers (first question)</h3>
+              <h3 className="mb-3">Foundation Course Waivers</h3>
               <p className="text-sm mb-4" style={{ color: 'var(--neutral-dark)' }}>
-                Have you waived any of the foundation courses below?
+                Check a box only if AUBG officially waived that course for you and you do not need to take it. Leave it unchecked if you still need to complete the course.
               </p>
               <div className="grid md:grid-cols-2 gap-2">
                 <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer"
@@ -513,7 +799,7 @@ export function AcademicSetupScreen({
                     checked={waivedMat1000}
                     onChange={() => setWaivedMat1000(prev => !prev)}
                   />
-                  <span>MAT 1000 waived</span>
+                  <span>I have a waiver for MAT 1000</span>
                 </label>
                 <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer"
                   style={{ borderColor: waivedEng1000 ? 'var(--academic-gold)' : 'var(--neutral-border)' }}
@@ -523,7 +809,7 @@ export function AcademicSetupScreen({
                     checked={waivedEng1000}
                     onChange={() => setWaivedEng1000(prev => !prev)}
                   />
-                  <span>ENG 1000 waived</span>
+                  <span>I have a waiver for ENG 1000</span>
                 </label>
               </div>
             </div>
@@ -750,7 +1036,7 @@ export function AcademicSetupScreen({
             <div className="p-6 rounded-2xl border" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
               <h3 className="mb-3">Completed Courses</h3>
               <p className="text-sm mb-4" style={{ color: 'var(--neutral-dark)' }}>
-                Search the entire catalog and select the courses you have already completed.
+                Search the entire catalog, import a transcript, or use both together. You can review and edit everything before continuing.
               </p>
               <input
                 value={courseQuery}
@@ -924,13 +1210,13 @@ export function AcademicSetupScreen({
                 </div>
               )}
 
-              {inProgressCourses.length > 0 && (
+              {manualInProgressCourses.length > 0 && (
                 <div className="mt-4">
                   <div className="text-sm mb-2" style={{ color: 'var(--neutral-dark)' }}>
                     Currently taking (auto-detected):
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {inProgressCourses.map((code) => (
+                    {manualInProgressCourses.map((code) => (
                       <div
                         key={code}
                         className="px-3 py-1 rounded-full text-sm border"
@@ -938,6 +1224,131 @@ export function AcademicSetupScreen({
                       >
                         {code}
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="my-6 flex items-center gap-4" aria-hidden="true">
+                <div className="h-px flex-1" style={{ background: 'var(--neutral-border)' }} />
+                <span className="text-xs uppercase tracking-[0.2em]" style={{ color: 'var(--neutral-dark)' }}>
+                  or import from transcript
+                </span>
+                <div className="h-px flex-1" style={{ background: 'var(--neutral-border)' }} />
+              </div>
+
+              <div
+                className="p-5 rounded-2xl border"
+                style={{
+                  borderColor: isTranscriptDragging ? 'var(--academic-gold)' : 'var(--neutral-border)',
+                  background: isTranscriptDragging ? 'var(--neutral-cream)' : '#fcfcfd',
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsTranscriptDragging(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  setIsTranscriptDragging(false);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsTranscriptDragging(false);
+                  const file = event.dataTransfer.files?.[0] ?? null;
+                  void handleTranscriptFile(file);
+                }}
+              >
+                <div className="font-medium">Upload Transcript (PDF or Image)</div>
+                <div className="text-sm mt-1" style={{ color: 'var(--neutral-dark)' }}>
+                  Accepted formats: PDF, PNG, JPG, JPEG
+                </div>
+                <div className="text-sm mt-2" style={{ color: 'var(--neutral-dark)' }}>
+                  Upload an official or unofficial transcript to auto-fill completed and in-progress courses. You can still edit everything manually afterward.
+                </div>
+                <input
+                  ref={transcriptInputRef}
+                  type="file"
+                  accept={TRANSCRIPT_ACCEPT}
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    void handleTranscriptFile(file);
+                    event.target.value = '';
+                  }}
+                />
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => transcriptInputRef.current?.click()}
+                    className="px-4 py-2 rounded-lg font-medium"
+                    style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                  >
+                    Choose File
+                  </button>
+                  <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                    or drag and drop a transcript here
+                  </div>
+                </div>
+                {selectedTranscriptName && (
+                  <div className="text-sm mt-3" style={{ color: 'var(--neutral-dark)' }}>
+                    Selected file: {selectedTranscriptName}
+                  </div>
+                )}
+                {transcriptStatusLabel(transcriptImportPhase) && (
+                  <div className="text-sm mt-3" style={{ color: 'var(--neutral-dark)' }}>
+                    {transcriptStatusLabel(transcriptImportPhase)}
+                  </div>
+                )}
+                {transcriptImportError && (
+                  <div
+                    className="mt-3 px-4 py-3 rounded-xl border text-sm"
+                    style={{ borderColor: '#fca5a5', background: '#fef2f2', color: '#b91c1c' }}
+                    role="alert"
+                  >
+                    {transcriptImportError}
+                  </div>
+                )}
+              </div>
+
+              {importedCompletedCourses.length > 0 && (
+                <div className="mt-4">
+                  <div className="text-sm mb-2" style={{ color: 'var(--neutral-dark)' }}>
+                    Imported completed courses:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {importedCompletedCourses.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => removeImportedCompletedCourse(code)}
+                        className="px-3 py-1 rounded-full text-sm border"
+                        style={{ borderColor: 'var(--neutral-border)', background: '#eef6ff', color: 'var(--navy-dark)' }}
+                        title="Remove imported course"
+                      >
+                        {code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {importedInProgressCourses.length > 0 && (
+                <div className="mt-4">
+                  <div className="text-sm mb-2" style={{ color: 'var(--neutral-dark)' }}>
+                    Imported in-progress courses:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {importedInProgressCourses.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => removeImportedInProgressCourse(code)}
+                        className="px-3 py-1 rounded-full text-sm border"
+                        style={{ borderColor: 'var(--neutral-border)', background: '#eff6ff', color: '#1d4ed8' }}
+                        title="Remove imported in-progress course"
+                      >
+                        {code}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -975,6 +1386,18 @@ export function AcademicSetupScreen({
             </div>
           </div>
         )}
+
+        <TranscriptImportReviewDialog
+          open={isTranscriptReviewOpen}
+          entries={transcriptReviewEntries}
+          warnings={transcriptImportWarnings}
+          searchContext={searchContext}
+          onCancel={handleCancelTranscriptImport}
+          onConfirm={handleConfirmTranscriptImport}
+          onRemove={handleRemoveTranscriptReviewEntry}
+          onUpdateStatus={handleUpdateTranscriptReviewStatus}
+          onUpdateMatch={handleUpdateTranscriptReviewMatch}
+        />
       </div>
     </div>
   );

@@ -14,6 +14,18 @@ export function isEarlierTerm(a: string, b: string): boolean {
   return aValue < bValue;
 }
 
+export function previousTermLabel(term: string): string | null {
+  const match = term.match(/^(Spring|Fall)\s+(\d{4})$/);
+  if (!match) return null;
+  const season = match[1];
+  const year = Number(match[2]);
+  if (!Number.isFinite(year)) return null;
+  if (season === 'Spring') {
+    return `Fall ${year - 1}`;
+  }
+  return `Spring ${year}`;
+}
+
 export interface CourseStatusRolloverInput {
   currentTermLabel: string;
   lastRolloverTermApplied?: string;

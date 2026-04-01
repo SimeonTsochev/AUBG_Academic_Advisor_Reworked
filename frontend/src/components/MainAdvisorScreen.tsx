@@ -19,9 +19,11 @@ import type {
 } from '../api';
 import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
 import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
-import { applyRolloverIfNeeded } from '../utils/term';
+import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
 import { resolveActiveAttempts } from '../utils/retakes';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
+
+const SNAPSHOT_STORAGE_DISABLED_SESSION_KEY = 'programSnapshotStorageDisabled';
 
 interface MainAdvisorScreenProps {
   catalog: UploadCatalogResponse;
@@ -119,6 +121,87 @@ function formatSnapshotTokenError(error: unknown, hasExistingToken: boolean): st
   }
 
   return `${baseMessage} ${detail}`;
+}
+
+function isSnapshotStorageDisabledError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /program snapshot storage is disabled because supabase is not configured/i.test(error.message);
+}
+
+function readSnapshotStorageDisabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(SNAPSHOT_STORAGE_DISABLED_SESSION_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistSnapshotStorageDisabled() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(SNAPSHOT_STORAGE_DISABLED_SESSION_KEY, 'true');
+  } catch {
+    // Ignore storage failures in local dev.
+  }
+}
+
+function areStringMapsEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => a[key] === b[key]);
+}
+
+function normalizeCompletedCourseTerms(params: {
+  currentTermLabel: string;
+  defaultCompletedTerm: string;
+  completedCourses: string[];
+  inProgressCourses: string[];
+  completedOverrides: Record<string, string>;
+  inProgressOverrides: Record<string, string>;
+}) {
+  const {
+    currentTermLabel,
+    defaultCompletedTerm,
+    completedCourses,
+    inProgressCourses,
+    completedOverrides,
+    inProgressOverrides,
+  } = params;
+
+  const fallbackCompletedTerm =
+    previousTermLabel(currentTermLabel)
+    ?? (isEarlierTerm(defaultCompletedTerm, currentTermLabel) ? defaultCompletedTerm : currentTermLabel);
+
+  const inProgressTerms = new Set(
+    inProgressCourses
+      .map((code) => inProgressOverrides[code] ?? currentTermLabel)
+      .filter((term): term is string => typeof term === 'string' && term.trim().length > 0)
+  );
+
+  const nextCompletedOverrides = { ...completedOverrides };
+  let changed = false;
+
+  completedCourses.forEach((code) => {
+    const resolvedCompletedTerm = completedOverrides[code] ?? defaultCompletedTerm;
+    const conflictsWithInProgress = inProgressTerms.has(resolvedCompletedTerm);
+    const isNotEarlierThanCurrent = !isEarlierTerm(resolvedCompletedTerm, currentTermLabel);
+    if (!conflictsWithInProgress && !isNotEarlierThanCurrent) {
+      return;
+    }
+    if (nextCompletedOverrides[code] === fallbackCompletedTerm) {
+      return;
+    }
+    nextCompletedOverrides[code] = fallbackCompletedTerm;
+    changed = true;
+  });
+
+  return {
+    completedOverrides: nextCompletedOverrides,
+    fallbackCompletedTerm,
+    changed,
+  };
 }
 
 export function MainAdvisorScreen({
@@ -247,6 +330,27 @@ export function MainAdvisorScreen({
   const [lastRolloverTermApplied, setLastRolloverTermApplied] = useState<string | undefined>(initialCourseStatus.lastRolloverTermApplied);
   const [startTermSeason, setStartTermSeason] = useState<string>(selection.startTermSeason);
   const [startTermYear, setStartTermYear] = useState<number>(selection.startTermYear);
+  const defaultCompletedTerm = `${startTermSeason} ${startTermYear}`;
+  const normalizedCompletedTermState = useMemo(
+    () =>
+      normalizeCompletedCourseTerms({
+        currentTermLabel,
+        defaultCompletedTerm,
+        completedCourses,
+        inProgressCourses,
+        completedOverrides,
+        inProgressOverrides,
+      }),
+    [
+      currentTermLabel,
+      defaultCompletedTerm,
+      completedCourses,
+      inProgressCourses,
+      completedOverrides,
+      inProgressOverrides,
+    ]
+  );
+  const effectiveCompletedOverrides = normalizedCompletedTermState.completedOverrides;
   const [dismissedImpliedStart, setDismissedImpliedStart] = useState(false);
   const [appliedImpliedStartKey, setAppliedImpliedStartKey] = useState<string | null>(null);
   const [startTermUndo, setStartTermUndo] = useState<{
@@ -351,6 +455,13 @@ export function MainAdvisorScreen({
     (globalThis.crypto && "randomUUID" in globalThis.crypto)
       ? globalThis.crypto.randomUUID()
       : `inst-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  useEffect(() => {
+    if (!normalizedCompletedTermState.changed) return;
+    setCompletedOverrides((prev) =>
+      areStringMapsEqual(prev, effectiveCompletedOverrides) ? prev : effectiveCompletedOverrides
+    );
+  }, [effectiveCompletedOverrides, normalizedCompletedTermState.changed]);
   const genEdCategoryOptions = useMemo(
     () =>
       Object.keys(catalog.gen_ed?.rules ?? {})
@@ -2026,7 +2137,7 @@ export function MainAdvisorScreen({
         inProgressCourses,
         manualCredits,
         retakeEntries: normalizedRetakeEntries,
-        completedOverrides,
+        completedOverrides: effectiveCompletedOverrides,
         inProgressOverrides,
         overrides,
         swappedElectives,
@@ -2042,7 +2153,7 @@ export function MainAdvisorScreen({
       inProgressCourses,
       manualCredits,
       normalizedRetakeEntries,
-      completedOverrides,
+      effectiveCompletedOverrides,
       inProgressOverrides,
       overrides,
       swappedElectives,
@@ -2062,6 +2173,7 @@ export function MainAdvisorScreen({
   );
   const currentSnapshotTokenRef = useRef<string | null>(initialSnapshotToken);
   const initialSnapshotSettledRef = useRef(!initialSnapshotToken);
+  const snapshotStorageUnavailableRef = useRef(readSnapshotStorageDisabled());
   const tokenCopyResetTimeoutRef = useRef<number | null>(null);
   const [currentSnapshotToken, setCurrentSnapshotToken] = useState<string | null>(initialSnapshotToken);
   const [isSnapshotTokenLoading, setIsSnapshotTokenLoading] = useState(!initialSnapshotToken);
@@ -2091,6 +2203,7 @@ export function MainAdvisorScreen({
   useEffect(() => {
     if (!isSnapshotHydrated) return;
     if (initialSnapshotToken && !initialSnapshotSettledRef.current) return;
+    if (snapshotStorageUnavailableRef.current) return;
     if (snapshotRelevantStateHash === lastSavedSnapshotHashRef.current) return;
 
     let cancelled = false;
@@ -2116,6 +2229,13 @@ export function MainAdvisorScreen({
         }
       } catch (e) {
         if (cancelled) return;
+        if (isSnapshotStorageDisabledError(e)) {
+          snapshotStorageUnavailableRef.current = true;
+          persistSnapshotStorageDisabled();
+          setIsSnapshotTokenLoading(false);
+          setSnapshotTokenError('Share tokens are unavailable in this local setup.');
+          return;
+        }
         console.error("Failed to save program snapshot.", e);
         setIsSnapshotTokenLoading(false);
         setSnapshotTokenError(
@@ -2507,13 +2627,13 @@ export function MainAdvisorScreen({
         plannedCodes.add(course.code);
       }
     }
-    const selectedStartTermLabel = `${startTermSeason} ${startTermYear}`;
+    const selectedStartTermLabel = defaultCompletedTerm;
 
     // Completed courses bucket (shown as the student's first semester)
     for (const code of effectiveCompleted) {
       if (!code || !code.trim()) continue;
       const meta = catalog.course_meta?.[code];
-      const overrideTerm = completedOverrides[code];
+      const overrideTerm = effectiveCompletedOverrides[code];
       const targetTerm = overrideTerm ?? selectedStartTermLabel;
       const instanceId = completedInstanceId(code);
       out.push({
@@ -2843,7 +2963,7 @@ export function MainAdvisorScreen({
     inProgressOverrides,
     removedCourses,
     removedCodeSet,
-    completedOverrides,
+    effectiveCompletedOverrides,
     plan?.course_reasons,
     plan?.excel_elective_tags,
     prereqWarnings,

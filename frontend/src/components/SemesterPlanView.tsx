@@ -317,8 +317,19 @@ export function SemesterPlanView({
   const boundedTermSequence = termSequence;
 
   const completedTermOptions = (currentTerm: string) => {
-    if (boundedTermSequence.includes(currentTerm)) return boundedTermSequence;
-    return [currentTerm, ...boundedTermSequence];
+    const allowedTerms = boundedTermSequence.filter((term) => {
+      const match = term.match(/^(Spring|Fall)\s+(\d{4})$/);
+      const currentMatch = currentTermLabel.match(/^(Spring|Fall)\s+(\d{4})$/);
+      if (!match || !currentMatch) return term === currentTermLabel;
+      const value = Number(match[2]) * 2 + (match[1] === 'Fall' ? 1 : 0);
+      const currentValue = Number(currentMatch[2]) * 2 + (currentMatch[1] === 'Fall' ? 1 : 0);
+      return value <= currentValue;
+    });
+
+    if (!allowedTerms.includes(currentTerm)) {
+      return [...allowedTerms, currentTerm];
+    }
+    return allowedTerms;
   };
   const hasAnyCourses =
     completedCourses.length > 0 ||
@@ -1020,8 +1031,13 @@ export function SemesterPlanView({
                             <select
                               value={course.semester}
                               onChange={(e) => onMoveCompleted(course.instanceId, e.target.value)}
-                              className="text-xs px-2 py-1 rounded border"
-                              style={{ borderColor: 'var(--neutral-border)', color: 'var(--navy-dark)' }}
+                              className="text-xs rounded border"
+                              style={{
+                                borderColor: 'var(--neutral-border)',
+                                color: 'var(--navy-dark)',
+                                width: '6.75rem',
+                                padding: '0.2rem 1.25rem 0.2rem 0.35rem',
+                              }}
                             >
                               {completedTermOptions(course.semester).map((term) => (
                                 <option key={term} value={term}>

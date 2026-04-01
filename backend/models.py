@@ -13,6 +13,31 @@ class UploadCatalogResponse(BaseModel):
     excel_only_codes: List[str] = Field(default_factory=list)
 
 
+class TranscriptImportMatchCandidate(BaseModel):
+    code: str
+    title: str
+    confidence: float
+
+
+class TranscriptImportCourse(BaseModel):
+    raw_code: str
+    matched_code: Optional[str] = None
+    title: Optional[str] = None
+    raw_title: Optional[str] = None
+    status: Literal["completed", "in_progress"]
+    term: Optional[str] = None
+    confidence: float = 0.0
+    matched_confidently: bool = False
+    match_candidates: List[TranscriptImportMatchCandidate] = Field(default_factory=list)
+
+
+class TranscriptImportResponse(BaseModel):
+    completed: List[TranscriptImportCourse] = Field(default_factory=list)
+    in_progress: List[TranscriptImportCourse] = Field(default_factory=list)
+    unmatched: List[TranscriptImportCourse] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
 class ManualCredit(BaseModel):
     code: Literal["OTH 0001"]
     instance_id: str
