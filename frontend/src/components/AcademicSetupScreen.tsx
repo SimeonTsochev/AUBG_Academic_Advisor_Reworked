@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import {
   importTranscript,
+  importTranscriptText,
   searchCourses,
   type CourseCatalogRecord,
   type TranscriptImportCourse,
   type TranscriptImportResponse,
 } from '../api';
 import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
+import { extractTranscriptLinesFromImage } from '../utils/transcriptOcr';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 import type { ManualCreditEntry } from '../types';
 import {
@@ -28,6 +30,7 @@ type TranscriptImportPhase = 'idle' | 'uploading' | 'extracting' | 'matching' | 
 
 const TRANSCRIPT_ACCEPT = '.pdf,.png,.jpg,.jpeg';
 const SUPPORTED_TRANSCRIPT_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
+const IMAGE_TRANSCRIPT_EXTENSIONS = ['.png', '.jpg', '.jpeg'];
 
 const buildTranscriptReviewEntries = (response: TranscriptImportResponse): TranscriptImportReviewEntry[] => {
   const toEntry = (course: TranscriptImportCourse, index: number): TranscriptImportReviewEntry => ({
@@ -429,6 +432,9 @@ export function AcademicSetupScreen({
   const isSupportedTranscriptFile = (file: File) =>
     SUPPORTED_TRANSCRIPT_EXTENSIONS.some((extension) => file.name.toLowerCase().endsWith(extension));
 
+  const isImageTranscriptFile = (file: File) =>
+    IMAGE_TRANSCRIPT_EXTENSIONS.some((extension) => file.name.toLowerCase().endsWith(extension));
+
   const handleConfirmTranscriptImport = () => {
     const nextCompleted = new Set(importedCompletedCourses.map(normalizeCourseCode));
     const nextInProgress = new Set(importedInProgressCourses.map(normalizeCourseCode));
@@ -496,7 +502,12 @@ export function AcademicSetupScreen({
     queueTranscriptPhaseSequence();
 
     try {
-      const response = await importTranscript(file, catalogId);
+      const response = isImageTranscriptFile(file)
+        ? await importTranscriptText(
+            await extractTranscriptLinesFromImage(file),
+            { usedOcr: true }
+          )
+        : await importTranscript(file, catalogId);
       clearTranscriptPhaseTimers();
       const nextEntries = buildTranscriptReviewEntries(response);
       if (nextEntries.length === 0) {

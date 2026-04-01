@@ -16,13 +16,14 @@ from pdf_export import plan_to_pdf_bytes
 from models import (
     UploadCatalogResponse,
     TranscriptImportResponse,
+    TranscriptImportTextRequest,
     GeneratePlanRequest,
     GeneratePlanResponse,
     CreateSnapshotRequest,
     CreateSnapshotResponse,
     GetSnapshotResponse,
 )
-from transcript_import import import_transcript_document
+from transcript_import import import_transcript_document, import_transcript_text_payload, TranscriptLine
 from excel_course_catalog import (
     get_course as get_excel_course_record,
     search_courses as search_excel_courses,
@@ -339,6 +340,33 @@ async def transcript_import(
 
     try:
         payload = import_transcript_document(await file.read(), file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return TranscriptImportResponse(**payload)
+
+
+@app.post("/transcript/import-text", response_model=TranscriptImportResponse)
+def transcript_import_text(req: TranscriptImportTextRequest):
+    _require_catalog_cache()
+
+    try:
+        line_items = [
+            TranscriptLine(
+                page_number=max(1, int(item.page_number)),
+                text=item.text,
+                confidence=float(item.confidence),
+            )
+            for item in req.lines
+            if isinstance(item.text, str) and item.text.strip()
+        ]
+        payload = import_transcript_text_payload(
+            text=req.text,
+            lines=line_items or None,
+            used_ocr=bool(req.used_ocr),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:

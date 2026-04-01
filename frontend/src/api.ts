@@ -96,6 +96,12 @@ export interface TranscriptImportResponse {
   warnings: string[];
 }
 
+export interface TranscriptImportLineInput {
+  text: string;
+  page_number?: number;
+  confidence?: number;
+}
+
 // Legacy upload flow (kept for future multi-university support)
 /*
 export async function uploadCatalog(file: File): Promise<UploadCatalogResponse> {
@@ -195,6 +201,29 @@ export async function importTranscript(
   const res = await fetch(`${API_BASE}/transcript/import`, {
     method: "POST",
     body: form,
+  });
+  if (!res.ok) {
+    const detail = (await readErrorDetail(res)) ?? (await safeDetail(res));
+    throw new Error(detail ?? `Transcript import failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function importTranscriptText(
+  lines: TranscriptImportLineInput[],
+  options?: {
+    text?: string;
+    usedOcr?: boolean;
+  }
+): Promise<TranscriptImportResponse> {
+  const res = await fetch(`${API_BASE}/transcript/import-text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: options?.text ?? null,
+      lines,
+      used_ocr: options?.usedOcr ?? false,
+    }),
   });
   if (!res.ok) {
     const detail = (await readErrorDetail(res)) ?? (await safeDetail(res));

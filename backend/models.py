@@ -38,6 +38,18 @@ class TranscriptImportResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+class TranscriptImportLineInput(BaseModel):
+    text: str
+    page_number: int = 1
+    confidence: float = 1.0
+
+
+class TranscriptImportTextRequest(BaseModel):
+    text: Optional[str] = None
+    lines: List[TranscriptImportLineInput] = Field(default_factory=list)
+    used_ocr: bool = False
+
+
 class ManualCredit(BaseModel):
     code: Literal["OTH 0001"]
     instance_id: str

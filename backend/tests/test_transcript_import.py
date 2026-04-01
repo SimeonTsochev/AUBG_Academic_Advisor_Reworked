@@ -146,6 +146,27 @@ class TranscriptImportTests(unittest.TestCase):
         self.assertEqual(response["in_progress"][0]["matched_code"], "BUS 1001")
         self.assertTrue(any("ocr" in warning.lower() for warning in response["warnings"]))
 
+    def test_transcript_import_text_endpoint_accepts_ocr_lines(self):
+        client = TestClient(app)
+
+        response = client.post(
+            "/transcript/import-text",
+            json={
+                "used_ocr": True,
+                "lines": [
+                    {"text": "Current Term Spring 2026", "page_number": 1, "confidence": 0.99},
+                    {"text": "BUS-1001 Management in a Global Environment", "page_number": 1, "confidence": 0.96},
+                    {"text": "In Progress", "page_number": 1, "confidence": 0.94},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["completed"], [])
+        self.assertEqual(payload["in_progress"][0]["matched_code"], "BUS 1001")
+        self.assertTrue(any("ocr" in warning.lower() for warning in payload["warnings"]))
+
     def test_transcript_import_endpoint_rejects_unsupported_files(self):
         client = TestClient(app)
         response = client.post(

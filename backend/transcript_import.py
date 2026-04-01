@@ -6,10 +6,8 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 import re
 
-import fitz
 import pdfplumber
 from rapidfuzz import fuzz
-from rapidocr_onnxruntime import RapidOCR
 
 from catalog_cache import getCatalogCache
 from excel_course_catalog import (
@@ -53,7 +51,7 @@ _TABLE_HEADER_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 
-_OCR_ENGINE: Optional[RapidOCR] = None
+_OCR_ENGINE: Any | None = None
 
 
 @dataclass
@@ -100,6 +98,37 @@ def import_transcript_document(file_bytes: bytes, filename: str) -> dict[str, An
 
     response = build_transcript_import_response(parsed_courses)
     response["warnings"] = list(dict.fromkeys([*extraction_warnings, *response["warnings"]]))
+    return response
+
+
+def import_transcript_text_payload(
+    *,
+    text: str | None = None,
+    lines: list[TranscriptLine] | None = None,
+    used_ocr: bool = False,
+) -> dict[str, Any]:
+    transcript_lines = lines if lines is not None else _text_to_transcript_lines(text or "")
+    if not transcript_lines:
+        raise ValueError(
+            "No course rows could be detected from this file. Please try another transcript or add courses manually."
+        )
+
+    parsed_courses = parse_transcript_lines(transcript_lines)
+    if not parsed_courses:
+        raise ValueError(
+            "No course rows could be detected from this file. Please try another transcript or add courses manually."
+        )
+
+    response = build_transcript_import_response(parsed_courses)
+    if used_ocr:
+        response["warnings"] = list(
+            dict.fromkeys(
+                [
+                    "OCR was used to read this transcript. Please review the detected courses before importing.",
+                    *response["warnings"],
+                ]
+            )
+        )
     return response
 
 
@@ -587,6 +616,11 @@ def _pdf_words_to_lines(page_number: int, words: list[dict[str, Any]]) -> list[T
 
 
 def _extract_pdf_ocr_lines(file_bytes: bytes) -> list[TranscriptLine]:
+    try:
+        import fitz  # type: ignore
+    except ImportError:
+        return []
+
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     try:
         extracted: list[TranscriptLine] = []
@@ -601,6 +635,8 @@ def _extract_pdf_ocr_lines(file_bytes: bytes) -> list[TranscriptLine]:
 
 def _extract_ocr_lines_from_image_bytes(file_bytes: bytes, page_number: int) -> list[TranscriptLine]:
     ocr_engine = _get_ocr_engine()
+    if ocr_engine is None:
+        return []
     results, _ = ocr_engine(file_bytes)
     if not results:
         return []
@@ -635,9 +671,13 @@ def _extract_ocr_lines_from_image_bytes(file_bytes: bytes, page_number: int) -> 
     return [item[2] for item in ordered]
 
 
-def _get_ocr_engine() -> RapidOCR:
+def _get_ocr_engine() -> Any | None:
     global _OCR_ENGINE
     if _OCR_ENGINE is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR  # type: ignore
+        except ImportError:
+            return None
         _OCR_ENGINE = RapidOCR()
     return _OCR_ENGINE
 
@@ -757,6 +797,14 @@ def _normalize_transcript_text(text: str) -> str:
 
 def _normalize_space(text: str) -> str:
     return _SPACE_RE.sub(" ", text).strip()
+
+
+def _text_to_transcript_lines(text: str) -> list[TranscriptLine]:
+    return [
+        TranscriptLine(page_number=1, text=line_text, confidence=1.0)
+        for line_text in str(text or "").splitlines()
+        if _normalize_space(_normalize_transcript_text(line_text))
+    ]
 
 
 def _compact_code(code: str) -> str:
