@@ -1,18 +1,104 @@
 import { ElectiveSuggestion } from '../types';
 import { Award, Info } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+
+export interface ElectiveRecommendationFilter {
+  id: string;
+  label: string;
+  program: string;
+  programType: 'major' | 'minor';
+  tagPrefixes: string[];
+  displayTag: string;
+}
 
 interface ElectiveRecommendationPanelProps {
   electives: ElectiveSuggestion[];
   onAdd?: (code: string) => void;
   existingCodes?: Set<string>;
+  requirementFilters?: ElectiveRecommendationFilter[];
 }
 
-export function ElectiveRecommendationPanel({ electives, onAdd, existingCodes }: ElectiveRecommendationPanelProps) {
+export function ElectiveRecommendationPanel({
+  electives,
+  onAdd,
+  existingCodes,
+  requirementFilters = []
+}: ElectiveRecommendationPanelProps) {
   const [showTooltip, setShowTooltip] = useState<string | null>(null);
+  const [selectedRequirement, setSelectedRequirement] = useState<string>('ALL');
+  const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+  const tagMatchesFilter = (tag: string, filter: ElectiveRecommendationFilter) => {
+    const normalizedTag = normalizeText(tag);
+    const normalizedDisplayTag = normalizeText(filter.displayTag);
+    if (normalizedTag === normalizedDisplayTag) return true;
+    if (filter.programType === 'minor' && normalizedTag === normalizeText(`Minor - ${filter.program}`)) return true;
+
+    const needle = filter.programType === 'major' ? 'major elective' : 'minor elective';
+    if (!normalizedTag.includes(needle) || filter.tagPrefixes.length === 0) return false;
+    return filter.tagPrefixes.some((prefix) => normalizedTag.startsWith(`${prefix} `));
+  };
+  const electiveMatchesFilter = (elective: ElectiveSuggestion, filter: ElectiveRecommendationFilter) =>
+    elective.tags.some((tag) => tagMatchesFilter(tag, filter));
+  const requirementOptions = useMemo(() => {
+    if (requirementFilters.length > 0) {
+      return requirementFilters.map((filter) => ({
+        id: filter.id,
+        label: filter.label,
+        filter
+      }));
+    }
+
+    const requirements = new Set<string>();
+    electives.forEach((elective) => {
+      elective.tags.forEach((tag) => {
+        const normalized = tag.toLowerCase();
+        const isSelectedProgramRequirement =
+          normalized.includes('major elective') ||
+          normalized.includes('minor elective') ||
+          normalized.startsWith('minor - ');
+        if (isSelectedProgramRequirement) {
+          requirements.add(tag);
+        }
+      });
+    });
+    return Array.from(requirements)
+      .sort((a, b) => a.localeCompare(b))
+      .map((tag) => ({
+        id: tag,
+        label: tag,
+        filter: null
+      }));
+  }, [electives, requirementFilters]);
+  const activeRequirement =
+    selectedRequirement === 'ALL' || requirementOptions.some((option) => option.id === selectedRequirement)
+      ? selectedRequirement
+      : 'ALL';
+  const activeRequirementOption = requirementOptions.find((option) => option.id === activeRequirement) ?? null;
+  const filteredElectives = useMemo(() => {
+    if (activeRequirement === 'ALL') return electives;
+    if (!activeRequirementOption) return electives;
+    return electives.filter((elective) =>
+      activeRequirementOption.filter
+        ? electiveMatchesFilter(elective, activeRequirementOption.filter)
+        : elective.tags.includes(activeRequirementOption.id)
+    );
+  }, [activeRequirement, activeRequirementOption, electives]);
+  const rankByCode = useMemo(() => {
+    return new Map(electives.map((elective, index) => [elective.code, index + 1]));
+  }, [electives]);
+  const requirementCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    requirementOptions.forEach((option) => {
+      const count = electives.filter((elective) =>
+        option.filter ? electiveMatchesFilter(elective, option.filter) : elective.tags.includes(option.id)
+      ).length;
+      counts.set(option.id, count);
+    });
+    return counts;
+  }, [electives, requirementOptions]);
 
   return (
-    <div className="rounded-xl p-6 shadow-sm" style={{ backgroundcolor: '#EAF4FF' }}>
+    <div className="rounded-xl p-6 shadow-sm" style={{ backgroundColor: '#EAF4FF' }}>
       <div className="flex items-center gap-3 mb-5">
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center"
@@ -28,8 +114,55 @@ export function ElectiveRecommendationPanel({ electives, onAdd, existingCodes }:
         </div>
       </div>
 
+      {requirementOptions.length > 0 && (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSelectedRequirement('ALL')}
+            className="px-3 py-1.5 rounded-lg border text-sm font-medium"
+            style={{
+              background: activeRequirement === 'ALL' ? 'var(--academic-gold)' : 'var(--white)',
+              borderColor: activeRequirement === 'ALL' ? 'var(--academic-gold)' : 'var(--neutral-border)',
+              color: 'var(--navy-dark)'
+            }}
+          >
+            All selected programs
+            <span
+              className="text-xs"
+              style={{ color: 'var(--neutral-dark)', marginLeft: '0.5rem' }}
+            >
+              {electives.length}
+            </span>
+          </button>
+          {requirementOptions.map((requirement) => {
+            const isActive = activeRequirement === requirement.id;
+            return (
+              <button
+                key={requirement.id}
+                type="button"
+                onClick={() => setSelectedRequirement(requirement.id)}
+                className="px-3 py-1.5 rounded-lg border text-sm font-medium"
+                style={{
+                  background: isActive ? 'var(--navy-blue)' : 'var(--white)',
+                  borderColor: isActive ? 'var(--navy-blue)' : 'var(--neutral-border)',
+                  color: isActive ? 'var(--white)' : 'var(--navy-dark)'
+                }}
+              >
+                {requirement.label}
+                <span
+                  className="text-xs"
+                  style={{ color: isActive ? 'var(--white)' : 'var(--neutral-dark)', marginLeft: '0.5rem' }}
+                >
+                  {requirementCounts.get(requirement.id) ?? 0}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="space-y-3">
-        {electives.map((elective, index) => (
+        {filteredElectives.map((elective) => (
           <div
             key={elective.code}
             className="p-4 rounded-lg border-2 transition-all hover:shadow-md cursor-pointer relative"
@@ -47,7 +180,7 @@ export function ElectiveRecommendationPanel({ electives, onAdd, existingCodes }:
                     {elective.code}
                   </span>
                   <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--academic-gold)', color: 'var(--white)' }}>
-                    Rank #{index + 1}
+                    Rank #{rankByCode.get(elective.code) ?? 1}
                   </span>
                 </div>
                 <p className="text-sm mb-2" style={{ color: 'var(--neutral-dark)' }}>

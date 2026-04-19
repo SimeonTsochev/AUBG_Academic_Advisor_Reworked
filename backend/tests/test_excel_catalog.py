@@ -72,6 +72,45 @@ class ExcelCatalogTests(unittest.TestCase):
             "gen_ed": {"categories": {"Dummy": []}, "rules": {"Dummy": 0}},
         }
 
+    def _economics_minor_prefix_catalog(self) -> dict:
+        return {
+            "courses": {
+                "ECO 1001": {"name": "Micro Principles", "credits": 3, "gen_ed": []},
+                "ECO 1002": {"name": "Macro Principles", "credits": 3, "gen_ed": []},
+                "ECO 3001": {"name": "Intermediate Micro", "credits": 3, "gen_ed": []},
+                "ECO 2011": {"name": "Environmental Economics", "credits": 3, "gen_ed": []},
+                "ECO 2012": {"name": "Money and Banking", "credits": 3, "gen_ed": []},
+                "BUS 1001": {"name": "Management", "credits": 3, "gen_ed": []},
+            },
+            "course_meta": {
+                "ECO 1001": {"credits": 3, "prereq_codes": []},
+                "ECO 1002": {"credits": 3, "prereq_codes": []},
+                "ECO 3001": {"credits": 3, "prereq_codes": []},
+                "ECO 2011": {"credits": 3, "prereq_codes": []},
+                "ECO 2012": {"credits": 3, "prereq_codes": []},
+                "BUS 1001": {"credits": 3, "prereq_codes": []},
+            },
+            "majors": {},
+            "minors": {
+                "Economics": {
+                    "required_courses": ["ECO 1001", "ECO 1002", "ECO 3001"],
+                    "elective_requirements": [
+                        {
+                            "id": "economics-elective-total",
+                            "label": "Elective Courses",
+                            "credits_required": 9,
+                            "courses_required": None,
+                            "allowed_courses": [],
+                            "rule_text": "Elective Courses (9 credit hours) Any other ECO courses.",
+                            "is_total": True,
+                        },
+                    ],
+                },
+            },
+            "foundation_courses": [],
+            "gen_ed": {"categories": {"Dummy": []}, "rules": {"Dummy": 0}},
+        }
+
     def test_multiline_area_of_study_parses_tags(self):
         path = _write_xlsx([
             [
@@ -182,6 +221,25 @@ class ExcelCatalogTests(unittest.TestCase):
         )
 
         self.assertEqual(recs, [])
+
+    def test_compute_elective_recommendations_expands_any_other_minor_prefix(self):
+        recs = compute_elective_recommendations(
+            catalog=self._economics_minor_prefix_catalog(),
+            majors=[],
+            minors=["Economics"],
+            business_concentration=None,
+            completed_courses=set(),
+            planned_courses=[],
+        )
+        by_code = {entry["code"]: entry for entry in recs}
+
+        self.assertIn("ECO 2011", by_code)
+        self.assertIn("ECO 2012", by_code)
+        self.assertIn("ECO Minor Elective", by_code["ECO 2011"]["tags"])
+        self.assertNotIn("ECO 1001", by_code)
+        self.assertNotIn("ECO 1002", by_code)
+        self.assertNotIn("ECO 3001", by_code)
+        self.assertNotIn("BUS 1001", by_code)
 
     def test_case_studies_gened_discovery(self):
         path = _write_xlsx([

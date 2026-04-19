@@ -5359,6 +5359,19 @@ export function MainAdvisorScreen({
     });
   }, [catalog.course_meta, catalog.courses, courseObjects, electiveRequirementStatus, plan?.minor_alerts, plan?.elective_recommendations]);
 
+  const electiveRecommendationFilters = useMemo(() => {
+    return electiveRequirementStatus
+      .filter((entry) => !entry.isComplete)
+      .map((entry) => ({
+        id: entry.key,
+        label: entry.displayTag,
+        program: entry.program,
+        programType: entry.programType,
+        tagPrefixes: entry.tagPrefixes,
+        displayTag: entry.displayTag
+      }));
+  }, [electiveRequirementStatus]);
+
   const handleDownloadPdf = async () => {
     if (!plan) return;
     const blob = await downloadPlanPdf({
@@ -7319,6 +7332,7 @@ export function MainAdvisorScreen({
                         electives={electiveSuggestions}
                         onAdd={handleAddCourse}
                         existingCodes={existingCourseCodes}
+                        requirementFilters={electiveRecommendationFilters}
                       />
                     )}
                   </>
@@ -7726,8 +7740,6 @@ export function MainAdvisorScreen({
     </div>
   );
 }
-
-
 
 
 

@@ -1086,7 +1086,7 @@ def _catalog_courses(catalog: Dict) -> Set[str]:
 
 
 def _excel_catalog_by_code(catalog: Dict) -> Dict[str, Dict[str, Any]]:
-    excel_catalog = catalog.get("excel_catalog") or catalog.get("excel_course_catalog") or {}
+    excel_catalog = catalog.get("excel_catalog") or {}
     by_code = excel_catalog.get("by_code") if isinstance(excel_catalog, dict) else {}
     if not isinstance(by_code, dict):
         return {}
@@ -4483,7 +4483,7 @@ def compute_elective_recommendations(
     business_concentration: str | None,
     completed_courses: Set[str],
     planned_courses: List[str],
-    limit: int = 30,
+    limit: int = 60,
 ) -> List[Dict]:
     excel_catalog: Dict = catalog.get("excel_catalog") or {}
     taken = {
@@ -4649,6 +4649,29 @@ def compute_elective_recommendations(
                     continue
                 seen_allowed.add(normalized)
                 allowed_courses.append(normalized)
+            rule_text = _elective_block_rule_text(block)
+            for wildcard_code in sorted(_expand_wildcard_allowed_courses(catalog_courses, rule_text)):
+                normalized = _normalize_course_code(wildcard_code)
+                if not normalized or normalized not in catalog_courses or normalized in seen_allowed:
+                    continue
+                seen_allowed.add(normalized)
+                allowed_courses.append(normalized)
+            if block.get("allowed_courses"):
+                continue
+            for prefix in _infer_allowed_prefixes_for_minor_electives(minor_name, rule_text):
+                normalized_prefix = str(prefix).strip().upper()
+                if not normalized_prefix:
+                    continue
+                for catalog_code in sorted(catalog_courses):
+                    normalized = _normalize_course_code(catalog_code)
+                    if (
+                        not normalized
+                        or normalized in seen_allowed
+                        or not normalized.startswith(f"{normalized_prefix} ")
+                    ):
+                        continue
+                    seen_allowed.add(normalized)
+                    allowed_courses.append(normalized)
         if not allowed_courses:
             continue
 
@@ -4679,6 +4702,8 @@ def compute_elective_recommendations(
         program_key = f"minor:{_norm_minor_name(minor_name) or minor_name}"
 
         for code in allowed_courses:
+            if code in required_courses:
+                continue
             _merge_recommendation(code, [display_tag], {program_key})
 
     concentration = active_business_concentration(majors, business_concentration, catalog=catalog)
