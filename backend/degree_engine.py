@@ -3893,6 +3893,9 @@ def _rebalance_term_mix(
 
     def course_group(course: Dict) -> str:
         ctype = course.get("type")
+        code = course.get("code")
+        if ctype == "FREE_ELECTIVE" or (isinstance(code, str) and _is_free_elective(code)):
+            return "elective"
         if ctype in {"PROGRAM", "FOUNDATION"}:
             return "program"
         if ctype == "GENED":
@@ -3922,6 +3925,27 @@ def _rebalance_term_mix(
                 continue
             if not _eligible_for_term(catalog, code, term_idx, completed, completed_gened):
                 return False
+        return True
+
+    def group_count(term_courses: List[Dict], group: str) -> int:
+        return sum(1 for course in term_courses if course_group(course) == group)
+
+    def plan_is_eligible() -> bool:
+        completed = set(completed_courses)
+        completed_gened = _completed_gened_categories(catalog, completed)
+        for idx, term in enumerate(terms):
+            courses = term.get("courses", []) or []
+            credits = term_credits(courses)
+            min_term_credits, max_term_credits = available_bounds(term.get("term", ""))
+            if credits < min_term_credits or credits > max_term_credits:
+                return False
+            if not term_is_eligible(idx, courses, completed, completed_gened):
+                return False
+            for course in courses:
+                code = course.get("code")
+                if isinstance(code, str):
+                    completed.add(code)
+                    completed_gened.update(_course_gened_categories(catalog, code))
         return True
 
     def attempt_swap(idx_a: int, idx_b: int) -> bool:
@@ -3985,8 +4009,109 @@ def _rebalance_term_mix(
                 return True
         return False
 
+    diversity_groups = {"gened", "elective"}
+
+    def replacement_score(
+        recipient_courses: List[Dict],
+        donor_courses: List[Dict],
+        replacement_course: Dict,
+    ) -> Tuple[int, int, str]:
+        group = course_group(replacement_course)
+        helps_donor = group in diversity_groups and group_count(donor_courses, group) == 0
+        group_rank = {"program": 0, "other": 1, "elective": 2, "gened": 2}.get(group, 3)
+        code = replacement_course.get("code")
+        return (0 if helps_donor else 1, group_rank, str(code or ""))
+
+    def attempt_diversity_swap(target_group: str, recipient_idx: int, donor_idx: int) -> bool:
+        recipient = terms[recipient_idx]
+        donor = terms[donor_idx]
+        recipient_courses = recipient.get("courses", []) or []
+        donor_courses = donor.get("courses", []) or []
+
+        if group_count(recipient_courses, target_group) > 0:
+            return False
+        if group_count(donor_courses, target_group) <= 1:
+            return False
+
+        donor_candidates = [
+            idx
+            for idx, course in enumerate(donor_courses)
+            if course_group(course) == target_group
+        ]
+        recipient_candidates = []
+        for idx, course in enumerate(recipient_courses):
+            group = course_group(course)
+            if group == target_group:
+                continue
+            if group in diversity_groups and group_count(recipient_courses, group) <= 1:
+                continue
+            recipient_candidates.append(idx)
+        recipient_candidates.sort(
+            key=lambda idx: replacement_score(recipient_courses, donor_courses, recipient_courses[idx])
+        )
+
+        for donor_course_idx in donor_candidates:
+            for recipient_course_idx in recipient_candidates:
+                next_recipient_courses = list(recipient_courses)
+                next_donor_courses = list(donor_courses)
+                next_recipient_courses[recipient_course_idx], next_donor_courses[donor_course_idx] = (
+                    next_donor_courses[donor_course_idx],
+                    next_recipient_courses[recipient_course_idx],
+                )
+
+                original_recipient_courses = recipient.get("courses", []) or []
+                original_donor_courses = donor.get("courses", []) or []
+                original_recipient_credits = recipient.get("credits", 0)
+                original_donor_credits = donor.get("credits", 0)
+
+                recipient["courses"] = next_recipient_courses
+                donor["courses"] = next_donor_courses
+                recipient["credits"] = term_credits(next_recipient_courses)
+                donor["credits"] = term_credits(next_donor_courses)
+
+                if plan_is_eligible():
+                    return True
+
+                recipient["courses"] = original_recipient_courses
+                donor["courses"] = original_donor_courses
+                recipient["credits"] = original_recipient_credits
+                donor["credits"] = original_donor_credits
+
+        return False
+
+    def spread_group(target_group: str) -> bool:
+        changed = False
+        made_swap = True
+        while made_swap:
+            made_swap = False
+            for recipient_idx, recipient in enumerate(terms):
+                recipient_courses = recipient.get("courses", []) or []
+                if not recipient_courses or group_count(recipient_courses, target_group) > 0:
+                    continue
+
+                donor_indices = [
+                    donor_idx
+                    for donor_idx, donor in enumerate(terms)
+                    if donor_idx != recipient_idx
+                    and group_count(donor.get("courses", []) or [], target_group) > 1
+                ]
+                donor_indices.sort(key=lambda donor_idx: (abs(donor_idx - recipient_idx), donor_idx))
+
+                for donor_idx in donor_indices:
+                    if attempt_diversity_swap(target_group, recipient_idx, donor_idx):
+                        changed = True
+                        made_swap = True
+                        break
+                if made_swap:
+                    break
+        return changed
+
     for i in range(len(terms) - 1):
         attempt_swap(i, i + 1)
+
+    for _ in range(len(terms)):
+        if not (spread_group("gened") or spread_group("elective")):
+            break
 
     return terms
 

@@ -271,6 +271,24 @@ class PlanInvariantTests(unittest.TestCase):
                 if course.get("type") == "PROGRAM":
                     self.assertIn(course.get("code"), required_program)
 
+    def test_gen_ed_and_free_electives_are_spread_across_terms(self):
+        catalog = build_random_catalog()
+        plan = generate_plan(
+            catalog=catalog,
+            majors=["Alpha"],
+            minors=[],
+            completed_courses=set(),
+            max_credits_per_semester=15,
+            start_term_season="Fall",
+            start_term_year=2025,
+        )
+
+        self.assertGreaterEqual(len(plan["semester_plan"]), 2)
+        for term in plan["semester_plan"]:
+            types = [course.get("type") for course in term["courses"]]
+            self.assertIn("GENED", types, term)
+            self.assertIn("FREE_ELECTIVE", types, term)
+
 
 if __name__ == "__main__":
     unittest.main()
