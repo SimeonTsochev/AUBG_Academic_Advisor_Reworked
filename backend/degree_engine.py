@@ -1155,6 +1155,56 @@ def _excel_course_record(catalog: Dict, code: str) -> Dict:
     return {}
 
 
+def _normalize_term_key(term: str) -> str:
+    return re.sub(r"\s+", " ", term.strip()).lower()
+
+
+def _course_offered_terms(catalog: Dict, code: str) -> List[str] | None:
+    """Terms the course is listed for in the published schedule; None when it has no schedule record."""
+    meta_terms = catalog.get("course_meta", {}).get(code, {}).get("semester_availability")
+    if isinstance(meta_terms, list) and meta_terms:
+        raw_terms = meta_terms
+    else:
+        record = _excel_course_record(catalog, code)
+        if not record:
+            return None
+        raw_terms = record.get("semester_availability") or []
+    return list(dict.fromkeys(t.strip() for t in raw_terms if isinstance(t, str) and t.strip()))
+
+
+def _schedule_term_keys(catalog: Dict) -> Set[str]:
+    """Terms that have published schedule data, i.e. that at least one course is listed for."""
+    records = list((catalog.get("course_meta") or {}).values()) + list(_excel_catalog_by_code(catalog).values())
+    return {
+        _normalize_term_key(term)
+        for record in records
+        if isinstance(record, dict)
+        for term in (record.get("semester_availability") or [])
+        if isinstance(term, str) and term.strip()
+    }
+
+
+def _offered_terms_if_unavailable(
+    catalog: Dict,
+    code: str,
+    term: str,
+    schedule_term_keys: Set[str],
+) -> List[str] | None:
+    """The course's offered terms when it is known NOT to run in `term`, otherwise None.
+
+    The schedule data covers single semesters (currently only Fall 2026), so a term without
+    published data is unknown rather than unavailable.
+    """
+    if not isinstance(term, str) or _normalize_term_key(term) not in schedule_term_keys:
+        return None
+    offered = _course_offered_terms(catalog, code)
+    if offered is None:
+        return None
+    if any(_normalize_term_key(t) == _normalize_term_key(term) for t in offered):
+        return None
+    return offered
+
+
 def _course_is_wic(catalog: Dict, code: str) -> bool:
     excel_wic = _excel_course_record(catalog, code).get("wic")
     if isinstance(excel_wic, bool):
@@ -4016,6 +4066,27 @@ def _top_up_to_degree_total(
             shortfall -= added
 
 
+def _term_availability_warnings(catalog: Dict, semester_plan: List[Dict]) -> List[Dict]:
+    """Planned courses in a term whose published schedule does not list them."""
+    schedule_term_keys = _schedule_term_keys(catalog)
+    warnings: List[Dict] = []
+    for term in semester_plan:
+        for course in term.get("courses", []) or []:
+            code = course.get("code") if isinstance(course, dict) else None
+            if not isinstance(code, str) or _is_free_elective(code):
+                continue
+            offered_terms = _offered_terms_if_unavailable(catalog, code, term.get("term", ""), schedule_term_keys)
+            if offered_terms is not None:
+                warnings.append(_make_warning(
+                    "TERM_UNAVAILABLE",
+                    course=code,
+                    term=term.get("term"),
+                    offered_terms=offered_terms,
+                    message=f"{code} is not on the published {term.get('term')} schedule.",
+                ))
+    return warnings
+
+
 def _foundation_timing_warnings(
     catalog: Dict,
     semester_plan: List[Dict],
@@ -4385,7 +4456,7 @@ def validate_plan(
         for code in codes:
             if _is_free_elective(code):
                 continue
-            if code not in catalog_courses:
+            if code not in catalog_courses and not _excel_course_record(catalog, code):
                 errors.append(f"Course not found in catalog: {code}")
                 continue
 
@@ -5158,10 +5229,10 @@ def generate_plan(
     if not catalog.get("gen_ed", {}).get("rules"):
         raise ValueError("Gen Ed rules are missing from the catalog. Please re-upload a catalog with Gen Ed requirements.")
 
-    completed_courses = set([_normalize_course_code(c) for c in completed_courses])
+    requested_completed = {_normalize_course_code(c) for c in completed_courses}
     catalog_courses = _catalog_courses(catalog)
     planning_course_pool = _planning_course_pool(catalog)
-    completed_courses &= planning_course_pool
+    completed_courses = requested_completed & planning_course_pool
     normalized_retakes = {
         _normalize_course_code(code)
         for code in (retake_courses or set())
@@ -5199,10 +5270,13 @@ def generate_plan(
         catalog_gened_categories=(catalog.get("gen_ed", {}) or {}).get("categories", {}) or {},
     )
     total_manual_credits = int(manual_credit_breakdown.get("total", 0) or 0)
-    # Earned credits beyond the completed courses: transfer (manual) credits count, while a
-    # placement waiver satisfies the requirement without earning its credits.
-    credit_offset = total_manual_credits - _completed_credit_total(
-        catalog, waived_courses - completed_before_waivers
+    # Earned credits beyond the planning-pool completed courses: transfer (manual) credits and
+    # completed courses outside the pool (e.g. Excel-only electives) count, while a placement
+    # waiver satisfies the requirement without earning its credits.
+    credit_offset = (
+        total_manual_credits
+        + _completed_credit_total(catalog, requested_completed - completed_courses)
+        - _completed_credit_total(catalog, waived_courses - completed_before_waivers)
     )
     degree_total_credits = catalog.get("degree_total_credits")
     if not (isinstance(degree_total_credits, int) and degree_total_credits > 0):
@@ -5491,6 +5565,7 @@ def generate_plan(
 
     warnings = _compute_prereq_warnings(catalog, semester_plan, completed_courses)
     warnings.extend(_foundation_timing_warnings(catalog, semester_plan, completed_courses))
+    warnings.extend(_term_availability_warnings(catalog, semester_plan))
     warnings.extend(plan_shape_warnings)
     if override_warnings:
         warnings.extend(override_warnings)
@@ -5637,12 +5712,7 @@ def _apply_plan_overrides(
     all_terms_in_order = [t["term"] for t in semester_plan]
     catalog_courses = _planning_course_pool(catalog)
     occupied = occupied_credits_by_term or {}
-    integrity = catalog.get("excel_integrity")
-    excel_only_codes: Set[str] = set()
-    if isinstance(integrity, dict):
-        excel_only = integrity.get("excel_only")
-        if isinstance(excel_only, list):
-            excel_only_codes = {code for code in excel_only if isinstance(code, str)}
+    schedule_term_keys = _schedule_term_keys(catalog)
     retake_set = {
         _normalize_course_code(code)
         for code in (retake_courses or set())
@@ -5670,32 +5740,6 @@ def _apply_plan_overrides(
         all_terms_in_order.clear()
         all_terms_in_order.extend([t["term"] for t in semester_plan])
 
-    def _normalize_term_for_compare(term_label: str | None) -> str:
-        if not isinstance(term_label, str):
-            return ""
-        return re.sub(r"\s+", " ", term_label.strip()).lower()
-
-    def _offered_terms_for_course(code: str) -> List[str]:
-        terms: List[str] = []
-        meta = catalog.get("course_meta", {}).get(code) or {}
-        raw_terms = meta.get("semester_availability")
-        if isinstance(raw_terms, list):
-            terms.extend(
-                term.strip()
-                for term in raw_terms
-                if isinstance(term, str) and term.strip()
-            )
-        if terms:
-            return list(dict.fromkeys(terms))
-        excel_record = _excel_course_record(catalog, code)
-        excel_terms = excel_record.get("semester_availability") if isinstance(excel_record, dict) else None
-        if isinstance(excel_terms, list):
-            terms.extend(
-                term.strip()
-                for term in excel_terms
-                if isinstance(term, str) and term.strip()
-            )
-        return list(dict.fromkeys(terms))
 
     def ensure_course_obj(code: str, term: str | None = None, instance_id: str | None = None) -> Dict:
         obj = _build_course_output(
@@ -5820,6 +5864,20 @@ def _apply_plan_overrides(
                 )
             )
             continue
+        offered_terms = _offered_terms_if_unavailable(
+            catalog, str(course_obj.get("code", "")), to_term, schedule_term_keys
+        )
+        if offered_terms is not None:
+            override_warnings.append(
+                _make_warning(
+                    "OVERRIDE_MOVE_TERM_UNAVAILABLE",
+                    course=course_obj.get("code"),
+                    term=to_term,
+                    offered_terms=offered_terms,
+                    **{"from": from_term, "to": to_term},
+                )
+            )
+            continue
         original_from_courses = list(term_map[from_term]["courses"])
         original_to_courses = list(term_map[to_term]["courses"])
         if instance_id:
@@ -5863,27 +5921,22 @@ def _apply_plan_overrides(
         if not is_retake and normalized_code in completed_courses and normalized_code not in retake_set:
             override_warnings.append(_make_warning("OVERRIDE_ADD_ALREADY_COMPLETED", course=code, term=term))
             continue
-        if code in excel_only_codes and not is_retake:
-            offered_terms = _offered_terms_for_course(code)
-            normalized_target = _normalize_term_for_compare(_normalize_term_label(term) or term)
-            if offered_terms and normalized_target and not any(
-                _normalize_term_for_compare(offered) == normalized_target
-                for offered in offered_terms
-            ):
-                override_warnings.append(
-                    _make_warning(
-                        "OVERRIDE_ADD_TERM_UNAVAILABLE",
-                        course=code,
-                        term=term,
-                        offered_terms=offered_terms,
-                    )
+        offered_terms = _offered_terms_if_unavailable(catalog, normalized_code, term, schedule_term_keys)
+        if offered_terms is not None:
+            override_warnings.append(
+                _make_warning(
+                    "OVERRIDE_ADD_TERM_UNAVAILABLE",
+                    course=code,
+                    term=term,
+                    offered_terms=offered_terms,
                 )
-                continue
-        manual_gened_override_known = bool(gen_ed_category) and bool(
-            _excel_course_record(catalog, normalized_code)
-        )
+            )
+            continue
+        # Any course in the PDF catalog or the Excel course list is a real course the student can
+        # choose, including Excel-only electives outside the requirement-planning pool.
+        known_course = code in catalog_courses or bool(_excel_course_record(catalog, normalized_code))
         if not _is_free_elective(code) and code not in allowed_auto:
-            if code not in catalog_courses and not manual_gened_override_known:
+            if not known_course:
                 override_warnings.append(_make_warning("OVERRIDE_ADD_UNKNOWN", course=code, term=term))
                 continue
             if not gen_ed_category:

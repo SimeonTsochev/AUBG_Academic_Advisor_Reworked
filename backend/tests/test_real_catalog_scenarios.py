@@ -282,16 +282,35 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         result = _plan(self.catalog, ["Computer Science"], [], completed)
         self.assertEqual(_term_of(result, "COS 4091"), result["semester_plan"][0]["term"])
 
-    @unittest.expectedFailure  # Bug 7: a one-term schedule was treated as permanent availability.
     def test_excel_only_courses_can_be_added_to_future_terms(self):
+        # BUS 4482 (Excel-only, listed for Fall 2026) replaces an elective slot in a senior-year term,
+        # the way the app's "add course" flow does it.
+        fresh = self._fresh("Computer Science")
+        term, slot = next(
+            (t["term"], c)
+            for t in fresh["semester_plan"][5:]
+            for c in t["courses"]
+            if _is_free_elective(c["code"])
+        )
         result = _plan(
             self.catalog,
             ["Computer Science"],
             [],
             set(),
-            overrides={"add": [{"term": "Fall 2027", "code": "BUS 4482", "instance_id": "added-bus-4482"}]},
+            overrides={
+                "remove": [{"term": term, "code": slot["code"], "instance_id": slot["instance_id"]}],
+                "add": [{"term": term, "code": "BUS 4482", "instance_id": "added-bus-4482"}],
+            },
         )
-        self.assertEqual(_term_of(result, "BUS 4482"), "Fall 2027")
+        self.assertEqual(_term_of(result, "BUS 4482"), term)
+        self.assertEqual(result["validation_errors"], [])
+
+    def test_completed_courses_outside_the_requirements_still_count_toward_credits(self):
+        # BUS 4482 is an Excel-only elective: it fills no CS requirement but its 3 credits are earned.
+        result = _plan(self.catalog, ["Computer Science"], [], {"BUS 4482"})
+        planned = sum(term["credits"] for term in result["semester_plan"])
+        self.assertEqual(result["summary"]["projected_credits"] - planned, 3)
+        self.assertIsNone(_term_of(result, "BUS 4482"))
 
     def test_zero_credit_policy_overrides_are_honored(self):
         self.assertEqual(_course_credits(self.catalog, "AUB 1000"), 0)

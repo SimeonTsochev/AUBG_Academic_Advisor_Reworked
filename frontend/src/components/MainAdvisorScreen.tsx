@@ -18,7 +18,7 @@ import type {
   MinorSuggestion as ApiMinorSuggestion,
 } from '../api';
 import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
-import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
+import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
 import { resolveActiveAttempts } from '../utils/retakes';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
@@ -924,12 +924,16 @@ export function MainAdvisorScreen({
     if (!Array.isArray(terms)) return [];
     return terms.filter((term): term is string => typeof term === "string" && term.trim().length > 0);
   };
+  const scheduleTerms = useMemo(
+    () => scheduleTermsFromCourseMeta(catalog.course_meta),
+    [catalog.course_meta]
+  );
   const isCourseAvailableInTerm = (courseCode: string, term?: string | null) => {
     if (!term) return true;
-    const availableTerms = getCourseSemesterAvailability(courseCode);
-    if (availableTerms.length === 0) return true;
-    if (!isExcelOnlyCourse(courseCode)) return true;
-    return availableTerms.includes(term);
+    return !getCourseAvailabilityInfo(
+      { semester_availability: getCourseSemesterAvailability(courseCode) },
+      { mode: "plan_add", isExcelOnly: isExcelOnlyCourse(courseCode), targetTermLabel: term, scheduleTerms }
+    ).isSelectionBlocked;
   };
   const getExcelElectiveNotes = (courseCode: string) => {
     const tags = plan?.excel_elective_tags?.[courseCode] ?? [];
@@ -2376,12 +2380,17 @@ export function MainAdvisorScreen({
             setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
             setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
             setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
-            const reasonText =
-              offeredTerms.length > 0
-                ? `Offered only in: ${offeredTerms.join(", ")}.`
-                : addFailureWarning?.type
-                  ? `Reason: ${String(addFailureWarning.type)}.`
-                  : "The backend rejected the add operation.";
+            const addFailureReasons: Record<string, string> = {
+              OVERRIDE_ADD_ALREADY_COMPLETED: "It is already completed.",
+              OVERRIDE_ADD_UNKNOWN: "It is not in the course catalog.",
+            };
+            const reasonText = availabilityWarning
+              ? `It is not on the published ${pendingAtomicAdd.expectedTerm} schedule${
+                  offeredTerms.length > 0 ? ` (listed for: ${offeredTerms.join(", ")})` : ""
+                }.`
+              : addFailureWarning?.type
+                ? addFailureReasons[String(addFailureWarning.type)] ?? `Reason: ${String(addFailureWarning.type)}.`
+                : "The backend rejected the add operation.";
             setMessages((prev) => [
               ...prev,
               {
@@ -5900,6 +5909,7 @@ export function MainAdvisorScreen({
                     )}
                     <SemesterPlanView
                     courses={courseObjects}
+                    scheduleTerms={scheduleTerms}
                     catalogId={catalog.catalog_id}
                     catalogCourses={catalog.courses}
                     selectedMajors={selection.majors}
@@ -5948,7 +5958,7 @@ export function MainAdvisorScreen({
                       if (!isCurrentlyInProgress) {
                         const availability = getCourseAvailabilityInfo(
                           { semester_availability: getCourseSemesterAvailability(code) },
-                          { mode: "in_progress", isExcelOnly: isExcelOnlyCourse(code), currentTermLabel }
+                          { mode: "in_progress", isExcelOnly: isExcelOnlyCourse(code), currentTermLabel, scheduleTerms }
                         );
                         if (availability.isSelectionBlocked) {
                           setMessages(prev => [
@@ -6479,7 +6489,8 @@ export function MainAdvisorScreen({
                               mode: "plan_add",
                               isExcelOnly: isExcelOnlyCourse(pendingAddCourse.code),
                               currentTermLabel,
-                              targetTermLabel: term
+                              targetTermLabel: term,
+                              scheduleTerms
                             }
                           );
                           const blockedByAvailability = availability.isSelectionBlocked;
@@ -6554,7 +6565,8 @@ export function MainAdvisorScreen({
                                 mode: "plan_add",
                                 isExcelOnly: isExcelOnlyCourse(code),
                                 currentTermLabel,
-                                targetTermLabel: term
+                                targetTermLabel: term,
+                                scheduleTerms
                               }
                             );
                             if (availability.isSelectionBlocked) {

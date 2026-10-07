@@ -9,6 +9,12 @@ export interface CourseAvailabilityContext {
   isExcelOnly?: boolean;
   currentTermLabel?: string | null;
   targetTermLabel?: string | null;
+  /**
+   * Terms that have a published schedule (see scheduleTermsFromCourseMeta). The schedule data
+   * covers single semesters, so a course is only "not offered" in a term that has one; any other
+   * term is unknown and never blocked.
+   */
+  scheduleTerms?: readonly string[] | null;
 }
 
 export interface CourseAvailabilityInfo {
@@ -27,19 +33,34 @@ const normalizeTermLabel = (value: string) =>
     .toLowerCase()
     .replace(/\s+/g, " ");
 
+/** Every term that at least one course is listed for, i.e. the terms with a published schedule. */
+export function scheduleTermsFromCourseMeta(
+  courseMeta: Record<string, { semester_availability?: string[] | null } | undefined> | null | undefined
+): string[] {
+  const terms = new Set<string>();
+  for (const meta of Object.values(courseMeta ?? {})) {
+    for (const term of meta?.semester_availability ?? []) {
+      if (typeof term === "string" && term.trim()) terms.add(term.trim());
+    }
+  }
+  return Array.from(terms);
+}
+
 export function getCourseAvailabilityInfo(
   course: CourseAvailabilitySource,
   context: CourseAvailabilityContext
 ): CourseAvailabilityInfo {
-  const { mode, isExcelOnly, currentTermLabel, targetTermLabel } = context;
+  const { mode, isExcelOnly, currentTermLabel, targetTermLabel, scheduleTerms } = context;
   const shouldEnforceTermAvailability = isExcelOnly === true;
   const offeredTerms = (course?.semester_availability ?? [])
     .filter((term): term is string => typeof term === "string" && term.trim().length > 0)
     .map((term) => term.trim());
+  const publishedTerms = new Set((scheduleTerms ?? []).map(normalizeTermLabel));
 
   const computeUnavailable = (termToCheck: string | null) => {
     if (!shouldEnforceTermAvailability || !termToCheck || offeredTerms.length === 0) return false;
     const normalizedTarget = normalizeTermLabel(termToCheck);
+    if (!publishedTerms.has(normalizedTarget)) return false;
     return !offeredTerms.some((term) => normalizeTermLabel(term) === normalizedTarget);
   };
 

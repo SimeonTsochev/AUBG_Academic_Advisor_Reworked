@@ -8,7 +8,7 @@ import {
   type TranscriptImportCourse,
   type TranscriptImportResponse,
 } from '../api';
-import { getCourseAvailabilityInfo } from '../utils/courseAvailability';
+import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { extractTranscriptLinesFromImage } from '../utils/transcriptOcr';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 import type { ManualCreditEntry } from '../types';
@@ -77,6 +77,7 @@ interface AcademicSetupScreenProps {
     prereq_text?: string | null;
     prereq_codes?: string[];
     prereqs?: string[];
+    semester_availability?: string[];
   }>;
   onComplete: (data: {
     majors: string[];
@@ -170,6 +171,7 @@ export function AcademicSetupScreen({
   const selectedStartTerm = termOptions.find((t) => t.value === startTermValue) ?? termOptions[0];
   const currentTerm = termOptions[termOptions.length - 1];
   const currentTermLabel = currentTerm?.label ?? null;
+  const scheduleTerms = useMemo(() => scheduleTermsFromCourseMeta(courseMeta), [courseMeta]);
 
   const canToggleMajor = (m: string) =>
     selectedMajors.includes(m) || selectedMajors.length < MAX_PROGRAMS_PER_TYPE;
@@ -1111,7 +1113,8 @@ export function AcademicSetupScreen({
                     const availability = getCourseAvailabilityInfo(entry, {
                       mode: "completed",
                       isExcelOnly: entry.is_excel_only === true,
-                      currentTermLabel
+                      currentTermLabel,
+                      scheduleTerms
                     });
                     const hasWarning = Boolean(availability.warningLabel);
                     const isActive = idx === highlightedIndex;

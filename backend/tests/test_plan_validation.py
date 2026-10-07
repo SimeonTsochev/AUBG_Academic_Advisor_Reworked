@@ -311,6 +311,8 @@ class PlanValidationTests(IsolatedTestCase):
             "semester_availability": ["Fall 2025"],
             "prereq_codes": [],
         }
+        # Spring 2026 has a published schedule (ART 1000 is on it) that does not list SCI 1010.
+        catalog["course_meta"]["ART 1000"]["semester_availability"] = ["Spring 2026"]
         catalog["excel_integrity"] = {"excel_only": ["SCI 1010"]}
 
         plan = generate_plan(
@@ -352,6 +354,28 @@ class PlanValidationTests(IsolatedTestCase):
             if isinstance(course, dict)
         }
         self.assertNotIn("SCI 1010", planned_codes)
+
+    def test_override_add_to_a_term_without_published_schedule_is_allowed(self):
+        catalog = build_sample_catalog()
+        catalog["courses"]["SCI 1010"] = {"name": "Integrated Science", "credits": 3, "gen_ed": []}
+        catalog["course_meta"]["SCI 1010"] = {
+            "credits": 3,
+            "semester_availability": ["Fall 2025"],
+            "prereq_codes": [],
+        }
+        plan = generate_plan(
+            catalog=catalog,
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=set(),
+            max_credits_per_semester=16,
+            start_term_season="Fall",
+            start_term_year=2025,
+            overrides={"add": [{"term": "Fall 2027", "code": "SCI 1010", "instance_id": "test-sci-1010"}]},
+        )
+        planned = {(t["term"], c["code"]) for t in plan["semester_plan"] for c in t["courses"]}
+        self.assertIn(("Fall 2027", "SCI 1010"), planned)
+        self.assertFalse(any(w.get("type") == "OVERRIDE_ADD_TERM_UNAVAILABLE" for w in plan["warnings"]))
 
     def _prerequisite_chain_catalog(self, length: int):
         catalog = build_sample_catalog()

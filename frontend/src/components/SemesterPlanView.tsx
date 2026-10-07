@@ -15,6 +15,7 @@ interface SemesterPlanViewProps {
   startTermYear?: number;
   totalTerms?: number;
   electivePlaceholders?: ElectivePlaceholder[];
+  scheduleTerms?: string[];
   onToggleCompleted?: (instanceId: string) => void;
   onToggleInProgress?: (instanceId: string) => void;
   onRemoveCourse?: (instanceId: string) => void;
@@ -62,6 +63,7 @@ export function SemesterPlanView({
   startTermYear,
   totalTerms = 8,
   electivePlaceholders,
+  scheduleTerms,
   onToggleCompleted,
   onToggleInProgress,
   onRemoveCourse,
@@ -594,7 +596,8 @@ export function SemesterPlanView({
               const availability = getCourseAvailabilityInfo(result, {
                 mode: "plan_add",
                 isExcelOnly: result.is_excel_only === true,
-                currentTermLabel
+                currentTermLabel,
+                scheduleTerms
               });
               const hasWarning = Boolean(availability.warningLabel);
               return (
