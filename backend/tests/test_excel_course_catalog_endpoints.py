@@ -14,8 +14,8 @@ if BACKEND_DIR not in sys.path:
 
 from _isolation import IsolatedTestCase  # noqa: E402
 
-from excel_course_catalog import load_course_catalog, get_course  # noqa: E402
-from main import app  # noqa: E402
+from excel_course_catalog import load_course_catalog, load_course_catalog_from_data, get_course  # noqa: E402
+from main import app, _catalog_course_meta_for_response  # noqa: E402
 
 
 def _write_xlsx(headers: list[str], rows: list[list[object]]) -> Path:
@@ -61,6 +61,16 @@ class ExcelCourseCatalogEndpointsTests(IsolatedTestCase):
             self.assertIn("Fall 2025", course["semester_availability"])
         finally:
             path.unlink(missing_ok=True)
+
+    def test_course_meta_response_prefers_policy_credits_over_excel(self):
+        load_course_catalog_from_data({"courses": [{"code": "XYZ 1000", "title": "Orientation", "credits": 3}]})
+        catalog = {
+            "course_meta": {"XYZ 1000": {"credits": 0}},
+            "policy_overrides": {"course_meta": {"XYZ 1000": {"credits": 0}}},
+        }
+        meta = _catalog_course_meta_for_response(catalog)
+        self.assertEqual(meta["XYZ 1000"]["credits"], 0)
+        self.assertEqual(meta["XYZ 1000"]["title"], "Orientation")
 
     def test_courses_lookup_endpoint_normalizes_code(self):
         client = TestClient(app)

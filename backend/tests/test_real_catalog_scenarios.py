@@ -270,7 +270,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         )
         self.assertEqual(_term_of(result, "BUS 4482"), "Fall 2027")
 
-    @unittest.expectedFailure  # Bug 8: zero-credit policy overrides fell through to the 3-credit default.
     def test_zero_credit_policy_overrides_are_honored(self):
         self.assertEqual(_course_credits(self.catalog, "AUB 1000"), 0)
         self.assertEqual(_course_credits(self.catalog, "MAT 1001"), 0)

@@ -1170,7 +1170,19 @@ def _course_name(catalog: Dict, code: str) -> str:
     return _course_entry(catalog, code).get("name") or code
 
 
+def _policy_course_credits(catalog: Dict, code: str) -> int | None:
+    policy_meta = ((catalog.get("policy_overrides") or {}).get("course_meta") or {}).get(code) or {}
+    credits = policy_meta.get("credits")
+    if isinstance(credits, (int, float)) and not isinstance(credits, bool) and credits >= 0:
+        return int(credits)
+    return None
+
+
 def _course_credits(catalog: Dict, code: str) -> int:
+    # Hand-maintained policy corrections win over the Excel and PDF data, and may set 0 credits.
+    policy_credits = _policy_course_credits(catalog, code)
+    if policy_credits is not None:
+        return policy_credits
     excel_credits = _excel_course_record(catalog, code).get("credits")
     if isinstance(excel_credits, (int, float)) and excel_credits > 0:
         return int(excel_credits)
@@ -5379,10 +5391,6 @@ def _apply_plan_overrides(
         term_map.update({t["term"]: t for t in semester_plan})
         all_terms_in_order.clear()
         all_terms_in_order.extend([t["term"] for t in semester_plan])
-
-    def course_credits(code: str) -> int:
-        meta = catalog.get("course_meta", {}).get(code) or {}
-        return int(meta.get("credits") or 3)
 
     def _normalize_term_for_compare(term_label: str | None) -> str:
         if not isinstance(term_label, str):

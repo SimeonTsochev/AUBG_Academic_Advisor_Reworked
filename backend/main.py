@@ -194,6 +194,7 @@ def _catalog_courses_for_response(catalog: Dict[str, Any]) -> Dict[str, str]:
 
 def _catalog_course_meta_for_response(catalog: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     base_meta = catalog.get("course_meta", {}) or {}
+    policy_meta = (catalog.get("policy_overrides") or {}).get("course_meta") or {}
     excel_only_codes = _excel_only_code_set(catalog)
     merged: Dict[str, Dict[str, Any]] = {
         code: dict(meta) if isinstance(meta, dict) else {}
@@ -211,7 +212,9 @@ def _catalog_course_meta_for_response(catalog: Dict[str, Any]) -> Dict[str, Dict
             entry["title"] = title
 
         credits = record.get("credits")
-        if isinstance(credits, (int, float)) and credits > 0:
+        # Same precedence as degree_engine._course_credits: a policy override beats the Excel value.
+        policy_has_credits = "credits" in (policy_meta.get(code) or {})
+        if isinstance(credits, (int, float)) and credits > 0 and not policy_has_credits:
             entry["credits"] = int(credits)
 
         gen_ed_tags = record.get("gen_ed_tags")
