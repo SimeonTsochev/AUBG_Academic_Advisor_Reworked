@@ -195,7 +195,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
                             self.assertLess(idx, 2, f"{course['code']} planned for {term['term']}")
                 self.assertEqual(_term_of(s.result, "ENG 1000"), _term_of(s.result, "ENG 1001"))
 
-    @unittest.expectedFailure  # Bug 6: plans never check the graduation credit total.
     def test_plans_reach_the_graduation_credit_total(self):
         total_required = self.catalog.get("degree_total_credits") or 120
         for s in self.scenarios:
@@ -239,6 +238,20 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         )
         self.assertEqual(_term_of(result, "BUS 3000"), target)
         self.assertTrue(any("BUS 3000" in e and "junior standing" in e for e in result["validation_errors"]))
+
+    def test_removing_elective_placeholders_reports_the_credit_shortfall(self):
+        fresh = self._fresh("Computer Science")
+        removes = [
+            {"term": t["term"], "code": c["code"], "instance_id": c["instance_id"]}
+            for t in fresh["semester_plan"]
+            for c in t["courses"]
+            if _is_free_elective(c["code"])
+        ]
+        self.assertTrue(removes)
+        result = _plan(self.catalog, ["Computer Science"], [], set(), overrides={"remove": removes})
+        self.assertFalse(result["is_valid"])
+        self.assertTrue(any("credits required to graduate" in e for e in result["validation_errors"]))
+        self.assertLess(result["summary"]["projected_credits"], result["summary"]["degree_total_credits"])
 
     def test_splitting_a_corequisite_pair_is_reported(self):
         fresh = self._fresh("Computer Science")

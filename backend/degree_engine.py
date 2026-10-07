@@ -26,6 +26,9 @@ from excel_course_catalog import (
 )
 
 MIN_CREDITS_PER_TERM = 14
+# Safety bound on plan length; plans longer than STANDARD_PLAN_TERMS get a warning instead.
+MAX_PLAN_TERMS = 12
+STANDARD_PLAN_TERMS = 8
 CATEGORY_PREREQS = {
     "Historical Research": {"Historical Sources"},
     # Must match the sequencing rule enforced by _textual_analysis_sequence_errors.
@@ -3919,6 +3922,98 @@ def _compute_prereq_warnings(
     return warnings
 
 
+def _projected_degree_credits(
+    catalog: Dict,
+    semester_plan: List[Dict],
+    completed_courses: Set[str],
+    in_progress_courses: Set[str] | None,
+    credit_offset: int,
+) -> int:
+    """Credits the student will have earned once the plan is finished (latest attempt wins)."""
+    effective_completed = _effective_completed_courses_after_plan(set(completed_courses), semester_plan)
+    earned = _completed_credit_total(catalog, effective_completed | set(in_progress_courses or set()))
+    planned = sum(
+        _planned_course_credits(catalog, course)
+        for term in semester_plan
+        for course in term.get("courses", []) or []
+        if isinstance(course, dict)
+    )
+    return earned + credit_offset + planned
+
+
+def _next_term_label(term: str) -> str:
+    m = re.match(r"^(Spring|Fall)\s+(\d{4})$", term)
+    if not m:
+        return term
+    year = int(m.group(2))
+    return f"Fall {year}" if m.group(1) == "Spring" else f"Spring {year + 1}"
+
+
+def _top_up_to_degree_total(
+    semester_plan: List[Dict],
+    shortfall: int,
+    min_credits: int,
+    max_credits: int,
+    first_term: str,
+    occupied_credits_by_term: Dict[str, int] | None = None,
+    max_terms: int = MAX_PLAN_TERMS,
+) -> None:
+    """Add FREE ELECTIVE placeholders until the plan covers `shortfall` more credits.
+
+    Existing terms (latest first) are filled up to the credit cap before new terms are appended;
+    a new term always gets at least the minimum load. Placeholders are 3 credits, or 4 when that
+    is what fills a term, so a 16-credit cap is used as 4 + 3 + 3 + 3 + 3.
+    """
+    if shortfall <= 0:
+        return
+    occupied = occupied_credits_by_term or {}
+    used_codes = {
+        c.get("code")
+        for t in semester_plan
+        for c in t.get("courses", []) or []
+        if isinstance(c, dict) and isinstance(c.get("code"), str)
+    }
+    next_code = _free_elective_code_generator(used_codes)
+
+    def occupied_credits(term: Dict) -> int:
+        return max(0, int(occupied.get(term.get("term", ""), 0) or 0))
+
+    def add_placeholder(term: Dict) -> int:
+        room = max_credits - occupied_credits(term) - term["credits"]
+        credits = 4 if room >= 4 and room % 3 == 1 else 3
+        if room < credits:
+            return 0
+        term["courses"].append({
+            "code": next_code(),
+            "name": "Free Elective",
+            "credits": credits,
+            "tags": ["Planned"],
+            "satisfies": [],
+            "type": "FREE_ELECTIVE",
+            "source_reason": SOURCE_REASON_FREE,
+        })
+        term["credits"] += credits
+        return credits
+
+    for term in reversed(semester_plan):
+        while shortfall > 0:
+            added = add_placeholder(term)
+            if not added:
+                break
+            shortfall -= added
+
+    while shortfall > 0 and len(semester_plan) < max_terms:
+        label = _next_term_label(semester_plan[-1]["term"]) if semester_plan else first_term
+        term = {"term": label, "courses": [], "credits": 0}
+        semester_plan.append(term)
+        available_min = max(0, min_credits - occupied_credits(term))
+        while shortfall > 0 or term["credits"] < available_min:
+            added = add_placeholder(term)
+            if not added:
+                break
+            shortfall -= added
+
+
 def _foundation_timing_warnings(
     catalog: Dict,
     semester_plan: List[Dict],
@@ -4216,6 +4311,7 @@ def validate_plan(
     occupied_credits_by_term: Dict[str, int] | None = None,
     credit_offset: int = 0,
     in_progress_courses: Set[str] | None = None,
+    degree_total_credits: int | None = None,
 ) -> List[str]:
     errors: List[str] = []
     if not semester_plan:
@@ -4345,6 +4441,16 @@ def validate_plan(
         unique = list(dict.fromkeys(descriptions))
         sample = "; ".join(unique[:5]) + (f"; and {len(unique) - 5} more" if len(unique) > 5 else "")
         errors.append(f"Requirements not covered by completed or planned courses ({len(unmet_slot_ids)}): {sample}.")
+
+    if degree_total_credits:
+        projected = _projected_degree_credits(
+            catalog, semester_plan, set(completed_courses), in_progress_courses, credit_offset
+        )
+        if projected < degree_total_credits:
+            errors.append(
+                f"Plan reaches {projected} of the {degree_total_credits} credits required to graduate; "
+                f"add {degree_total_credits - projected} more credits (for example free electives)."
+            )
 
     errors.extend(_textual_analysis_sequence_errors(catalog, semester_plan, completed_courses))
 
@@ -5076,6 +5182,7 @@ def generate_plan(
         current_term_label=current_term_label,
     )
 
+    completed_before_waivers = set(completed_courses)
     waived_courses: Set[str] = set()
     if waived_mat1000 and "MAT 1000" in catalog_courses:
         completed_courses.add("MAT 1000")
@@ -5090,6 +5197,14 @@ def generate_plan(
         catalog_gened_categories=(catalog.get("gen_ed", {}) or {}).get("categories", {}) or {},
     )
     total_manual_credits = int(manual_credit_breakdown.get("total", 0) or 0)
+    # Earned credits beyond the completed courses: transfer (manual) credits count, while a
+    # placement waiver satisfies the requirement without earning its credits.
+    credit_offset = total_manual_credits - _completed_credit_total(
+        catalog, waived_courses - completed_before_waivers
+    )
+    degree_total_credits = catalog.get("degree_total_credits")
+    if not (isinstance(degree_total_credits, int) and degree_total_credits > 0):
+        degree_total_credits = None
 
     slots = build_requirement_slots(catalog, majors, minors, business_concentration=business_concentration)
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
@@ -5111,7 +5226,7 @@ def generate_plan(
         max_credits=max_credits,
         fill_underloaded_terms=fill_underloaded_terms,
         occupied_credits_by_term=occupied_credits_by_term,
-        credit_offset=total_manual_credits,
+        credit_offset=credit_offset,
     )
 
     plan = semester_result["plan"]
@@ -5164,8 +5279,23 @@ def generate_plan(
         min_credits=min_credits,
         max_credits=max_credits,
         occupied_credits_by_term=occupied_credits_by_term,
-        credit_offset=total_manual_credits,
+        credit_offset=credit_offset,
     )
+
+    # Program requirements alone often total 75-110 credits; top the plan up with free-elective
+    # placeholders so following it actually reaches the degree total. User edits are applied
+    # afterwards, so a student who removes placeholders sees the shortfall reported instead.
+    if degree_total_credits and fill_underloaded_terms:
+        _top_up_to_degree_total(
+            semester_plan,
+            shortfall=degree_total_credits - _projected_degree_credits(
+                catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset
+            ),
+            min_credits=min_credits,
+            max_credits=max_credits,
+            first_term=f"{base_season} {base_year}",
+            occupied_credits_by_term=occupied_credits_by_term,
+        )
 
     semester_plan = _dedupe_semester_plan(catalog, semester_plan, completed_courses)
     _ensure_instance_ids(semester_plan)
@@ -5350,8 +5480,9 @@ def generate_plan(
         strict_prereqs=strict_prereqs,
         slots=planning_slots,
         occupied_credits_by_term=occupied_credits_by_term,
-        credit_offset=total_manual_credits,
+        credit_offset=credit_offset,
         in_progress_courses=normalized_in_progress,
+        degree_total_credits=degree_total_credits,
     )
     is_valid = True
     validation_errors_out: List[str] = []
@@ -5433,6 +5564,10 @@ def generate_plan(
             "remaining": remaining_count,
             "total_required_credits": int(total_required_credits),
             "completed_credits": int(total_completed_credits),
+            "degree_total_credits": int(degree_total_credits or 0),
+            "projected_credits": _projected_degree_credits(
+                catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset
+            ),
         },
         "gen_ed_status": gen_ed_status,
         "category_progress": category_progress,

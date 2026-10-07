@@ -1,5 +1,7 @@
 {
   "catalog_year": null,
+  "degree_total_credits": 120,
+  "degree_total_credits_source": "AY 2025-26 catalog p.85: 'A minimum of 120 credit hours is required to earn a Bachelor of Arts degree at AUBG.'",
   "business_concentration_manual_matches": {
     "Tourism and Hospitality": {
       "tourism_special_topics": [
