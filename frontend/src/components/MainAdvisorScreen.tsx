@@ -1337,7 +1337,11 @@ export function MainAdvisorScreen({
       ).map((code) => ({ type: "course", code }));
     }
 
-    if (typeof meta?.prereq_text === "string" && meta.prereq_text.trim()) {
+    // A course with declared co-requisites (e.g. ENG 1000 "enrolled simultaneously in ENG 1001")
+    // has its prerequisites fully specified above; parsing its text would turn the co-requisite
+    // back into a prerequisite.
+    const hasDeclaredCoreqs = Array.isArray(meta?.coreq_codes) && meta.coreq_codes.length > 0;
+    if (!hasDeclaredCoreqs && typeof meta?.prereq_text === "string" && meta.prereq_text.trim()) {
       return parsePrereqBlocksFromText(meta.prereq_text);
     }
     return [];

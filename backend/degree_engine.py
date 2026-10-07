@@ -1242,6 +1242,21 @@ def _course_prereqs(catalog: Dict, code: str) -> Set[str]:
     return set([_normalize_course_code(c) for c in prereqs if isinstance(c, str)])
 
 
+def _course_coreqs(catalog: Dict, code: str) -> Set[str]:
+    meta = catalog.get("course_meta", {}).get(code, {})
+    return {_normalize_course_code(c) for c in (meta.get("coreq_codes") or []) if isinstance(c, str)}
+
+
+def _coreq_partner_map(catalog: Dict, codes: Set[str]) -> Dict[str, Set[str]]:
+    """Co-requisite links among `codes`, in both directions (catalog data lists only one)."""
+    partners: Dict[str, Set[str]] = {}
+    for code in codes:
+        for other in _course_coreqs(catalog, code) & codes:
+            partners.setdefault(code, set()).add(other)
+            partners.setdefault(other, set()).add(code)
+    return partners
+
+
 def _extract_or_prereq_groups(prereq_text: str) -> List[List[str]]:
     if not prereq_text:
         return []
@@ -2613,6 +2628,7 @@ def _schedule_courses(
     type_order = {"FOUNDATION": 0, "PROGRAM": 1, "GENED": 2, "FREE": 3, "FREE_ELECTIVE": 3}
     occupied = occupied_credits_by_term or {}
     earned_credits = _completed_credit_total(catalog, completed) + credit_offset
+    coreq_partners = _coreq_partner_map(catalog, remaining)
 
     for term_idx in range(max_terms):
         term_name = _term_name(term_idx, base_season, base_year)
@@ -2628,12 +2644,19 @@ def _schedule_courses(
             if _eligible_for_term(catalog, c, completed, completed_gened, earned_credits)
         ]
         available.sort(key=lambda c: (type_order.get(course_types.get(c, "FREE"), 9), _course_level(c), c))
+        available_set = set(available)
 
         for code in available:
-            credits = _course_credits(catalog, code)
+            if code in term_courses:
+                continue
+            # Co-requisites are scheduled together or not at all.
+            group = [code] + sorted(p for p in coreq_partners.get(code, ()) if p in remaining and p not in term_courses)
+            if any(p not in available_set for p in group[1:]):
+                continue
+            credits = sum(_course_credits(catalog, c) for c in group)
             if term_credits + credits > available_max:
                 continue
-            term_courses.append(code)
+            term_courses.extend(group)
             term_credits += credits
             if term_credits >= available_target:
                 break
@@ -2676,6 +2699,7 @@ def balance_term_credits(
     next_free_code = _free_elective_code_generator(used_codes)
     occupied = occupied_credits_by_term or {}
     base_earned_credits = _completed_credit_total(catalog, set(completed_courses)) + credit_offset
+    coreq_partners = _coreq_partner_map(catalog, used_codes)
 
     def term_credit_bounds(term_obj: Dict) -> Tuple[int, int]:
         term_label = term_obj.get("term", "")
@@ -2714,7 +2738,7 @@ def balance_term_credits(
             for j in range(i + 1, len(plan)):
                 future = plan[j]
                 for code in list(future["courses"]):
-                    if _is_free_elective(code):
+                    if _is_free_elective(code) or code in coreq_partners:
                         continue
                     # `completed` deliberately excludes courses pulled into this same term, so a
                     # course and its prerequisite never end up side by side.
@@ -3895,6 +3919,32 @@ def _compute_prereq_warnings(
     return warnings
 
 
+def _foundation_timing_warnings(
+    catalog: Dict,
+    semester_plan: List[Dict],
+    completed_courses: Set[str],
+) -> List[Dict]:
+    """Warn when an outstanding foundation course is planned after the first two planned terms."""
+    foundation = {
+        _normalize_course_code(code)
+        for code in (catalog.get("foundation_courses") or [])
+        if isinstance(code, str)
+    }
+    warnings: List[Dict] = []
+    ordered_terms = sorted(semester_plan, key=lambda t: _term_label_index(t.get("term", "")))
+    for term in ordered_terms[2:]:
+        for course in term.get("courses", []) or []:
+            code = course.get("code") if isinstance(course, dict) else None
+            if isinstance(code, str) and code in foundation and code not in completed_courses:
+                warnings.append(_make_warning(
+                    "FOUNDATION_LATE",
+                    course=code,
+                    term=term.get("term"),
+                    message=f"{code} is a first-year foundation course; plan it as early as possible.",
+                ))
+    return warnings
+
+
 def _rebalance_term_mix(
     catalog: Dict,
     semester_plan: List[Dict],
@@ -3925,6 +3975,16 @@ def _rebalance_term_mix(
         if ctype == "GENED":
             return "gened"
         return "other"
+
+    coreq_partners = _coreq_partner_map(
+        catalog,
+        {c.get("code") for t in terms for c in t.get("courses", []) if isinstance(c.get("code"), str)},
+    )
+
+    def is_pinned(course: Dict) -> bool:
+        # First-year foundation courses and co-requisite pairs stay where the scheduler put them;
+        # swapping them for variety pushed ENG 1000 into the final semester.
+        return course.get("type") == "FOUNDATION" or course.get("code") in coreq_partners
 
     def term_credits(term_courses: List[Dict]) -> int:
         return sum(_planned_course_credits(catalog, c) for c in term_courses)
@@ -3995,6 +4055,8 @@ def _rebalance_term_mix(
             from_b = b_gened
         else:
             return False
+        from_a = [i for i in from_a if not is_pinned(courses_a[i])]
+        from_b = [i for i in from_b if not is_pinned(courses_b[i])]
 
         completed_a, completed_gened_a = completed_before(idx_a)
 
@@ -4061,12 +4123,12 @@ def _rebalance_term_mix(
         donor_candidates = [
             idx
             for idx, course in enumerate(donor_courses)
-            if course_group(course) == target_group
+            if course_group(course) == target_group and not is_pinned(course)
         ]
         recipient_candidates = []
         for idx, course in enumerate(recipient_courses):
             group = course_group(course)
-            if group == target_group:
+            if group == target_group or is_pinned(course):
                 continue
             if group in diversity_groups and group_count(recipient_courses, group) <= 1:
                 continue
@@ -4251,6 +4313,21 @@ def validate_plan(
         total_credits = max(0, int(occupied_credits or 0))
         if total_credits > max_credits:
             errors.append(f"{term_label} exceeds max credits ({total_credits} > {max_credits}).")
+
+    planned_term_of: Dict[str, str] = {}
+    for term in ordered_terms:
+        for course in term.get("courses", []) or []:
+            code = course.get("code") if isinstance(course, dict) else None
+            if isinstance(code, str) and not _is_free_elective(code):
+                planned_term_of.setdefault(code, term.get("term", ""))
+    for code, term_label in planned_term_of.items():
+        for partner in sorted(_course_coreqs(catalog, code)):
+            partner_term = planned_term_of.get(partner)
+            if partner_term and partner_term != term_label:
+                errors.append(
+                    f"{code} must be taken in the same term as its co-requisite {partner} "
+                    f"({code} is in {term_label}, {partner} in {partner_term})."
+                )
 
     # Audit the final plan (after scheduling, truncation and user edits) rather than trusting the
     # selection made before scheduling: every requirement must be filled by a completed,
@@ -5259,6 +5336,7 @@ def generate_plan(
     )
 
     warnings = _compute_prereq_warnings(catalog, semester_plan, completed_courses)
+    warnings.extend(_foundation_timing_warnings(catalog, semester_plan, completed_courses))
     if override_warnings:
         warnings.extend(override_warnings)
 

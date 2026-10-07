@@ -183,7 +183,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
                             f"{course['code']} in {term['term']} needs {required} credits",
                         )
 
-    @unittest.expectedFailure  # Bug 5: ENG 1000 parsed as needing ENG 1001; rebalance moves foundation courses.
     def test_fresh_students_take_foundation_courses_in_the_first_year(self):
         foundation = set(self.catalog.get("foundation_courses") or [])
         for s in self.scenarios:
@@ -240,6 +239,21 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         )
         self.assertEqual(_term_of(result, "BUS 3000"), target)
         self.assertTrue(any("BUS 3000" in e and "junior standing" in e for e in result["validation_errors"]))
+
+    def test_splitting_a_corequisite_pair_is_reported(self):
+        fresh = self._fresh("Computer Science")
+        source = _term_of(fresh, "ENG 1000")
+        target = fresh["semester_plan"][3]["term"]
+        result = _plan(
+            self.catalog,
+            ["Computer Science"],
+            [],
+            set(),
+            overrides={"move": [{"from_term": source, "to_term": target, "code": "ENG 1000"}]},
+        )
+        self.assertEqual(_term_of(result, "ENG 1000"), target)
+        self.assertTrue(any("co-requisite ENG 1001" in e for e in result["validation_errors"]))
+        self.assertTrue(any(w["type"] == "FOUNDATION_LATE" and w["course"] == "ENG 1000" for w in result["warnings"]))
 
     def test_continuing_students_can_take_upper_level_courses_right_away(self):
         fresh = self._fresh("Computer Science")

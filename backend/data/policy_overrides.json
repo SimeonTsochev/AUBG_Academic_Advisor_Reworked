@@ -18,6 +18,15 @@
     "AUB 1000": {
       "credits": 0
     },
+    "ENG 1000": {
+      "coreq_codes": [
+        "ENG 1001"
+      ],
+      "prereq_blocks": [],
+      "prereq_codes": [],
+      "prereq_expr": null,
+      "prereqs": []
+    },
     "MAT 1001": {
       "credits": 0
     },

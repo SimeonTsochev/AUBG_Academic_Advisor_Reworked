@@ -19,6 +19,7 @@ export interface UploadCatalogResponse {
     semester_availability?: string[];
     prereq_text?: string | null;
     prereq_codes?: string[];
+    coreq_codes?: string[];
     prereqs?: string[];
     prereq_expr?: unknown;
     prereq_blocks?: Array<{
