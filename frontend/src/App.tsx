@@ -128,11 +128,16 @@ const normalizeSwappedElectives = (value: unknown): ProgramSnapshotSwappedElecti
     );
 };
 
+type ManualCreditCandidate = Omit<ManualCreditEntry, 'code' | 'credit_type'> & {
+  code: ManualCreditEntry['code'] | null;
+  credit_type: ManualCreditEntry['credit_type'] | null;
+};
+
 const normalizeManualCredits = (value: unknown): ManualCreditEntry[] => {
   if (!Array.isArray(value)) return [];
   return value
     .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
-    .map((entry) => {
+    .map((entry): ManualCreditCandidate => {
       const rawCode = typeof entry.code === 'string' ? entry.code.trim().toUpperCase() : '';
       const rawCredits = typeof entry.credits === 'number' ? entry.credits : Number(entry.credits);
       const rawType = typeof entry.credit_type === 'string' ? entry.credit_type : '';
@@ -164,14 +169,9 @@ const normalizeManualCredits = (value: unknown): ManualCreditEntry[] => {
       };
     })
     .filter(
-      (
-        entry
-      ): entry is ManualCreditEntry & {
-        code: 'OTH 0001';
-        credit_type: 'GENED' | 'MAJOR_ELECTIVE' | 'FREE_ELECTIVE';
-      } =>
+      (entry): entry is ManualCreditEntry =>
         entry.code === 'OTH 0001'
-        && typeof entry.credit_type === 'string'
+        && entry.credit_type !== null
         && entry.instance_id.length > 0
         && entry.term.length > 0
         && entry.credits > 0

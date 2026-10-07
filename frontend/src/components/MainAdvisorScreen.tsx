@@ -2807,11 +2807,9 @@ export function MainAdvisorScreen({
         const isCompleted = !isRetake && effectiveCompleted.includes(code);
         const isInProgress = !isRetake && inProgressSet.has(code);
         const courseCredits = course.credits ?? meta?.credits ?? 3;
-        const hasGenEdSatisfies = (course.satisfies ?? []).some(
+        const inferredGenEd = (course.satisfies ?? []).some(
           (s) => typeof s === "string" && s.startsWith("GenEd:")
         );
-        const hasGenEdReason = (course.reason ?? "").includes("GenEd:");
-        const inferredGenEd = hasGenEdSatisfies || hasGenEdReason;
         let typeLabel =
           course.type === "GENED"
             ? "GEN ED"

@@ -449,6 +449,8 @@ export interface GeneratePlanResponse {
   };
   course_reasons?: Record<string, string>;
   warnings?: PlanWarning[];
+  is_valid?: boolean;
+  validation_errors?: string[];
   gened_discovery?: {
     case_studies_textual_analysis?: {
       code: string;
