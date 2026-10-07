@@ -10,7 +10,7 @@ if BACKEND_DIR not in sys.path:
 
 from _isolation import IsolatedTestCase  # noqa: E402
 
-from degree_engine import generate_plan, validate_plan, _min_term_index_for_course  # noqa: E402
+from degree_engine import generate_plan, validate_plan, _min_credits_for_course  # noqa: E402
 
 
 def build_sample_catalog():
@@ -254,7 +254,7 @@ class PlanValidationTests(IsolatedTestCase):
         )
         self.assertTrue(any("prerequisite" in e.lower() for e in errors))
 
-    def test_declared_major_prereq_starts_in_third_semester(self):
+    def test_declared_major_prereq_needs_sophomore_credits(self):
         catalog = build_sample_catalog()
         catalog["courses"]["BUS 2500"] = {
             "name": "Major Gateway",
@@ -267,7 +267,8 @@ class PlanValidationTests(IsolatedTestCase):
             "prereq_text": "Declared BUS major",
         }
 
-        self.assertEqual(_min_term_index_for_course(catalog, "BUS 2500"), 2)
+        # 30 credits: the third semester for a new full-time student.
+        self.assertEqual(_min_credits_for_course(catalog, "BUS 2500"), (30, ["declared major"]))
 
     def test_choice_group_with_insufficient_courses_is_clamped(self):
         catalog = build_sample_catalog()

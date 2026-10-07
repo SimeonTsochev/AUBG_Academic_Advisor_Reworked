@@ -32,6 +32,19 @@ CATEGORY_PREREQS = {
     "Case Studies in Textual Analysis": {"Principles of Textual Analysis"},
 }
 
+# Earned credits required by standing rules in prerequisite text (standard 30/60/90 thresholds).
+STANDING_CREDITS = (
+    ("sophomore standing", 30),
+    ("junior standing", 60),
+    ("senior standing", 90),
+)
+DECLARED_MAJOR_CREDITS = 30
+# Upper-level courses wait until the matching standing; for a new full-time student this is
+# the 3rd (3000-level) and 5th (4000-level) semester, the timing the planner always used.
+UPPER_LEVEL_CREDITS = ((4000, 60), (3000, 30))
+COMPLETED_CREDITS_RE = re.compile(r"completion of (\d+) credits", re.IGNORECASE)
+COURSE_LEVEL_RE = re.compile(r"^[A-Z]{2,4}\s?(\d{3,4})$")
+
 COURSE_CODE_PATTERN = re.compile(r"\b[A-Z]{2,4}\s?\d{3,4}\b")
 PREREQ_OR_GROUP_RE = re.compile(
     r"(?:[A-Z]{2,4}\s?\d{3,4})(?:\s*(?:/|OR)\s*(?:[A-Z]{2,4}\s?\d{3,4}))+"
@@ -2035,52 +2048,36 @@ def _completed_credit_total(catalog: Dict, completed: Set[str]) -> int:
     return total
 
 
-def _min_term_index_for_course(
-    catalog: Dict,
-    code: str,
-    completed_credits: int | None = None,
-) -> int:
+def _min_credits_for_course(catalog: Dict, code: str) -> Tuple[int, List[str]]:
+    """Earned credits a student needs before taking `code`, and the rules that require them.
+
+    Standing is measured in credits rather than in terms since the plan starts, so a continuing
+    student who already has junior standing is not held back as if they were a new student.
+    """
     meta = catalog.get("course_meta", {}).get(code, {})
     text = (meta.get("prereq_text") or "").lower()
-    min_term = 0
+    rules: List[Tuple[int, str]] = []
 
     if "declared" in text and "major" in text:
-        min_term = max(min_term, 2)
-    if "junior standing" in text:
-        if completed_credits is None or completed_credits < 60:
-            min_term = max(min_term, 4)
-    if "sophomore standing" in text:
-        if completed_credits is None or completed_credits < 30:
-            min_term = max(min_term, 2)
+        rules.append((DECLARED_MAJOR_CREDITS, "declared major"))
+    for phrase, credits in STANDING_CREDITS:
+        if phrase in text:
+            rules.append((credits, phrase))
+    for match in COMPLETED_CREDITS_RE.finditer(text):
+        credits = int(match.group(1))
+        rules.append((credits, f"completion of {credits} credits"))
 
-    m = re.match(r"^[A-Z]{3}\s?(\d{3,4})$", code)
+    m = COURSE_LEVEL_RE.match(code)
     if m:
         level = int(m.group(1))
-        if level >= 4000:
-            min_term = max(min_term, 4)
-        elif level >= 3000:
-            min_term = max(min_term, 2)
-    return min_term
+        for min_level, credits in UPPER_LEVEL_CREDITS:
+            if level >= min_level:
+                rules.append((credits, f"{min_level}-level course"))
+                break
 
-
-def _min_term_reasons(catalog: Dict, code: str) -> List[str]:
-    meta = catalog.get("course_meta", {}).get(code, {})
-    text = (meta.get("prereq_text") or "").lower()
-    reasons: List[str] = []
-    if "declared" in text and "major" in text:
-        reasons.append("declared major")
-    if "junior standing" in text:
-        reasons.append("junior standing")
-    if "sophomore standing" in text:
-        reasons.append("sophomore standing")
-    m = re.match(r"^[A-Z]{3}\s?(\d{3,4})$", code)
-    if m:
-        level = int(m.group(1))
-        if level >= 4000:
-            reasons.append("4000-level course")
-        elif level >= 3000:
-            reasons.append("3000-level course")
-    return reasons
+    if not rules:
+        return 0, []
+    return max(credits for credits, _ in rules), list(dict.fromkeys(reason for _, reason in rules))
 
 
 def build_requirement_slots(
@@ -2571,12 +2568,15 @@ def _course_level(code: str) -> int:
 def _eligible_for_term(
     catalog: Dict,
     code: str,
-    term_idx: int,
     completed: Set[str],
     completed_gened: Set[str] | None = None,
+    earned_credits: int | None = None,
 ) -> bool:
-    completed_credits = _completed_credit_total(catalog, completed)
-    if _min_term_index_for_course(catalog, code, completed_credits) > term_idx:
+    """Whether `code` can be taken in a term, given everything completed before that term."""
+    if earned_credits is None:
+        earned_credits = _completed_credit_total(catalog, completed)
+    required_credits, _ = _min_credits_for_course(catalog, code)
+    if earned_credits < required_credits:
         return False
     if not _prereqs_satisfied(catalog, code, completed):
         return False
@@ -2603,6 +2603,8 @@ def _schedule_courses(
     target_credits: int,
     max_credits: int,
     occupied_credits_by_term: Dict[str, int] | None = None,
+    credit_offset: int = 0,
+    assumed_min_load: int = 0,
 ) -> List[Dict]:
     completed_for_skip = set(completed_courses) - set(retake_courses or set())
     remaining = set(selected_courses) - completed_for_skip
@@ -2610,6 +2612,7 @@ def _schedule_courses(
     completed = set(completed_courses)
     type_order = {"FOUNDATION": 0, "PROGRAM": 1, "GENED": 2, "FREE": 3, "FREE_ELECTIVE": 3}
     occupied = occupied_credits_by_term or {}
+    earned_credits = _completed_credit_total(catalog, completed) + credit_offset
 
     for term_idx in range(max_terms):
         term_name = _term_name(term_idx, base_season, base_year)
@@ -2622,7 +2625,7 @@ def _schedule_courses(
         completed_gened = _completed_gened_categories(catalog, completed)
         available = [
             c for c in remaining
-            if _eligible_for_term(catalog, c, term_idx, completed, completed_gened)
+            if _eligible_for_term(catalog, c, completed, completed_gened, earned_credits)
         ]
         available.sort(key=lambda c: (type_order.get(course_types.get(c, "FREE"), 9), _course_level(c), c))
 
@@ -2638,6 +2641,9 @@ def _schedule_courses(
         for code in term_courses:
             remaining.discard(code)
             completed.add(code)
+        # Under-filled terms are topped up with FREE ELECTIVE placeholders afterwards, so the
+        # student earns at least the minimum load in every term.
+        earned_credits += max(term_credits, assumed_min_load - occupied_credits)
 
         plan.append({"term": term_name, "courses": term_courses, "credits": term_credits})
         if not remaining:
@@ -2659,6 +2665,7 @@ def balance_term_credits(
     target_credits: int = 16,
     max_credits: int = 16,
     occupied_credits_by_term: Dict[str, int] | None = None,
+    credit_offset: int = 0,
 ) -> List[Dict]:
     used_codes = {
         code
@@ -2668,6 +2675,7 @@ def balance_term_credits(
     }
     next_free_code = _free_elective_code_generator(used_codes)
     occupied = occupied_credits_by_term or {}
+    base_earned_credits = _completed_credit_total(catalog, set(completed_courses)) + credit_offset
 
     def term_credit_bounds(term_obj: Dict) -> Tuple[int, int]:
         term_label = term_obj.get("term", "")
@@ -2697,6 +2705,10 @@ def balance_term_credits(
         for prev in plan[:i]:
             completed |= set(prev["courses"])
         completed_gened = _completed_gened_categories(catalog, completed)
+        # Earlier terms are filled to their minimum by the fill pass below.
+        earned_credits = base_earned_credits + sum(
+            max(prev["credits"], term_credit_bounds(prev)[0]) for prev in plan[:i]
+        )
         while term["credits"] < available_min:
             moved = False
             for j in range(i + 1, len(plan)):
@@ -2704,7 +2716,9 @@ def balance_term_credits(
                 for code in list(future["courses"]):
                     if _is_free_elective(code):
                         continue
-                    if not _eligible_for_term(catalog, code, i, completed, completed_gened):
+                    # `completed` deliberately excludes courses pulled into this same term, so a
+                    # course and its prerequisite never end up side by side.
+                    if not _eligible_for_term(catalog, code, completed, completed_gened, earned_credits):
                         continue
                     credits = _course_credits(catalog, code)
                     if term["credits"] + credits > available_max:
@@ -2713,7 +2727,6 @@ def balance_term_credits(
                     future["credits"] -= credits
                     term["courses"].append(code)
                     term["credits"] += credits
-                    completed.add(code)
                     moved = True
                     break
                 if moved:
@@ -2744,6 +2757,7 @@ def generate_semester_plan(
     max_credits: int = 16,
     fill_underloaded_terms: bool = True,
     occupied_credits_by_term: Dict[str, int] | None = None,
+    credit_offset: int = 0,
 ) -> Dict:
     selection = select_courses_for_slots(
         catalog,
@@ -2799,6 +2813,8 @@ def generate_semester_plan(
         target_credits=target_credits,
         max_credits=max_credits,
         occupied_credits_by_term=occupied_credits_by_term,
+        credit_offset=credit_offset,
+        assumed_min_load=min_credits if fill_underloaded_terms else 0,
     )
 
     if fill_underloaded_terms:
@@ -2815,6 +2831,7 @@ def generate_semester_plan(
             target_credits=target_credits,
             max_credits=max_credits,
             occupied_credits_by_term=occupied_credits_by_term,
+            credit_offset=credit_offset,
         )
 
     return {
@@ -3885,6 +3902,7 @@ def _rebalance_term_mix(
     min_credits: int,
     max_credits: int,
     occupied_credits_by_term: Dict[str, int] | None = None,
+    credit_offset: int = 0,
 ) -> List[Dict]:
     if not semester_plan:
         return semester_plan
@@ -3922,14 +3940,15 @@ def _rebalance_term_mix(
                     completed_gened.update(_course_gened_categories(catalog, code))
         return completed, completed_gened
 
-    def term_is_eligible(term_idx: int, term_courses: List[Dict], completed: Set[str], completed_gened: Set[str]) -> bool:
+    def term_is_eligible(term_courses: List[Dict], completed: Set[str], completed_gened: Set[str]) -> bool:
+        earned_credits = _completed_credit_total(catalog, completed) + credit_offset
         for course in term_courses:
             code = course.get("code")
             if not isinstance(code, str):
                 return False
             if _is_free_elective(code):
                 continue
-            if not _eligible_for_term(catalog, code, term_idx, completed, completed_gened):
+            if not _eligible_for_term(catalog, code, completed, completed_gened, earned_credits):
                 return False
         return True
 
@@ -3939,13 +3958,13 @@ def _rebalance_term_mix(
     def plan_is_eligible() -> bool:
         completed = set(completed_courses)
         completed_gened = _completed_gened_categories(catalog, completed)
-        for idx, term in enumerate(terms):
+        for term in terms:
             courses = term.get("courses", []) or []
             credits = term_credits(courses)
             min_term_credits, max_term_credits = available_bounds(term.get("term", ""))
             if credits < min_term_credits or credits > max_term_credits:
                 return False
-            if not term_is_eligible(idx, courses, completed, completed_gened):
+            if not term_is_eligible(courses, completed, completed_gened):
                 return False
             for course in courses:
                 code = course.get("code")
@@ -3994,7 +4013,7 @@ def _rebalance_term_mix(
                 if credits_b < min_b or credits_b > max_b:
                     continue
 
-                if not term_is_eligible(idx_a, next_a, completed_a, completed_gened_a):
+                if not term_is_eligible(next_a, completed_a, completed_gened_a):
                     continue
 
                 completed_b = set(completed_a)
@@ -4005,7 +4024,7 @@ def _rebalance_term_mix(
                         completed_b.add(code)
                         completed_gened_b.update(_course_gened_categories(catalog, code))
 
-                if not term_is_eligible(idx_b, next_b, completed_b, completed_gened_b):
+                if not term_is_eligible(next_b, completed_b, completed_gened_b):
                     continue
 
                 term_a["courses"] = next_a
@@ -4133,6 +4152,7 @@ def validate_plan(
     remaining_slots: Set[str] | None = None,
     slots: Dict | None = None,
     occupied_credits_by_term: Dict[str, int] | None = None,
+    credit_offset: int = 0,
 ) -> List[str]:
     errors: List[str] = []
     if not semester_plan:
@@ -4146,7 +4166,7 @@ def validate_plan(
 
     catalog_courses = _planning_course_pool(catalog)
     satisfied = set(completed_courses)
-    earned_credits = _completed_credit_total(catalog, satisfied)
+    earned_credits = _completed_credit_total(catalog, satisfied) + credit_offset
     seen_instance_ids: Set[str] = set()
     occupied = occupied_credits_by_term or {}
 
@@ -4200,33 +4220,27 @@ def validate_plan(
         if total_term_credits < min_credits and not term_has_only_retakes:
             errors.append(f"{term_label} is below the minimum credit load ({total_term_credits} < {min_credits}).")
 
+        # Prerequisites and standing are judged against earlier terms only, never the same term.
         for code in codes:
             if _is_free_elective(code):
-                satisfied.add(code)
                 continue
             if code not in catalog_courses:
                 errors.append(f"Course not found in catalog: {code}")
-                satisfied.add(code)
                 continue
 
-            min_term = _min_term_index_for_course(catalog, code, earned_credits)
-            if base_idx != 999999 and term_idx < base_idx + min_term:
-                earliest = _term_name(min_term, base_season, base_year)
-                reasons = _min_term_reasons(catalog, code)
-                reason_text = f" based on {', '.join(reasons)}" if reasons else ""
+            required_credits, reasons = _min_credits_for_course(catalog, code)
+            if earned_credits < required_credits:
                 errors.append(
-                    f"{code} may be scheduled too early in {term_label}. "
-                    f"Earliest recommended term is {earliest}{reason_text}."
+                    f"{code} is planned too early in {term_label}: it needs {required_credits} earned credits "
+                    f"({', '.join(reasons)}), but only {earned_credits} are earned by then."
                 )
 
             unmet = _unmet_prereq_labels(catalog, code, satisfied)
             if unmet and strict_prereqs:
                 errors.append(f"{code} scheduled before prerequisites: {', '.join(unmet)}.")
-            satisfied.add(code)
 
-        earned_credits += term_credits
-
-        earned_credits += term_credits
+        satisfied.update(codes)
+        earned_credits += calc_credits
 
     # Terms that only contain in-progress load are not in semester_plan,
     # but they can still exceed the cap and should be surfaced.
@@ -4979,6 +4993,7 @@ def generate_plan(
         selected_majors=majors,
         catalog_gened_categories=(catalog.get("gen_ed", {}) or {}).get("categories", {}) or {},
     )
+    total_manual_credits = int(manual_credit_breakdown.get("total", 0) or 0)
 
     slots = build_requirement_slots(catalog, majors, minors, business_concentration=business_concentration)
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
@@ -5000,6 +5015,7 @@ def generate_plan(
         max_credits=max_credits,
         fill_underloaded_terms=fill_underloaded_terms,
         occupied_credits_by_term=occupied_credits_by_term,
+        credit_offset=total_manual_credits,
     )
 
     plan = semester_result["plan"]
@@ -5052,6 +5068,7 @@ def generate_plan(
         min_credits=min_credits,
         max_credits=max_credits,
         occupied_credits_by_term=occupied_credits_by_term,
+        credit_offset=total_manual_credits,
     )
 
     semester_plan = _dedupe_semester_plan(catalog, semester_plan, completed_courses)
@@ -5085,8 +5102,6 @@ def generate_plan(
         selected_majors=majors,
         business_concentration=business_concentration,
     )
-    total_manual_credits = int(manual_credit_breakdown.get("total", 0) or 0)
-
     # Credit totals derived from slot buckets (more accurate than assuming 3 credits per course)
     total_required_credits = (
         sum(v.get("required", 0) for v in category_progress.get("majors", {}).values())
@@ -5239,6 +5254,7 @@ def generate_plan(
         remaining_slots=set(selection.get("remaining_slots") or []),
         slots=slots,
         occupied_credits_by_term=occupied_credits_by_term,
+        credit_offset=total_manual_credits,
     )
     is_valid = True
     validation_errors_out: List[str] = []

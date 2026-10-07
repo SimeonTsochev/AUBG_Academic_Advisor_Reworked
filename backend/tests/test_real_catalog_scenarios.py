@@ -170,7 +170,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
                             )
                     done |= {c["code"] for c in _real_courses(term)}
 
-    @unittest.expectedFailure  # Bug 4: senior standing / "completion of N credits" are not checked.
     def test_standing_stated_in_the_catalog_is_met(self):
         for s in self.scenarios:
             with self.subTest(s.label):
@@ -229,7 +228,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         self.assertFalse(result["is_valid"])
         self.assertTrue(any("COS 2021" in error or "Computer Science" in error for error in result["validation_errors"]))
 
-    @unittest.expectedFailure  # Bug 2: the validator counted every term's credits twice.
     def test_moving_a_course_before_its_standing_is_reported(self):
         fresh = self._fresh("Business Administration")
         source = _term_of(fresh, "BUS 3000")
@@ -244,7 +242,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         self.assertEqual(_term_of(result, "BUS 3000"), target)
         self.assertTrue(any("BUS 3000" in e and "junior standing" in e for e in result["validation_errors"]))
 
-    @unittest.expectedFailure  # Bug 3: 3000/4000-level courses held back by fixed term offsets.
     def test_continuing_students_can_take_upper_level_courses_right_away(self):
         fresh = self._fresh("Computer Science")
         completed = {
