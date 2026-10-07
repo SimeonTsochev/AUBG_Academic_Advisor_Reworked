@@ -2708,16 +2708,8 @@ def balance_term_credits(
                 break
 
     # Fill pass
-    all_slot_ids = {slot["id"] for slot in slots.get("slots", [])}
-    remaining_slots = set(all_slot_ids - covered_slots)
-    for i in range(len(plan)):
-        term = plan[i]
+    for term in plan:
         available_min, _ = term_credit_bounds(term)
-        completed = set(completed_courses)
-        for prev in plan[:i]:
-            completed |= set(prev["courses"])
-        completed_gened = _completed_gened_categories(catalog, completed)
-
         while term["credits"] < available_min:
             # Do not auto-pick real courses as fillers; use placeholders only.
             if not add_free_elective(term):
