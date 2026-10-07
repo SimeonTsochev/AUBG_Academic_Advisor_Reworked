@@ -12,6 +12,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import build_requirement_slots, generate_plan, select_courses_for_slots  # noqa: E402
 from excel_course_catalog import load_course_catalog  # noqa: E402
 
@@ -28,7 +30,7 @@ def _write_excel_course_universe(rows: list[list[object]]) -> Path:
     return Path(tmp.name)
 
 
-class GenEdExcelTagsTests(unittest.TestCase):
+class GenEdExcelTagsTests(IsolatedTestCase):
     def test_excel_only_completed_course_counts_for_all_tagged_gened_categories(self):
         path = _write_excel_course_universe([
             [

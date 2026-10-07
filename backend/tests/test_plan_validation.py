@@ -8,6 +8,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import generate_plan, validate_plan, _min_term_index_for_course  # noqa: E402
 
 
@@ -73,7 +75,7 @@ def plan_course(catalog, code, course_type="PROGRAM", satisfies=None):
     }
 
 
-class PlanValidationTests(unittest.TestCase):
+class PlanValidationTests(IsolatedTestCase):
     def test_generate_plan_is_valid(self):
         catalog = build_sample_catalog()
         plan = generate_plan(

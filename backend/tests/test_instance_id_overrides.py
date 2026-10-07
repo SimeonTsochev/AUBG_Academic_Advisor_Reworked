@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import generate_plan  # noqa: E402
 
 
@@ -29,7 +31,7 @@ def build_tiny_catalog() -> dict:
     }
 
 
-class InstanceIdOverrideTests(unittest.TestCase):
+class InstanceIdOverrideTests(IsolatedTestCase):
     def _generate(self, overrides=None):
         return generate_plan(
             catalog=build_tiny_catalog(),

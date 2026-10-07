@@ -11,6 +11,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from excel_catalog import load_excel_catalog, get_recommended_electives, get_case_studies_gened_courses  # noqa: E402
 from degree_engine import compute_elective_recommendations, generate_plan  # noqa: E402
 
@@ -27,7 +29,7 @@ def _write_xlsx(rows: list[list[object]]) -> Path:
     return Path(tmp.name)
 
 
-class ExcelCatalogTests(unittest.TestCase):
+class ExcelCatalogTests(IsolatedTestCase):
     def _finance_minor_catalog(self) -> dict:
         return {
             "courses": {

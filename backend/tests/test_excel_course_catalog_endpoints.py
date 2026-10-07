@@ -12,6 +12,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from excel_course_catalog import load_course_catalog, get_course  # noqa: E402
 from main import app  # noqa: E402
 
@@ -28,7 +30,10 @@ def _write_xlsx(headers: list[str], rows: list[list[object]]) -> Path:
     return Path(tmp.name)
 
 
-class ExcelCourseCatalogEndpointsTests(unittest.TestCase):
+class ExcelCourseCatalogEndpointsTests(IsolatedTestCase):
+    # The endpoint tests read the shipped catalog; the workbook test loads its own file.
+    excel_index = "real"
+
     def test_module_normalizes_codes_and_splits_area_tags(self):
         path = _write_xlsx(
             headers=["Department", "Course", "Label", "Area of Study", "Course Notes", "term"],

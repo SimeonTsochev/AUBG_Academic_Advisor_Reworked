@@ -7,10 +7,12 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import _infer_allowed_prefixes_for_minor_electives, compute_minor_proximity_smart_details  # noqa: E402
 
 
-class MinorPrefixInferenceTests(unittest.TestCase):
+class MinorPrefixInferenceTests(IsolatedTestCase):
     def test_extracts_prefixes_for_any_other_course_phrases(self):
         self.assertIn(
             "POLS",

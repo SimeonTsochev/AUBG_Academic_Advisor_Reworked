@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import compute_minor_suggestions  # noqa: E402
 
 
@@ -32,7 +34,7 @@ def _catalog_for_swap_identity() -> dict:
     }
 
 
-class MinorSwapSlotIdentityTests(unittest.TestCase):
+class MinorSwapSlotIdentityTests(IsolatedTestCase):
     def test_duplicate_free_slots_use_deterministic_slot_index_without_instance_id(self):
         catalog = _catalog_for_swap_identity()
         semester_plan = [

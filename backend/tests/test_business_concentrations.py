@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from business_concentrations import (  # noqa: E402
     build_business_concentration_audit,
     classify_business_course,
@@ -51,7 +53,7 @@ def _catalog(courses: dict[str, str]) -> dict:
     }
 
 
-class BusinessConcentrationTests(unittest.TestCase):
+class BusinessConcentrationTests(IsolatedTestCase):
     def test_marketing_audit_reports_minor_conflict_and_non_bus_cap(self):
         catalog = _catalog(
             {

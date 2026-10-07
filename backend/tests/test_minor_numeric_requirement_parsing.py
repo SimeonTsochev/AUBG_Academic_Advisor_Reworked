@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import compute_minor_proximity_smart_details, compute_minor_suggestions  # noqa: E402
 
 
@@ -50,7 +52,7 @@ def _catalog_with_block(
     }
 
 
-class MinorNumericRequirementParsingTests(unittest.TestCase):
+class MinorNumericRequirementParsingTests(IsolatedTestCase):
     def test_credits_required_numeric_formats_are_counted(self):
         for raw_value in (9, 9.0, "9", "9.0"):
             with self.subTest(credits_required=raw_value):

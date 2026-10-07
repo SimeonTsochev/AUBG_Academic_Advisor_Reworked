@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from catalog_parser import extract_program_requirements  # noqa: E402
 from degree_engine import compute_elective_recommendations, generate_plan  # noqa: E402
 
@@ -77,7 +79,7 @@ def build_bus_jmc_catalog(with_excel: bool = False) -> dict:
     return catalog
 
 
-class BusinessAdministrationElectiveCapTests(unittest.TestCase):
+class BusinessAdministrationElectiveCapTests(IsolatedTestCase):
     def test_business_admin_electives_are_structured_in_parser(self):
         text = """
         Major Programs

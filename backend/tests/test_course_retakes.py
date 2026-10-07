@@ -8,6 +8,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import generate_plan, validate_plan  # noqa: E402
 
 
@@ -41,7 +43,7 @@ def _planned_codes(plan: dict) -> list[str]:
     ]
 
 
-class CourseRetakeTests(unittest.TestCase):
+class CourseRetakeTests(IsolatedTestCase):
     def test_validate_plan_allows_duplicate_course_codes(self):
         catalog = build_retake_catalog()
         semester_plan = [

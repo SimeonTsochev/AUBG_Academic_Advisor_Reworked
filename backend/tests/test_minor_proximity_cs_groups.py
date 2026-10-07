@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import compute_minor_proximity_smart_details, _compute_minor_alerts  # noqa: E402
 
 
@@ -61,7 +63,7 @@ def build_catalog(minor_key: str = "Computer Science") -> dict:
     }
 
 
-class ComputerScienceMinorProximityTests(unittest.TestCase):
+class ComputerScienceMinorProximityTests(IsolatedTestCase):
     def test_cs_minor_requires_core_groups_and_credits(self):
         catalog = build_catalog()
         remaining_count, remaining_items, remaining_credits = compute_minor_proximity_smart_details(

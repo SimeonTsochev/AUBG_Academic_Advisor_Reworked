@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import compute_minor_proximity_smart_details  # noqa: E402
 
 
@@ -74,8 +76,9 @@ def _choice_group_catalog() -> dict:
     }
 
 
-class MinorChoiceGroupProximityTests(unittest.TestCase):
+class MinorChoiceGroupProximityTests(IsolatedTestCase):
     def setUp(self) -> None:
+        super().setUp()
         self.catalog = _choice_group_catalog()
 
     def _remaining_count(self, minor_name: str, taken: set[str]) -> int:

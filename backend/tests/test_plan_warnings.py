@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import generate_plan  # noqa: E402
 from models import GeneratePlanResponse  # noqa: E402
 
@@ -30,7 +32,7 @@ def build_tiny_catalog() -> dict:
     }
 
 
-class PlanWarningSerializationTests(unittest.TestCase):
+class PlanWarningSerializationTests(IsolatedTestCase):
     def test_term_credit_warning_serializes(self):
         catalog = build_tiny_catalog()
         overrides = {

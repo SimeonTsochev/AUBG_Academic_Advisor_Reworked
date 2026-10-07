@@ -551,6 +551,37 @@ def get_catalog_data() -> Dict[str, Any]:
     return _catalog_payload
 
 
+def snapshot_course_catalog_state() -> Dict[str, Any]:
+    # The loaders replace these globals rather than mutating them, so references are enough.
+    return {
+        "courses_by_code": courses_by_code,
+        "courses_sorted": _courses_sorted,
+        "loaded_path": _loaded_path,
+        "loaded_mtime": _loaded_mtime,
+        "catalog_payload": _catalog_payload,
+    }
+
+
+def restore_course_catalog_state(state: Dict[str, Any]) -> None:
+    global courses_by_code, _courses_sorted, _loaded_path, _loaded_mtime, _catalog_payload
+
+    courses_by_code = state["courses_by_code"]
+    _courses_sorted = state["courses_sorted"]
+    _loaded_path = state["loaded_path"]
+    _loaded_mtime = state["loaded_mtime"]
+    _catalog_payload = state["catalog_payload"]
+
+
+def reset_course_catalog() -> None:
+    restore_course_catalog_state({
+        "courses_by_code": {},
+        "courses_sorted": [],
+        "loaded_path": None,
+        "loaded_mtime": None,
+        "catalog_payload": {"courses": [], "by_code": {}, "codes": []},
+    })
+
+
 def _term_matches(course: Dict[str, Any], term: Optional[str]) -> bool:
     if not term:
         return True

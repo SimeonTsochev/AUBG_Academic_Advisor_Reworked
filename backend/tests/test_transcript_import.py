@@ -12,6 +12,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from main import app  # noqa: E402
 from transcript_import import (  # noqa: E402
     ParsedTranscriptCourse,
@@ -31,7 +33,9 @@ def _build_pdf_bytes(lines: list[str]) -> bytes:
     return buffer.getvalue()
 
 
-class TranscriptImportTests(unittest.TestCase):
+class TranscriptImportTests(IsolatedTestCase):
+    excel_index = "real"
+
     def test_parse_transcript_lines_classifies_sections_and_strips_noise(self):
         parsed = parse_transcript_lines(
             [

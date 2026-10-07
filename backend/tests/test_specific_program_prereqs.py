@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import generate_plan  # noqa: E402
 
 
@@ -49,7 +51,7 @@ def build_bus_eco_catalog():
     }
 
 
-class SpecificProgramPrereqTests(unittest.TestCase):
+class SpecificProgramPrereqTests(IsolatedTestCase):
     def test_bus_major_eco_minor_does_not_include_eco3000(self):
         catalog = build_bus_eco_catalog()
         plan = generate_plan(

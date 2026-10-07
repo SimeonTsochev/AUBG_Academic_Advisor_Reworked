@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import (  # noqa: E402
     _compute_minor_alerts,
     _is_selected_program_minor,
@@ -61,7 +63,7 @@ def _catalog_for_name_matching() -> dict:
     }
 
 
-class MinorNameNormalizationTests(unittest.TestCase):
+class MinorNameNormalizationTests(IsolatedTestCase):
     def test_normalized_name_matching_for_selected_programs(self):
         self.assertTrue(
             _is_selected_program_minor(

@@ -8,10 +8,12 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from pdf_export import _course_label_for_pdf  # noqa: E402
 
 
-class PdfRetakeExportTests(unittest.TestCase):
+class PdfRetakeExportTests(IsolatedTestCase):
     def test_retake_course_label_includes_retake_and_effective_credit(self):
         label = _course_label_for_pdf(
             {

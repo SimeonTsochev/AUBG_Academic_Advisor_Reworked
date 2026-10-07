@@ -8,11 +8,15 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from catalog_cache import getCatalogCache  # noqa: E402
 from degree_engine import build_requirement_slots, generate_plan  # noqa: E402
 
 
-class MajorProgramChoiceRegressionTests(unittest.TestCase):
+class MajorProgramChoiceRegressionTests(IsolatedTestCase):
+    excel_index = "real"
+
     @classmethod
     def setUpClass(cls):
         cls.catalog = getCatalogCache().default_catalog

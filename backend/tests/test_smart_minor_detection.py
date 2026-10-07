@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import (  # noqa: E402
     _infer_allowed_prefixes_for_minor_electives,
     compute_minor_proximity_smart_details,
@@ -39,7 +41,7 @@ def _synthetic_catalog(
     }
 
 
-class SmartMinorDetectionRegressionTests(unittest.TestCase):
+class SmartMinorDetectionRegressionTests(IsolatedTestCase):
     def test_infer_allowed_prefixes_supports_two_to_four_letter_subjects(self):
         phrase_cases = [
             "Any other POLS courses",

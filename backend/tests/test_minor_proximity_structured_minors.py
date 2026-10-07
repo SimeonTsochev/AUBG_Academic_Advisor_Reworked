@@ -7,11 +7,15 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import compute_minor_proximity_smart_details, compute_minor_suggestions  # noqa: E402
 from main import _load_default_catalog  # noqa: E402
 
 
-class StructuredMinorProximityTests(unittest.TestCase):
+class StructuredMinorProximityTests(IsolatedTestCase):
+    excel_index = "real"
+
     @classmethod
     def setUpClass(cls):
         cls.catalog = _load_default_catalog()

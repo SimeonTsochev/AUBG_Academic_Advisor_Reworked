@@ -11,6 +11,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from excel_course_catalog import load_course_catalog, load_course_catalog_from_data, get_course  # noqa: E402
 
 
@@ -26,7 +28,7 @@ def _write_xlsx(headers: list[str], rows: list[list[object]]) -> Path:
     return Path(tmp.name)
 
 
-class ExcelCourseCatalogTests(unittest.TestCase):
+class ExcelCourseCatalogTests(IsolatedTestCase):
     def test_workbook_normalizes_excel_escape_sequences(self):
         path = _write_xlsx(
             headers=["Department", "Course", "Label", "Area of Study", "Course Notes", "term"],

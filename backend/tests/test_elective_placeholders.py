@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from catalog_parser import extract_program_requirements  # noqa: E402
 from degree_engine import generate_plan  # noqa: E402
 
@@ -41,7 +43,7 @@ def build_min_catalog():
     }
 
 
-class ElectivePlaceholderTests(unittest.TestCase):
+class ElectivePlaceholderTests(IsolatedTestCase):
     def test_elective_free_text_placeholder(self):
         text = """
         BUSINESS

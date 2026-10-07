@@ -7,6 +7,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from catalog_parser import _parse_prereq_blocks, _prereq_blocks_to_expr  # noqa: E402
 from degree_engine import validate_plan  # noqa: E402
 
@@ -145,7 +147,7 @@ def _prereq_errors(catalog: dict, target: str, completed: set[str]) -> list[str]
     )
 
 
-class PrereqOrLogicTests(unittest.TestCase):
+class PrereqOrLogicTests(IsolatedTestCase):
     def test_catalog_parser_builds_structured_or_blocks(self):
         blocks = _parse_prereq_blocks("Prerequisite: COS 1010 and Either MAT 1050 or MAT 1100.")
         self.assertEqual(

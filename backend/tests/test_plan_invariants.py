@@ -9,6 +9,8 @@ BACKEND_DIR = os.path.dirname(CURRENT_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from _isolation import IsolatedTestCase  # noqa: E402
+
 from degree_engine import generate_plan  # noqa: E402
 
 COURSE_RE = re.compile(r"^[A-Z]{2,4}\s\d{4}$")
@@ -177,7 +179,7 @@ def build_filler_catalog() -> dict:
     }
 
 
-class PlanInvariantTests(unittest.TestCase):
+class PlanInvariantTests(IsolatedTestCase):
     def test_no_unjustified_real_courses(self):
         catalog = build_random_catalog()
         majors = list(catalog["majors"].keys())
