@@ -4153,6 +4153,7 @@ def validate_plan(
     slots: Dict | None = None,
     occupied_credits_by_term: Dict[str, int] | None = None,
     credit_offset: int = 0,
+    in_progress_courses: Set[str] | None = None,
 ) -> List[str]:
     errors: List[str] = []
     if not semester_plan:
@@ -4251,24 +4252,42 @@ def validate_plan(
         if total_credits > max_credits:
             errors.append(f"{term_label} exceeds max credits ({total_credits} > {max_credits}).")
 
-    if remaining_slots:
-        label_samples: List[str] = []
-        if slots and isinstance(slots.get("by_id"), dict):
-            for sid in sorted(remaining_slots):
-                slot = slots["by_id"].get(sid)
-                if slot:
-                    label_samples.append(_slot_label(slot))
-                if len(label_samples) >= 5:
-                    break
-        sample = ", ".join(label_samples) if label_samples else ", ".join(sorted(list(remaining_slots))[:5])
-        errors.append(
-            f"Unfilled requirement slots ({len(remaining_slots)})."
-            + (f" Examples: {sample}" if sample else "")
-        )
+    # Audit the final plan (after scheduling, truncation and user edits) rather than trusting the
+    # selection made before scheduling: every requirement must be filled by a completed,
+    # in-progress or planned course.
+    if slots and isinstance(slots.get("by_id"), dict):
+        taken = satisfied | set(in_progress_courses or set())
+        unmet_slot_ids = _unmet_requirement_slots(catalog, slots, taken)
+    else:
+        unmet_slot_ids = sorted(remaining_slots or [])
+    if unmet_slot_ids:
+        descriptions: List[str] = []
+        for sid in unmet_slot_ids:
+            slot = (slots or {}).get("by_id", {}).get(sid) if slots else None
+            descriptions.append(_describe_requirement_slot(slot) if slot else sid)
+        unique = list(dict.fromkeys(descriptions))
+        sample = "; ".join(unique[:5]) + (f"; and {len(unique) - 5} more" if len(unique) > 5 else "")
+        errors.append(f"Requirements not covered by completed or planned courses ({len(unmet_slot_ids)}): {sample}.")
 
     errors.extend(_textual_analysis_sequence_errors(catalog, semester_plan, completed_courses))
 
     return errors
+
+
+def _unmet_requirement_slots(catalog: Dict, slots: Dict, taken_courses: Set[str]) -> List[str]:
+    """Requirement slot ids that `taken_courses` cannot fill, using the planner's own slot matching."""
+    selection = select_courses_for_slots(catalog, slots, taken_courses)
+    taken = {_normalize_course_code(code) for code in taken_courses}
+    unmet = {sid for sid, code in selection["slot_assignment"].items() if code not in taken}
+    unmet |= set(selection["remaining_slots"])
+    return sorted(unmet)
+
+
+def _describe_requirement_slot(slot: Dict) -> str:
+    label = _slot_label(slot)
+    if slot.get("type") == "fixed" and slot.get("course"):
+        return f"{slot['course']} ({label})"
+    return label
 
 
 def _effective_completed_courses_after_plan(
@@ -5251,10 +5270,10 @@ def generate_plan(
         min_credits=min_credits,
         max_credits=max_credits,
         strict_prereqs=strict_prereqs,
-        remaining_slots=set(selection.get("remaining_slots") or []),
-        slots=slots,
+        slots=planning_slots,
         occupied_credits_by_term=occupied_credits_by_term,
         credit_offset=total_manual_credits,
+        in_progress_courses=normalized_in_progress,
     )
     is_valid = True
     validation_errors_out: List[str] = []

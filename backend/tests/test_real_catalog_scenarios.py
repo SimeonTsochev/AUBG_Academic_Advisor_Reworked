@@ -221,7 +221,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
     def _fresh(self, major: str) -> Dict:
         return next(s.result for s in self.scenarios if s.majors == [major] and s.stage == 0)
 
-    @unittest.expectedFailure  # Bug 1: coverage is checked against the pre-scheduling selection.
     def test_removing_a_required_course_makes_the_plan_invalid(self):
         result = _plan(self.catalog, ["Computer Science"], [], set(), overrides={"remove": [{"code": "COS 2021"}]})
         self.assertIsNone(_term_of(result, "COS 2021"))
