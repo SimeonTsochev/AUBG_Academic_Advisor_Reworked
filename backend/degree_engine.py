@@ -2064,6 +2064,12 @@ def _term_label_index(term: str) -> int:
     return int(m.group(2)) * 2 + season_val
 
 
+def _canonical_term_label(term: str | None) -> str | None:
+    """'Fall 2027' for any spacing of a Fall/Spring term label, None for anything else."""
+    m = re.match(r"^\s*(Spring|Fall)\s+(\d{4})\s*$", term) if isinstance(term, str) else None
+    return f"{m.group(1)} {m.group(2)}" if m else None
+
+
 def _normalize_term_label(term: str | None) -> str | None:
     if not isinstance(term, str):
         return None
@@ -5808,6 +5814,9 @@ def _apply_plan_overrides(
 
         if not removed_any and code:
             for t in semester_plan:
+                # An explicit term scopes the removal; never delete the course from other terms.
+                if term and t["term"] != term:
+                    continue
                 new_courses = []
                 for c in t["courses"]:
                     if c.get("code") == code:
@@ -5828,10 +5837,16 @@ def _apply_plan_overrides(
     for mv in moves:
         code = mv.get("code")
         instance_id = mv.get("instance_id")
-        from_term = mv.get("from_term")
+        from_term = _canonical_term_label(mv.get("from_term")) or mv.get("from_term")
         to_term = mv.get("to_term")
         if not from_term or not to_term:
             continue
+        if _canonical_term_label(to_term) is None:
+            override_warnings.append(
+                _make_warning("OVERRIDE_INVALID_TERM", course=code, term=to_term, **{"from": from_term, "to": to_term})
+            )
+            continue
+        to_term = _canonical_term_label(to_term)
         if from_term not in term_map or to_term not in term_map:
             if from_term not in term_map:
                 override_warnings.append(
@@ -5926,6 +5941,10 @@ def _apply_plan_overrides(
         if instance_id and instance_id in removed_instance_ids:
             override_warnings.append(_make_warning("OVERRIDE_CONFLICT", course=code, term=term, instance_id=instance_id))
             continue
+        if _canonical_term_label(term) is None:
+            override_warnings.append(_make_warning("OVERRIDE_INVALID_TERM", course=code, term=term))
+            continue
+        term = _canonical_term_label(term)
         normalized_code = _normalize_course_code(code)
         if not is_retake and normalized_code in completed_courses and normalized_code not in retake_set:
             override_warnings.append(_make_warning("OVERRIDE_ADD_ALREADY_COMPLETED", course=code, term=term))

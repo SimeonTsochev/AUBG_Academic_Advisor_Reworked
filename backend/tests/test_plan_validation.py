@@ -377,6 +377,36 @@ class PlanValidationTests(IsolatedTestCase):
         self.assertIn(("Fall 2027", "SCI 1010"), planned)
         self.assertFalse(any(w.get("type") == "OVERRIDE_ADD_TERM_UNAVAILABLE" for w in plan["warnings"]))
 
+    def _sample_plan(self, overrides=None):
+        return generate_plan(
+            catalog=build_sample_catalog(),
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=set(),
+            max_credits_per_semester=16,
+            start_term_season="Fall",
+            start_term_year=2025,
+            overrides=overrides,
+        )
+
+    def test_remove_scoped_to_a_term_never_deletes_the_course_elsewhere(self):
+        baseline = self._sample_plan()
+        planned_in = next(t["term"] for t in baseline["semester_plan"] if any(c["code"] == "CS 1100" for c in t["courses"]))
+        other_term = next(t["term"] for t in baseline["semester_plan"] if t["term"] != planned_in)
+        plan = self._sample_plan({"remove": [{"term": other_term, "code": "CS 1100"}]})
+        self.assertTrue(any(c["code"] == "CS 1100" for t in plan["semester_plan"] for c in t["courses"]))
+        self.assertTrue(any(w["type"] == "OVERRIDE_REMOVE_NOT_FOUND" for w in plan["warnings"]))
+
+    def test_add_or_move_to_an_invalid_term_label_is_rejected(self):
+        baseline = self._sample_plan()
+        planned_in = next(t["term"] for t in baseline["semester_plan"] if any(c["code"] == "CS 1100" for c in t["courses"]))
+        plan = self._sample_plan({
+            "add": [{"term": "Summer 2027", "code": "ART 1000", "instance_id": "summer-add"}],
+            "move": [{"from_term": planned_in, "to_term": "Summer 2027", "code": "CS 1100"}],
+        })
+        self.assertNotIn("Summer 2027", [t["term"] for t in plan["semester_plan"]])
+        self.assertEqual(sum(1 for w in plan["warnings"] if w["type"] == "OVERRIDE_INVALID_TERM"), 2)
+
     def _prerequisite_chain_catalog(self, length: int):
         catalog = build_sample_catalog()
         codes = [f"CS 13{i:02d}" for i in range(1, length + 1)]
