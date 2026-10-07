@@ -128,7 +128,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
 
     # --- Sweep invariants -------------------------------------------------------------------------
 
-    @unittest.expectedFailure  # Bug 12: Film and Creative Media plans Case Studies with Principles of Textual Analysis.
     def test_generated_plans_pass_the_engines_own_validation(self):
         for s in self.scenarios:
             with self.subTest(s.label):

@@ -28,6 +28,8 @@ from excel_course_catalog import (
 MIN_CREDITS_PER_TERM = 14
 CATEGORY_PREREQS = {
     "Historical Research": {"Historical Sources"},
+    # Must match the sequencing rule enforced by _textual_analysis_sequence_errors.
+    "Case Studies in Textual Analysis": {"Principles of Textual Analysis"},
 }
 
 COURSE_CODE_PATTERN = re.compile(r"\b[A-Z]{2,4}\s?\d{3,4}\b")
