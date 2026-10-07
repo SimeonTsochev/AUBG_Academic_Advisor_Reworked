@@ -13,6 +13,7 @@ import {
   type UploadCatalogResponse,
 } from './api';
 import type { ManualCreditEntry, RetakeEntry } from './types';
+import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from './constants/academic';
 
 type Screen = 'welcome' | 'setup' | 'advisor';
 
@@ -260,7 +261,7 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
         : currentYear,
     max_credits_per_semester:
       typeof raw.max_credits_per_semester === 'number' && Number.isFinite(raw.max_credits_per_semester)
-        ? Math.max(1, Math.trunc(raw.max_credits_per_semester))
+        ? Math.min(MAX_CREDITS_PER_TERM, Math.max(MIN_CREDITS_PER_TERM, Math.trunc(raw.max_credits_per_semester)))
         : DEFAULT_MAX_CREDITS,
     waived_mat1000: raw.waived_mat1000 === true,
     waived_eng1000: raw.waived_eng1000 === true,

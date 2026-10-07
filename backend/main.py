@@ -5,13 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from typing import Any, Dict, Optional
 import json
-import inspect
 import logging
 import os
+import threading
 
 from catalog_cache import getCatalogCache
 from business_concentrations import classify_business_course
-from degree_engine import generate_plan
+from degree_engine import _current_start_term, generate_plan
 from pdf_export import plan_to_pdf_bytes
 from models import (
     UploadCatalogResponse,
@@ -56,69 +56,52 @@ app.add_middleware(
 )
 
 CATALOGS: Dict[str, Dict] = {}
-FORCE_OPTIMIZE_PLAN = True
-FORCE_OPTIMIZATION_PASSES = 25
-INTERACTIVE_OPTIMIZATION_PASSES = 8
 PLAN_CACHE_MAX_SIZE = 64
 PLAN_CACHE: Dict[str, Dict[str, Any]] = {}
-
-
-def _compact_plan_cache() -> None:
-    if len(PLAN_CACHE) <= PLAN_CACHE_MAX_SIZE:
-        return
-    # Drop oldest entries first (insertion-ordered dict in modern Python).
-    while len(PLAN_CACHE) > PLAN_CACHE_MAX_SIZE:
-        PLAN_CACHE.pop(next(iter(PLAN_CACHE)))
+# Plan endpoints run in FastAPI's threadpool, so cache reads and writes can overlap.
+PLAN_CACHE_LOCK = threading.Lock()
 
 
 def _plan_request_key(req: GeneratePlanRequest) -> str:
-    payload = req.dict()
+    # Plans depend on today's term (generate_plan never plans into the past), so a cached plan
+    # must not outlive the term it was computed in.
+    payload = {"request": req.model_dump(), "current_term": list(_current_start_term())}
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
-def _has_interactive_overrides(req: GeneratePlanRequest) -> bool:
-    if req.overrides is None:
-        return False
-    payload = req.overrides.dict()
-    return any(payload.get(key) for key in ("add", "remove", "move", "locks"))
+def _cached_plan(key: str) -> Optional[Dict[str, Any]]:
+    with PLAN_CACHE_LOCK:
+        return PLAN_CACHE.get(key)
 
 
-def _optimization_passes_for_request(req: GeneratePlanRequest) -> int:
-    if _has_interactive_overrides(req):
-        return min(FORCE_OPTIMIZATION_PASSES, INTERACTIVE_OPTIMIZATION_PASSES)
-    return FORCE_OPTIMIZATION_PASSES
+def _store_plan(key: str, payload: Dict[str, Any]) -> None:
+    with PLAN_CACHE_LOCK:
+        PLAN_CACHE[key] = payload
+        # Drop oldest entries first (insertion-ordered dict).
+        while len(PLAN_CACHE) > PLAN_CACHE_MAX_SIZE:
+            PLAN_CACHE.pop(next(iter(PLAN_CACHE)))
 
 
-def _generate_plan_with_compatible_kwargs(catalog: Dict[str, Any], req: GeneratePlanRequest) -> Dict[str, Any]:
-    optimization_passes = _optimization_passes_for_request(req)
-    kwargs: Dict[str, Any] = {
-        "catalog": catalog,
-        "majors": req.majors,
-        "minors": req.minors,
-        "business_concentration": req.business_concentration,
-        "completed_courses": set(req.completed_courses),
-        "manual_credits": [entry.dict() for entry in req.manual_credits],
-        "retake_courses": set(req.retake_courses or []),
-        "max_credits_per_semester": req.max_credits_per_semester,
-        "start_term_season": req.start_term_season,
-        "start_term_year": req.start_term_year,
-        "waived_mat1000": req.waived_mat1000,
-        "waived_eng1000": req.waived_eng1000,
-        "strict_prereqs": req.strict_prereqs,
-        "overrides": req.overrides.dict() if req.overrides is not None else None,
-        "in_progress_courses": set(req.in_progress_courses or []),
-        "in_progress_terms": req.in_progress_terms or {},
-        "current_term_label": req.current_term_label,
-    }
-
-    # Compatibility: some degree_engine versions do not support optimization args.
-    params = inspect.signature(generate_plan).parameters
-    if "optimize" in params:
-        kwargs["optimize"] = FORCE_OPTIMIZE_PLAN
-    if "optimization_passes" in params:
-        kwargs["optimization_passes"] = optimization_passes
-
-    return generate_plan(**kwargs)
+def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest) -> Dict[str, Any]:
+    return generate_plan(
+        catalog=catalog,
+        majors=req.majors,
+        minors=req.minors,
+        business_concentration=req.business_concentration,
+        completed_courses=set(req.completed_courses),
+        manual_credits=[entry.model_dump() for entry in req.manual_credits],
+        retake_courses=set(req.retake_courses or []),
+        max_credits_per_semester=req.max_credits_per_semester,
+        start_term_season=req.start_term_season,
+        start_term_year=req.start_term_year,
+        waived_mat1000=req.waived_mat1000,
+        waived_eng1000=req.waived_eng1000,
+        strict_prereqs=req.strict_prereqs,
+        overrides=req.overrides.model_dump() if req.overrides is not None else None,
+        in_progress_courses=set(req.in_progress_courses or []),
+        in_progress_terms=req.in_progress_terms or {},
+        current_term_label=req.current_term_label,
+    )
 
 
 def _require_catalog_cache():
@@ -275,6 +258,8 @@ def program_snapshots_get(token: str):
         raise HTTPException(status_code=410, detail="Snapshot has expired.")
     except KeyError:
         raise HTTPException(status_code=404, detail="Snapshot not found.")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     return GetSnapshotResponse(
         token=str(snapshot["token"]),
         expires_at=int(snapshot["expires_at"]),
@@ -430,15 +415,17 @@ async def upload_catalog(file: UploadFile):
     )
 """
 
+# Plain `def` (not `async def`): planning is CPU-bound, and FastAPI runs sync endpoints in a
+# threadpool instead of blocking the event loop for every other request.
 @app.post("/plan/generate", response_model=GeneratePlanResponse)
-async def plan_generate(req: GeneratePlanRequest):
+def plan_generate(req: GeneratePlanRequest):
     catalog = _ensure_catalog(req.catalog_id)
     request_key = _plan_request_key(req)
-    cached = PLAN_CACHE.get(request_key)
+    cached = _cached_plan(request_key)
     if cached is not None:
         return GeneratePlanResponse(**cached)
     try:
-        plan = _generate_plan_with_compatible_kwargs(catalog, req)
+        plan = _generate_plan_for_request(catalog, req)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     response_payload = GeneratePlanResponse(
@@ -446,21 +433,20 @@ async def plan_generate(req: GeneratePlanRequest):
         catalog_year=catalog.get("catalog_year"),
         **plan,
     )
-    PLAN_CACHE[request_key] = response_payload.dict()
-    _compact_plan_cache()
+    _store_plan(request_key, response_payload.model_dump())
     return response_payload
 
 @app.post("/plan/download.pdf")
-async def plan_download_pdf(req: GeneratePlanRequest):
+def plan_download_pdf(req: GeneratePlanRequest):
     catalog = _ensure_catalog(req.catalog_id)
     try:
-        plan = _generate_plan_with_compatible_kwargs(catalog, req)
+        plan = _generate_plan_for_request(catalog, req)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     pdf_bytes = plan_to_pdf_bytes({
         "majors": req.majors,
         "minors": req.minors,
-        "manual_credits": [entry.dict() for entry in req.manual_credits],
+        "manual_credits": [entry.model_dump() for entry in req.manual_credits],
         **plan,
     })
     return Response(

@@ -315,10 +315,6 @@ export interface GeneratePlanRequest {
   waived_eng1000?: boolean;
   strict_prereqs?: boolean;
   overrides?: PlanOverrides;
-
-  // Phase 9 optimization
-  optimize?: boolean;
-  optimization_passes?: number;
 }
 
 export interface SemesterPlan {

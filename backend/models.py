@@ -71,17 +71,14 @@ class GeneratePlanRequest(BaseModel):
     in_progress_courses: List[str] = Field(default_factory=list)
     in_progress_terms: Dict[str, str] = Field(default_factory=dict)
     current_term_label: Optional[str] = None
-    max_credits_per_semester: int = 16
-    start_term_season: Optional[str] = None
-    start_term_year: Optional[int] = None
+    # The setup screen offers 14-20 (frontend/src/constants/academic.ts, AcademicSetupScreen).
+    max_credits_per_semester: int = Field(16, ge=14, le=20)
+    start_term_season: Optional[Literal["Fall", "Spring"]] = None
+    start_term_year: Optional[int] = Field(None, ge=2000, le=2100)
     waived_mat1000: bool = False
     waived_eng1000: bool = False
     strict_prereqs: bool = False
     overrides: Optional[PlanOverrides] = None
-
-    # Phase 9: plan optimization (multi-candidate scheduling + scoring)
-    optimize: bool = False
-    optimization_passes: int = 1
 
 
 class PlanOverrideAdd(BaseModel):

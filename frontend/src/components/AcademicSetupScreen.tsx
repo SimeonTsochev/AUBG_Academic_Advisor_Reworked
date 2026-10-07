@@ -10,7 +10,7 @@ import {
 } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { extractTranscriptLinesFromImage } from '../utils/transcriptOcr';
-import { MIN_CREDITS_PER_TERM } from '../constants/academic';
+import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from '../constants/academic';
 import type { ManualCreditEntry } from '../types';
 import {
   TranscriptImportReviewDialog,
@@ -109,7 +109,6 @@ export function AcademicSetupScreen({
   onComplete,
   onBack
 }: AcademicSetupScreenProps) {
-  const MAX_CREDITS_PER_TERM = 20;
   const MAX_PROGRAMS_PER_TYPE = 2;
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedMajors, setSelectedMajors] = useState<string[]>([]);
