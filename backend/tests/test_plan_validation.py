@@ -353,6 +353,39 @@ class PlanValidationTests(IsolatedTestCase):
         }
         self.assertNotIn("SCI 1010", planned_codes)
 
+    def _prerequisite_chain_catalog(self, length: int):
+        catalog = build_sample_catalog()
+        codes = [f"CS 13{i:02d}" for i in range(1, length + 1)]
+        for index, code in enumerate(codes):
+            catalog["courses"][code] = {"name": f"Chain {index + 1}", "credits": 3, "gen_ed": []}
+            catalog["course_meta"][code] = {"credits": 3, "prereq_codes": codes[index - 1:index]}
+        catalog["majors"]["Computer Science"]["required_courses"] = codes
+        return catalog
+
+    def _plan_chain(self, length: int):
+        return generate_plan(
+            catalog=self._prerequisite_chain_catalog(length),
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=set(),
+            max_credits_per_semester=16,
+            start_term_season="Fall",
+            start_term_year=2025,
+        )
+
+    def test_long_prerequisite_chains_extend_the_plan_instead_of_dropping_courses(self):
+        plan = self._plan_chain(10)
+        planned = {c["code"] for t in plan["semester_plan"] for c in t["courses"]}
+        self.assertIn("CS 1310", planned)
+        self.assertGreaterEqual(len(plan["semester_plan"]), 10)
+        self.assertTrue(any(w["type"] == "PLAN_EXCEEDS_STANDARD_LENGTH" for w in plan["warnings"]))
+
+    def test_courses_that_cannot_fit_in_the_plan_are_reported(self):
+        plan = self._plan_chain(13)
+        self.assertTrue(any(w["type"] == "UNSCHEDULED_COURSE" and w["course"] == "CS 1313" for w in plan["warnings"]))
+        self.assertFalse(plan["is_valid"])
+        self.assertTrue(any("CS 1313" in error for error in plan["validation_errors"]))
+
     def test_textual_analysis_case_studies_requires_principles_and_eng1002(self):
         catalog = {
             "courses": {

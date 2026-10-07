@@ -2843,6 +2843,8 @@ def generate_semester_plan(
         credit_offset=credit_offset,
         assumed_min_load=min_credits if fill_underloaded_terms else 0,
     )
+    scheduled = {code for term in plan for code in term["courses"]}
+    selection["unscheduled_courses"] = sorted(set(selected_courses) - completed_for_skip - scheduled)
 
     if fill_underloaded_terms:
         plan = balance_term_credits(
@@ -5209,7 +5211,6 @@ def generate_plan(
     slots = build_requirement_slots(catalog, majors, minors, business_concentration=business_concentration)
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
-    max_terms_remaining = 8
     max_credits = max(14, int(max_credits_per_semester))
     min_credits = min(MIN_CREDITS_PER_TERM, max_credits)
     target_credits = min(max_credits, 15)
@@ -5220,7 +5221,7 @@ def generate_plan(
         completed_courses=completed_courses,
         retake_courses=normalized_retakes,
         start_term=(base_season, base_year),
-        max_terms=max_terms_remaining,
+        max_terms=MAX_PLAN_TERMS,
         min_credits=min_credits,
         target_credits=target_credits,
         max_credits=max_credits,
@@ -5439,9 +5440,32 @@ def generate_plan(
         planned_courses=planned_courses_for_audit,
     )
 
-    # Enforce hard cap on total terms
-    if len(semester_plan) > max_terms_remaining:
-        semester_plan = semester_plan[:max_terms_remaining]
+    # Never drop terms (they may hold required courses or ones the student moved there);
+    # report a longer-than-standard plan and anything the scheduler could not fit instead.
+    plan_shape_warnings: List[Dict] = []
+    if len(semester_plan) > STANDARD_PLAN_TERMS:
+        plan_shape_warnings.append(_make_warning(
+            "PLAN_EXCEEDS_STANDARD_LENGTH",
+            message=(
+                f"This plan needs {len(semester_plan)} semesters; a standard degree takes "
+                f"{STANDARD_PLAN_TERMS}. A higher credit load per semester shortens it."
+            ),
+        ))
+    final_planned_codes = {
+        course.get("code")
+        for term in semester_plan
+        for course in term.get("courses", []) or []
+        if isinstance(course, dict)
+    }
+    unscheduled_courses = [
+        code for code in selection.get("unscheduled_courses") or [] if code not in final_planned_codes
+    ]
+    for code in unscheduled_courses:
+        plan_shape_warnings.append(_make_warning(
+            "UNSCHEDULED_COURSE",
+            course=code,
+            message=f"{code} could not be fitted into a {MAX_PLAN_TERMS}-semester plan.",
+        ))
     _apply_latest_attempt_credit_rule(
         catalog=catalog,
         semester_plan=semester_plan,
@@ -5467,6 +5491,7 @@ def generate_plan(
 
     warnings = _compute_prereq_warnings(catalog, semester_plan, completed_courses)
     warnings.extend(_foundation_timing_warnings(catalog, semester_plan, completed_courses))
+    warnings.extend(plan_shape_warnings)
     if override_warnings:
         warnings.extend(override_warnings)
 
@@ -5484,6 +5509,11 @@ def generate_plan(
         in_progress_courses=normalized_in_progress,
         degree_total_credits=degree_total_credits,
     )
+    if unscheduled_courses:
+        validation_errors.append(
+            f"Could not fit {', '.join(unscheduled_courses)} into a {MAX_PLAN_TERMS}-semester plan; "
+            "raise the credit load per semester or review the prerequisites."
+        )
     is_valid = True
     validation_errors_out: List[str] = []
     if validation_errors:
