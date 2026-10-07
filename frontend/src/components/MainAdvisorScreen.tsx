@@ -19,6 +19,13 @@ import type {
 } from '../api';
 import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
+import {
+  fillSlotWithCourse,
+  removeChosenElective,
+  swapChosenElective,
+  withOverrideAdd,
+  withOverrideRemove,
+} from '../utils/planOverrides';
 import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
 import { resolveActiveAttempts } from '../utils/retakes';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
@@ -241,37 +248,19 @@ export function MainAdvisorScreen({
     genEdCategory?: string | null,
     opts?: { isRetake?: boolean }
   ) => {
-    setOverrides(prev => {
-      const isRetake = opts?.isRetake === true;
-      const existing = prev.add.find((a) => a.code === code && a.is_retake !== true);
-      const filtered = isRetake
-        ? prev.add.filter((a) => a.instance_id !== instanceId)
-        : prev.add.filter((a) => !(a.code === code && a.is_retake !== true));
-      const resolvedCategory = genEdCategory ?? existing?.gen_ed_category ?? undefined;
-      return {
-        ...prev,
-        add: [
-          ...filtered,
-          {
-            term,
-            code,
-            instance_id: instanceId,
-            gen_ed_category: resolvedCategory,
-            is_retake: isRetake || undefined,
-          }
-        ]
-      };
-    });
+    setOverrides(prev =>
+      withOverrideAdd(prev, {
+        term,
+        code,
+        instance_id: instanceId,
+        gen_ed_category: genEdCategory ?? undefined,
+        is_retake: opts?.isRetake === true,
+      })
+    );
   };
 
   const addOverrideRemove = (term: string | null, instanceId?: string | null, code?: string) => {
-    setOverrides(prev => {
-      const exists = prev.remove.some(
-        r => (r.term ?? null) === term && (instanceId ? r.instance_id === instanceId : (!r.instance_id && r.code === code))
-      );
-      if (exists) return prev;
-      return { ...prev, remove: [...prev.remove, { term, code, instance_id: instanceId ?? undefined }] };
-    });
+    setOverrides(prev => withOverrideRemove(prev, term, instanceId, code));
   };
 
   const addOverrideMove = (
@@ -436,8 +425,14 @@ export function MainAdvisorScreen({
   const [swappedElectives, setSwappedElectives] = useState<SwappedElectiveRecord[]>(
     () => (initialSnapshot?.swappedElectives ?? []).map((entry) => ({ ...entry }))
   );
+  // A chosen elective the student is replacing; the next course picked from search takes its slot.
+  const [pendingElectiveSwap, setPendingElectiveSwap] = useState<SwappedElectiveRecord | null>(null);
+  const swappableElectiveIds = useMemo(
+    () => new Set(swappedElectives.map((entry) => entry.addedCourseInstanceId)),
+    [swappedElectives]
+  );
   const pendingAtomicAddRef = useRef<{
-    mode: 'course_add' | 'retake_swap';
+    mode: 'course_add' | 'retake_swap' | 'elective_swap';
     expectedCode: string;
     expectedTerm: string;
     expectedInstanceId?: string | null;
@@ -490,6 +485,7 @@ export function MainAdvisorScreen({
     code: string,
     opts?: {
       replaceFreeElective?: { instanceId: string; code: string } | null;
+      replaceChosenElective?: SwappedElectiveRecord | null;
       genEdCategory?: string | null;
       isRetake?: boolean;
     }
@@ -508,22 +504,37 @@ export function MainAdvisorScreen({
 
     const addedInstanceId = createInstanceId();
     const isRetake = opts?.isRetake === true;
+    const chosenElective = opts?.replaceChosenElective ?? null;
+    const placeholder = opts?.replaceFreeElective ?? null;
     pendingAtomicAddRef.current = {
-      mode: isRetake ? 'retake_swap' : 'course_add',
+      mode: isRetake ? 'retake_swap' : chosenElective ? 'elective_swap' : 'course_add',
       expectedCode: code,
       expectedTerm: term,
       expectedInstanceId: addedInstanceId,
-      expectedRemovedPlaceholderInstanceId: opts?.replaceFreeElective?.instanceId ?? null,
-      expectedRemovedPlaceholderCode: opts?.replaceFreeElective?.code ?? null,
+      expectedRemovedPlaceholderInstanceId: chosenElective?.addedCourseInstanceId ?? placeholder?.instanceId ?? null,
+      expectedRemovedPlaceholderCode: chosenElective?.addedCourseCode ?? placeholder?.code ?? null,
       previousOverrides: clonePlanOverrides(overrides),
       previousRemovedCourses: [...removedCourses],
       previousSwappedElectives: [...swappedElectives],
       previousRetakeEntries: [...retakeEntries],
     };
+    const courseAdd = {
+      term,
+      code,
+      instance_id: addedInstanceId,
+      gen_ed_category: opts?.genEdCategory ?? undefined,
+      is_retake: isRetake,
+    };
 
-    const placeholder = opts?.replaceFreeElective;
+    if (chosenElective) {
+      // One override edit replaces the old elective's add, keeping the slot it took.
+      setOverrides((prev) => swapChosenElective(prev, chosenElective, courseAdd));
+      removeSwappedElective(chosenElective);
+      upsertSwappedElective({ ...chosenElective, addedCourseCode: code, addedCourseInstanceId: addedInstanceId });
+      return true;
+    }
     if (placeholder) {
-      addOverrideRemove(term, placeholder.instanceId, placeholder.code);
+      setOverrides((prev) => fillSlotWithCourse(prev, term, placeholder, courseAdd));
       setRemovedCourses((prev) =>
         prev.includes(placeholder.instanceId) ? prev : [...prev, placeholder.instanceId]
       );
@@ -535,6 +546,7 @@ export function MainAdvisorScreen({
         placeholderCode: placeholder.code,
         placeholderCredits: getCourseCredits(placeholder.code),
       });
+      return true;
     }
     addOverrideAdd(term, code, addedInstanceId, opts?.genEdCategory ?? null, {
       isRetake,
@@ -2391,19 +2403,22 @@ export function MainAdvisorScreen({
               : addFailureWarning?.type
                 ? addFailureReasons[String(addFailureWarning.type)] ?? `Reason: ${String(addFailureWarning.type)}.`
                 : "The backend rejected the add operation.";
+            const failureLead = {
+              retake_swap: `Could not complete retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}.`,
+              elective_swap: `Could not swap ${pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "your elective"} for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}.`,
+              course_add: `Could not add ${pendingAtomicAdd.expectedCode} to ${pendingAtomicAdd.expectedTerm}.`,
+            }[pendingAtomicAdd.mode];
             setMessages((prev) => [
               ...prev,
               {
                 role: "assistant",
-                content:
-                  pendingAtomicAdd.mode === 'retake_swap'
-                    ? `Could not complete retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}. ${reasonText} No changes were applied.`
-                    : `Could not add ${pendingAtomicAdd.expectedCode} to ${pendingAtomicAdd.expectedTerm}. ${reasonText} No changes were applied.`,
+                content: `${failureLead} ${reasonText} No changes were applied.`,
                 timestamp: new Date(),
               },
             ]);
             return;
           }
+          const replacedLabel = pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "the selected FREE ELECTIVE slot";
           if (removedPlaceholderStillPresent) {
             pendingAtomicAddRef.current = null;
             suppressNextSummaryRef.current = true;
@@ -2416,7 +2431,9 @@ export function MainAdvisorScreen({
               {
                 role: "assistant",
                 content:
-                  `Retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} did not remove ${pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "the selected FREE ELECTIVE slot"}. No changes were applied.`,
+                  pendingAtomicAdd.mode === 'retake_swap'
+                    ? `Retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} did not remove ${replacedLabel}. No changes were applied.`
+                    : `Could not put ${pendingAtomicAdd.expectedCode} in place of ${replacedLabel} in ${pendingAtomicAdd.expectedTerm}. No changes were applied.`,
                 timestamp: new Date(),
               },
             ]);
@@ -2425,7 +2442,12 @@ export function MainAdvisorScreen({
           if (pendingAtomicAdd.mode === 'retake_swap') {
             suppressNextSummaryRef.current = true;
             postSuccessMessage =
-              `Retake swap applied: added ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} and removed ${pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "the selected FREE ELECTIVE slot"}.`;
+              `Retake swap applied: added ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} and removed ${replacedLabel}.`;
+          }
+          if (pendingAtomicAdd.mode === 'elective_swap') {
+            suppressNextSummaryRef.current = true;
+            postSuccessMessage =
+              `Swapped ${replacedLabel} for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}.`;
           }
           pendingAtomicAddRef.current = null;
         }
@@ -3834,68 +3856,9 @@ export function MainAdvisorScreen({
     if (isElectiveType) {
       if (!isPlaceholder) {
         if (swappedElective) {
-          setOverrides((prev) => {
-            const filteredAdd = (prev.add ?? []).filter((entry) => {
-              if (
-                entry.instance_id
-                && entry.instance_id === swappedElective.addedCourseInstanceId
-              ) {
-                return false;
-              }
-              if (
-                entry.term === swappedElective.termLabel
-                && normalizeCourseCode(entry.code) === normalizeCourseCode(swappedElective.addedCourseCode)
-              ) {
-                return false;
-              }
-              return true;
-            });
-            const filteredRemove = (prev.remove ?? []).filter((entry) => {
-              if (entry.instance_id && entry.instance_id === instanceId) {
-                return false;
-              }
-              if (
-                entry.instance_id
-                && entry.instance_id === swappedElective.replacedPlaceholderInstanceId
-              ) {
-                return false;
-              }
-              if (
-                (entry.term ?? null) === swappedElective.termLabel
-                && !entry.instance_id
-                && entry.code === swappedElective.placeholderCode
-              ) {
-                return false;
-              }
-              return true;
-            });
-            const nextRemove = [
-              ...filteredRemove,
-              {
-                term: semester,
-                instance_id: instanceId,
-              },
-            ];
-            const hasPlaceholderAdd = filteredAdd.some(
-              (entry) =>
-                entry.instance_id === swappedElective.replacedPlaceholderInstanceId
-                || (
-                  entry.term === swappedElective.termLabel
-                  && entry.code === swappedElective.placeholderCode
-                )
-            );
-            const nextAdd = hasPlaceholderAdd
-              ? filteredAdd
-              : [
-                  ...filteredAdd,
-                  {
-                    term: swappedElective.termLabel,
-                    code: swappedElective.placeholderCode,
-                    instance_id: swappedElective.replacedPlaceholderInstanceId,
-                  },
-                ];
-            return { ...prev, add: nextAdd, remove: nextRemove };
-          });
+          // Undo the fill so the slot returns from the generated plan. Re-adding the slot under its
+          // old instance id made the next elective put in that slot fail (it was rolled back).
+          setOverrides((prev) => removeChosenElective(prev, swappedElective, instanceId));
           removeSwappedElective(swappedElective);
           setMessages(prev => [
             ...prev,
@@ -4212,6 +4175,58 @@ export function MainAdvisorScreen({
     removedCodeSet
   ]);
 
+  const handleSwapElective = (instanceId: string) => {
+    const target = courseObjects.find((c) => c.instanceId === instanceId);
+    if (!target) return;
+    const record = findSwappedElective(instanceId, target.semester ?? null, target.code);
+    if (!record) return;
+    setActiveTab('plan');
+    setPendingElectiveSwap(record);
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `Search for the course that should replace ${record.addedCourseCode} in ${record.termLabel}, then press Add.`,
+        timestamp: new Date()
+      }
+    ]);
+  };
+
+  const commitElectiveSwap = (record: SwappedElectiveRecord, rawCode: string) => {
+    const code = normalizeCourseCode(rawCode);
+    const term = record.termLabel;
+    const say = (content: string) =>
+      setMessages(prev => [...prev, { role: 'assistant', content, timestamp: new Date() }]);
+    if (code === normalizeCourseCode(record.addedCourseCode)) {
+      say(`${code} is already in that slot.`);
+      return;
+    }
+    const availability = getCourseAvailabilityInfo(
+      { semester_availability: getCourseSemesterAvailability(code) },
+      { mode: "plan_add", isExcelOnly: isExcelOnlyCourse(code), currentTermLabel, targetTermLabel: term, scheduleTerms }
+    );
+    if (availability.isSelectionBlocked) {
+      say(`${availability.warningLabel}. ${availability.detailsLabel}.`);
+      return;
+    }
+    const oldCredits = Number(
+      courseObjects.find((c) => c.instanceId === record.addedCourseInstanceId)?.credits
+        ?? getCourseCredits(record.addedCourseCode)
+    );
+    const nextCredits = (termCreditsMap[term] ?? 0) - oldCredits + getCourseCredits(code);
+    if (nextCredits > selection.maxCreditsPerSemester) {
+      say(`Swapping in ${code} would put ${term} at ${nextCredits} credits, above your maximum of ${selection.maxCreditsPerSemester}.`);
+      return;
+    }
+    const status = getPrereqStatusForTerm(code, term);
+    if (status.unmet.length > 0) {
+      say(`${code} needs ${status.unmet.join(', ')} before ${term}. Pick another elective or move it to a later term first.`);
+      return;
+    }
+    setPendingElectiveSwap(null);
+    commitAtomicOverrideAdd(term, code, { replaceChosenElective: record });
+  };
+
   const handleAddCourse = (code: string) => {
     if (!plan) return;
 
@@ -4227,6 +4242,10 @@ export function MainAdvisorScreen({
         ...prev,
         { role: 'assistant', content: `${code} is already marked as in progress.`, timestamp: new Date() }
       ]);
+      return;
+    }
+    if (pendingElectiveSwap) {
+      commitElectiveSwap(pendingElectiveSwap, code);
       return;
     }
 
@@ -5907,9 +5926,30 @@ export function MainAdvisorScreen({
                         </div>
                       </div>
                     )}
+                    {pendingElectiveSwap && (
+                      <div
+                        className="mb-4 p-3 rounded-lg border flex items-center justify-between gap-3"
+                        style={{ background: 'var(--neutral-cream)', borderColor: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                      >
+                        <div className="text-sm">
+                          Choose a course to replace <span className="font-medium">{pendingElectiveSwap.addedCourseCode}</span> in{' '}
+                          {pendingElectiveSwap.termLabel}: search for it below and press Add.
+                        </div>
+                        <button
+                          type="button"
+                          className="text-sm px-3 py-1 rounded-lg border"
+                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          onClick={() => setPendingElectiveSwap(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                     <SemesterPlanView
                     courses={courseObjects}
                     scheduleTerms={scheduleTerms}
+                    swappableElectiveIds={swappableElectiveIds}
+                    onSwapElective={handleSwapElective}
                     catalogId={catalog.catalog_id}
                     catalogCourses={catalog.courses}
                     selectedMajors={selection.majors}

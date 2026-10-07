@@ -5908,6 +5908,12 @@ def _apply_plan_overrides(
                 )
             )
 
+    # An instance that is both removed and added is a stale "restore" of a slot the student has
+    # since filled again; the removal is the newer intent, whatever order the lists come in.
+    removed_instance_ids = {
+        r.get("instance_id") for r in removes if isinstance(r.get("instance_id"), str) and r.get("instance_id")
+    }
+
     # Apply adds
     for a in adds:
         code = a.get("code")
@@ -5916,6 +5922,9 @@ def _apply_plan_overrides(
         gen_ed_category = a.get("gen_ed_category")
         is_retake = bool(a.get("is_retake"))
         if not code or not term:
+            continue
+        if instance_id and instance_id in removed_instance_ids:
+            override_warnings.append(_make_warning("OVERRIDE_CONFLICT", course=code, term=term, instance_id=instance_id))
             continue
         normalized_code = _normalize_course_code(code)
         if not is_retake and normalized_code in completed_courses and normalized_code not in retake_set:

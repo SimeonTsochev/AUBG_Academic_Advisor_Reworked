@@ -316,7 +316,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         self.assertEqual(_course_credits(self.catalog, "AUB 1000"), 0)
         self.assertEqual(_course_credits(self.catalog, "MAT 1001"), 0)
 
-    @unittest.expectedFailure  # Bug 11: a restored slot (add) beat the later replace (remove) of the same id.
     def test_a_chosen_elective_can_be_swapped_for_another(self):
         fresh = self._fresh("Computer Science")
         term, slot = next(
@@ -338,6 +337,24 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         term_courses = next(t["courses"] for t in result["semester_plan"] if t["term"] == term)
         self.assertIn("COS 3031", [c["code"] for c in term_courses])
         self.assertNotIn(slot["instance_id"], [c["instance_id"] for c in term_courses])
+        self.assertTrue(any(w["type"] == "OVERRIDE_CONFLICT" for w in result["warnings"]))
+
+    def test_a_chosen_elective_can_be_swapped_with_the_new_override_edits(self):
+        # The fixed frontend sends a clean swap: one removal of the slot and one add of the new elective.
+        fresh = self._fresh("Computer Science")
+        term, slot = next(
+            (t["term"], c) for t in fresh["semester_plan"] for c in t["courses"] if _is_free_elective(c["code"])
+        )
+        for elective in ("COS 2031", "COS 3031"):
+            overrides = {
+                "remove": [{"term": term, "code": slot["code"], "instance_id": slot["instance_id"]}],
+                "add": [{"term": term, "code": elective, "instance_id": f"chosen-{elective}"}],
+            }
+            result = _plan(self.catalog, ["Computer Science"], [], set(), overrides=overrides)
+            codes = [c["code"] for t in result["semester_plan"] if t["term"] == term for c in t["courses"]]
+            self.assertIn(elective, codes)
+            self.assertNotIn(slot["code"], codes)
+            self.assertFalse([w for w in result["warnings"] if w["type"].startswith("OVERRIDE_")])
 
 
 if __name__ == "__main__":

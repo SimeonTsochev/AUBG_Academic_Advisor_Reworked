@@ -16,6 +16,9 @@ interface SemesterPlanViewProps {
   totalTerms?: number;
   electivePlaceholders?: ElectivePlaceholder[];
   scheduleTerms?: string[];
+  /** Instance ids of electives the student chose for a FREE ELECTIVE slot (they can be swapped). */
+  swappableElectiveIds?: ReadonlySet<string>;
+  onSwapElective?: (instanceId: string) => void;
   onToggleCompleted?: (instanceId: string) => void;
   onToggleInProgress?: (instanceId: string) => void;
   onRemoveCourse?: (instanceId: string) => void;
@@ -64,6 +67,8 @@ export function SemesterPlanView({
   totalTerms = 8,
   electivePlaceholders,
   scheduleTerms,
+  swappableElectiveIds,
+  onSwapElective,
   onToggleCompleted,
   onToggleInProgress,
   onRemoveCourse,
@@ -1071,6 +1076,21 @@ export function SemesterPlanView({
                         >
                           <RefreshCcw className="w-2 h-2" />
                           Change course
+                        </button>
+                      )}
+                      {onSwapElective && course.status === 'remaining' && swappableElectiveIds?.has(course.instanceId) && (
+                        <button
+                          type="button"
+                          onClick={() => onSwapElective(course.instanceId)}
+                          className="text-xs px-1.5 py-0.5 rounded inline-flex items-center justify-center gap-1 leading-none font-medium transition-opacity duration-150 hover:opacity-90 active:opacity-100"
+                          style={{
+                            color: 'var(--navy-dark)',
+                            backgroundColor: 'var(--academic-gold)'
+                          }}
+                          title="Replace this elective with another course"
+                        >
+                          <RefreshCcw className="w-2 h-2" />
+                          Swap elective
                         </button>
                       )}
                       {transferCredit && onRemoveTransferCredit && (
