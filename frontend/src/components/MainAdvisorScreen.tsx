@@ -65,7 +65,6 @@ function clonePlanOverrides(value?: PlanOverrides | null): PlanOverrides {
     add: (value?.add ?? []).map((entry) => ({ ...entry })),
     remove: (value?.remove ?? []).map((entry) => ({ ...entry })),
     move: (value?.move ?? []).map((entry) => ({ ...entry })),
-    locks: (value?.locks ?? []).map((entry) => ({ ...entry })),
   };
 }
 
@@ -231,14 +230,13 @@ export function MainAdvisorScreen({
     const choice = selection.economicsIntermediateChoice;
     const economicsSelected = selection.minors.includes("Economics");
     if (!economicsSelected || !choice) {
-      return { add: [], remove: [], move: [], locks: [] };
+      return { add: [], remove: [], move: [] };
     }
     const unselected = choice === "ECO 3001" ? "ECO 3002" : "ECO 3001";
     return {
       add: [],
       remove: [{ code: unselected }],
       move: [],
-      locks: [],
     };
   });
 

@@ -242,13 +242,6 @@ export interface PlanOverrides {
   add: PlanOverrideAdd[];
   remove: PlanOverrideRemove[];
   move: PlanOverrideMove[];
-  locks?: PlanOverrideLock[];
-}
-
-export interface PlanOverrideLock {
-  term: string;
-  code?: string;
-  instance_id?: string;
 }
 
 export interface ProgramSnapshotSwappedElective {

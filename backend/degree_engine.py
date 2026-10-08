@@ -2050,13 +2050,6 @@ def _normalize_start_term(start_term_season: str | None, start_term_year: int | 
     return current_season, current_year
 
 
-def _terms_completed_from_start(start_term_season: str | None, start_term_year: int | None) -> int:
-    if start_term_season not in {"Fall", "Spring"} or not isinstance(start_term_year, int) or start_term_year <= 0:
-        return 0
-    current_season, current_year = _current_start_term()
-    return max(0, _term_index(current_season, current_year) - _term_index(start_term_season, start_term_year))
-
-
 def _term_name(idx: int, base_season: str, base_year: int) -> str:
     if base_season not in {"Fall", "Spring"}:
         base_season = "Fall"
@@ -5450,45 +5443,8 @@ def generate_plan(
         semester_plan=semester_plan,
         completed_courses=completed_courses,
     )
-    effective_completed_courses = _effective_completed_courses_after_plan(completed_courses, semester_plan)
-
-    # Computed after overrides/final shaping so alerts reflect the final plan state.
-    minor_alerts: List[Dict] = []
-    all_slot_ids = {slot["id"] for slot in slots.get("slots", [])}
-    completed_slots = {
-        sid
-        for sid, course in selection["slot_assignment"].items()
-        if course in effective_completed_courses
-    }
-    total_required = len(all_slot_ids)
-    completed_count = len(completed_slots)
-    remaining_count = max(0, total_required - completed_count)
-
-    gen_ed_status = _gen_ed_status(slots, selection["slot_assignment"], effective_completed_courses)
-    category_progress = _category_credit_progress(
-        catalog,
-        slots,
-        selection["slot_assignment"],
-        effective_completed_courses,
-        waived_courses,
-        selected_majors=majors,
-        business_concentration=business_concentration,
-    )
-    # Credit totals derived from slot buckets (more accurate than assuming 3 credits per course)
-    total_required_credits = (
-        sum(v.get("required", 0) for v in category_progress.get("majors", {}).values())
-        + sum(v.get("required", 0) for v in category_progress.get("minors", {}).values())
-        + int(category_progress.get("gen_ed", {}).get("required", 0) or 0)
-        + int(category_progress.get("foundation", {}).get("required", 0) or 0)
-    )
-    total_completed_credits = (
-        sum(v.get("completed", 0) for v in category_progress.get("majors", {}).values())
-        + sum(v.get("completed", 0) for v in category_progress.get("minors", {}).values())
-        + int(category_progress.get("gen_ed", {}).get("completed", 0) or 0)
-        + int(category_progress.get("foundation", {}).get("completed", 0) or 0)
-    )
-    _apply_manual_credit_progress(category_progress, manual_credit_breakdown)
-    total_completed_credits += total_manual_credits
+    # Progress, GenEd status and credit totals are computed once, after overrides, further down.
+    total_required = len({slot["id"] for slot in slots.get("slots", [])})
 
     course_reasons = {}
     for code, entry in course_outputs.items():

@@ -4,7 +4,7 @@ import { fillSlotWithCourse, removeChosenElective, swapChosenElective, withOverr
 
 const TERM = "Fall 2027";
 const SLOT = { instanceId: "slot-x", code: "FREE ELECTIVE 2" };
-const empty = (): PlanOverrides => ({ add: [], remove: [], move: [], locks: [] });
+const empty = (): PlanOverrides => ({ add: [], remove: [], move: [] });
 
 const recordFor = (code: string, instanceId: string): ProgramSnapshotSwappedElective => ({
   termLabel: TERM,

@@ -77,7 +77,7 @@ const toStringMap = (value: unknown): Record<string, string> => {
 
 const normalizePlanOverrides = (value: unknown): PlanOverrides => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return { add: [], remove: [], move: [], locks: [] };
+    return { add: [], remove: [], move: [] };
   }
   const source = value as Record<string, unknown>;
   return {
@@ -94,11 +94,6 @@ const normalizePlanOverrides = (value: unknown): PlanOverrides => {
     move: Array.isArray(source.move)
       ? source.move
         .filter((entry): entry is PlanOverrides['move'][number] => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
-        .map((entry) => ({ ...entry }))
-      : [],
-    locks: Array.isArray(source.locks)
-      ? source.locks
-        .filter((entry): entry is NonNullable<PlanOverrides['locks']>[number] => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
         .map((entry) => ({ ...entry }))
       : [],
   };

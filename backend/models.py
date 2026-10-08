@@ -100,22 +100,11 @@ class PlanOverrideMove(BaseModel):
     instance_id: Optional[str] = None
 
 
-class PlanOverrideLock(BaseModel):
-    """Locks a course into a specific term.
-
-    Unlike a move override, a lock does not require knowing the course's current term.
-    The engine will locate the course in any term and place it into the locked term.
-    """
-
-    term: str
-    code: Optional[str] = None
-    instance_id: Optional[str] = None
-
 class PlanOverrides(BaseModel):
+    # Unknown keys (e.g. 'locks' in plans saved by older versions, never applied) are ignored.
     add: List[PlanOverrideAdd] = Field(default_factory=list)
     remove: List[PlanOverrideRemove] = Field(default_factory=list)
     move: List[PlanOverrideMove] = Field(default_factory=list)
-    locks: List[PlanOverrideLock] = Field(default_factory=list)
 
 
 class CourseRequirement(BaseModel):

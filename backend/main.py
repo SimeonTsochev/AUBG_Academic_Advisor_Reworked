@@ -392,28 +392,6 @@ def catalog_integrity(catalog_id: str):
         return integrity
     return {"excel_only": [], "pdf_only": []}
 
-# Legacy upload endpoint (kept for future multi-university support)
-"""
-@app.post("/catalog/upload", response_model=UploadCatalogResponse)
-async def upload_catalog(file: UploadFile):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Please upload a PDF file.")
-    try:
-        catalog = parse_catalog(file.file)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Catalog parsing failed: {e}")
-
-    catalog_id = str(uuid.uuid4())
-    CATALOGS[catalog_id] = catalog
-
-    return UploadCatalogResponse(
-        catalog_id=catalog_id,
-        catalog_year=catalog.get("catalog_year"),
-        majors=list(catalog.get("majors", {}).keys()),
-        minors=list(catalog.get("minors", {}).keys()),
-        courses=catalog.get("courses", {}),
-    )
-"""
 
 # Plain `def` (not `async def`): planning is CPU-bound, and FastAPI runs sync endpoints in a
 # threadpool instead of blocking the event loop for every other request.
