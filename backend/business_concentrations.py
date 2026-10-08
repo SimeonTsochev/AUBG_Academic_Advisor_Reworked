@@ -212,8 +212,15 @@ def _course_title(catalog: Dict[str, Any], code: str) -> str:
 
 def _course_credits(catalog: Dict[str, Any], code: str) -> int:
     normalized = _normalize_course_code(code)
+    policy_meta = ((catalog.get("policy_overrides") or {}).get("course_meta") or {}).get(normalized) or {}
+    excel_record = _excel_by_code(catalog).get(normalized) or {}
+    # Same precedence as degree_engine._course_credits: policy, then Excel, may set an explicit 0.
+    for source in (policy_meta, excel_record):
+        raw = source.get("credits")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw >= 0:
+            return int(round(float(raw)))
     for source in (
-        (_excel_by_code(catalog).get(normalized) or {}),
+        excel_record,
         ((catalog.get("course_meta") or {}).get(normalized) or {}),
         ((catalog.get("courses") or {}).get(normalized) or {}),
     ):

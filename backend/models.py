@@ -24,7 +24,8 @@ class TranscriptImportCourse(BaseModel):
     matched_code: Optional[str] = None
     title: Optional[str] = None
     raw_title: Optional[str] = None
-    status: Literal["completed", "in_progress"]
+    status: Literal["completed", "in_progress", "failed"]
+    grade: Optional[str] = None
     term: Optional[str] = None
     confidence: float = 0.0
     matched_confidently: bool = False
@@ -34,6 +35,8 @@ class TranscriptImportCourse(BaseModel):
 class TranscriptImportResponse(BaseModel):
     completed: List[TranscriptImportCourse] = Field(default_factory=list)
     in_progress: List[TranscriptImportCourse] = Field(default_factory=list)
+    # Latest attempt not passed (F, W, WF, U, NP, NR, I): not completed, so the plan retakes it if needed.
+    failed: List[TranscriptImportCourse] = Field(default_factory=list)
     unmatched: List[TranscriptImportCourse] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
@@ -68,6 +71,8 @@ class GeneratePlanRequest(BaseModel):
     completed_courses: List[str] = Field(default_factory=list)
     manual_credits: List[ManualCredit] = Field(default_factory=list)
     retake_courses: List[str] = Field(default_factory=list)
+    # Courses the student picked for a "choose one" requirement (e.g. ECO 3002 for the Economics minor).
+    preferred_courses: List[str] = Field(default_factory=list)
     in_progress_courses: List[str] = Field(default_factory=list)
     in_progress_terms: Dict[str, str] = Field(default_factory=dict)
     current_term_label: Optional[str] = None
@@ -179,6 +184,23 @@ class ElectivePlaceholder(BaseModel):
     rule_text: str
     is_total: bool = False
 
+class ElectiveProgressCourse(BaseModel):
+    code: str
+    credits: int
+    completed: bool
+
+class ElectiveProgress(BaseModel):
+    """Elective credits (or courses) a program already has; computed by elective_progress.py."""
+    program: str
+    program_type: Literal["major", "minor"]
+    credits_required: Optional[int] = None
+    courses_required: Optional[int] = None
+    credits_counted: int
+    remaining: int
+    unit: Literal["credits", "courses"]
+    rule_text: str = ""
+    courses: List[ElectiveProgressCourse] = Field(default_factory=list)
+
 class GenEdDiscoveryCourse(BaseModel):
     code: str
     name: str
@@ -214,6 +236,7 @@ class GeneratePlanResponse(BaseModel):
     elective_course_codes: List[str] = Field(default_factory=list)
     excel_elective_tags: Dict[str, List[str]] = Field(default_factory=dict)
     elective_placeholders: List[ElectivePlaceholder] = Field(default_factory=list)
+    elective_progress: List[ElectiveProgress] = Field(default_factory=list)
     gened_discovery: GenEdDiscovery = Field(default_factory=GenEdDiscovery)
     summary: Dict[str, int]
     course_reasons: Dict[str, str] = Field(default_factory=dict)

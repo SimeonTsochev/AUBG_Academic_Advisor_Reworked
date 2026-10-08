@@ -54,8 +54,17 @@ def _catalog_for_name_matching() -> dict:
                 ],
             },
             "Economics": {
-                "required_courses": [],
-                "elective_requirements": [],
+                "required_courses": ["ECO 1001", "ECO 1002"],
+                "elective_requirements": [
+                    {
+                        "label": "Program Choice",
+                        "credits_required": None,
+                        "courses_required": None,
+                        "allowed_courses": ["ECO 3001", "ECO 3002"],
+                        "rule_text": "ECO 3001 Intermediate Microeconomics or ECO 3002 Intermediate Macroeconomics",
+                        "is_total": False,
+                    }
+                ],
             },
         },
         "foundation_courses": [],

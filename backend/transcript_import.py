@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -16,7 +16,10 @@ from excel_course_catalog import (
     normalize_course_code,
 )
 
-TranscriptStatus = Literal["completed", "in_progress"]
+# "failed": the latest attempt has a grade that earns no credit, so a required course must be retaken.
+TranscriptStatus = Literal["completed", "in_progress", "failed"]
+FAILING_GRADES = frozenset({"F", "W", "WF", "U", "NP", "NR", "I"})
+_STATUS_RANK = {"failed": 0, "completed": 1, "in_progress": 2}
 
 SUPPORTED_TRANSCRIPT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 
@@ -35,6 +38,9 @@ _SPACE_RE = re.compile(r"\s+")
 _YEAR_RE = re.compile(r"^[12][0-9]{3}$")
 _CREDIT_TOKEN_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 _GRADE_TOKEN_RE = re.compile(r"^(?:A|A-|A\+|B|B-|B\+|C|C-|C\+|D|D\+|D-|F|P|S|U|W|IP|AU|TR|NR)$")
+# Final grades, including WF/NP and "I" (incomplete), which _GRADE_TOKEN_RE leaves alone so that
+# titles such as "Calculus I" keep their numeral.
+_FINAL_GRADE_RE = re.compile(r"^(?:[A-D][+-]?|F|P|S|U|W|WF|NP|NR|I)$")
 _INSTRUCTOR_SPLIT_RE = re.compile(r"\b(?:instructor|professor)\b.*$", re.IGNORECASE)
 _COURSE_TRAILER_RE = re.compile(
     r"\b(?:credits?|ects|attempted|earned|points?|standing|gpa|term\s+totals?|semester\s+totals?)\b.*$",
@@ -70,6 +76,7 @@ class ParsedTranscriptCourse:
     term: Optional[str]
     page_number: int
     text_confidence: float
+    grade: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -218,16 +225,12 @@ def parse_transcript_lines(lines: list[TranscriptLine]) -> list[ParsedTranscript
 
 def build_transcript_import_response(parsed_courses: list[ParsedTranscriptCourse]) -> dict[str, Any]:
     catalog_records = _catalog_search_space()
-    completed: list[dict[str, Any]] = []
-    in_progress: list[dict[str, Any]] = []
+    by_status: dict[str, list[dict[str, Any]]] = {"completed": [], "in_progress": [], "failed": []}
     unmatched: list[dict[str, Any]] = []
 
     for course in parsed_courses:
         response_course = _match_transcript_course(course, catalog_records)
-        if course.status == "completed":
-            completed.append(response_course)
-        else:
-            in_progress.append(response_course)
+        by_status[course.status].append(response_course)
         if not response_course["matched_confidently"]:
             unmatched.append(dict(response_course))
 
@@ -236,8 +239,9 @@ def build_transcript_import_response(parsed_courses: list[ParsedTranscriptCourse
         warnings.append("Some courses could not be matched and need review.")
 
     return {
-        "completed": completed,
-        "in_progress": in_progress,
+        "completed": by_status["completed"],
+        "in_progress": by_status["in_progress"],
+        "failed": by_status["failed"],
         "unmatched": unmatched,
         "warnings": warnings,
     }
@@ -276,6 +280,7 @@ def _match_transcript_course(
             "title": title,
             "raw_title": course.raw_title,
             "status": course.status,
+            "grade": course.grade,
             "term": course.term,
             "confidence": 0.99,
             "matched_confidently": True,
@@ -345,6 +350,7 @@ def _match_transcript_course(
         "title": matched_title,
         "raw_title": course.raw_title,
         "status": course.status,
+        "grade": course.grade,
         "term": course.term,
         "confidence": confidence,
         "matched_confidently": matched_confidently,
@@ -369,7 +375,7 @@ def _parse_course_line(
     line = ordered_lines[index]
     text = line.text
     match = _COURSE_CODE_RE.search(text)
-    if match is None:
+    if match is None or _TERM_RE.fullmatch(match.group(0)):  # "Fall 2025" looks like a course code
         return None
     if _HEADER_NOISE_RE.search(text) and len(text.split()) <= 8:
         return None
@@ -384,6 +390,9 @@ def _parse_course_line(
 
     status = _infer_course_status(ordered_lines, index, current_status)
     raw_title = _extract_course_title(ordered_lines, index, match)
+    grade = _extract_grade(ordered_lines, index, match)
+    if status == "completed" and grade in FAILING_GRADES:
+        status = "failed"
 
     return ParsedTranscriptCourse(
         raw_code=raw_code,
@@ -393,7 +402,34 @@ def _parse_course_line(
         term=current_term,
         page_number=line.page_number,
         text_confidence=line.confidence,
+        grade=grade,
     )
+
+
+def _extract_grade(
+    ordered_lines: list[TranscriptLine],
+    index: int,
+    code_match: re.Match[str],
+) -> Optional[str]:
+    """The final grade, read from the end of the course row ("... 3.00 B+") or from its own line below."""
+    tokens = [token.strip(",;:()[]{}|") for token in ordered_lines[index].text[code_match.end():].split()]
+    tokens = [token for token in tokens if token]
+    position = len(tokens) - 1
+    while position >= 0 and _CREDIT_TOKEN_RE.match(tokens[position]):
+        position -= 1  # credit columns after the grade
+    if position >= 0:
+        token = tokens[position].upper()
+        follows_credits = position > 0 and _CREDIT_TOKEN_RE.match(tokens[position - 1])
+        if _FINAL_GRADE_RE.match(token) and (token != "I" or follows_credits):
+            return token
+
+    for look_ahead in range(index + 1, min(len(ordered_lines), index + 6)):
+        candidate = ordered_lines[look_ahead].text.strip()
+        if _COURSE_CODE_RE.search(candidate) or _looks_like_term_header(candidate):
+            break
+        if _FINAL_GRADE_RE.match(candidate.upper()):
+            return candidate.upper()
+    return None
 
 
 def _extract_course_title(
@@ -521,7 +557,8 @@ def _merge_parsed_courses(
     right: ParsedTranscriptCourse,
 ) -> ParsedTranscriptCourse:
     if left.status != right.status:
-        preferred = right if right.status == "in_progress" else left
+        # A current attempt beats a passed one, which beats a failed one (F, then B+ on the retake).
+        preferred = right if _STATUS_RANK[right.status] > _STATUS_RANK[left.status] else left
         other = left if preferred is right else right
     else:
         preferred = right if _course_term_sort_key(right.term) >= _course_term_sort_key(left.term) else left
@@ -535,6 +572,7 @@ def _merge_parsed_courses(
         term=preferred.term or other.term,
         page_number=preferred.page_number,
         text_confidence=max(preferred.text_confidence, other.text_confidence),
+        grade=preferred.grade,
     )
 
 
@@ -551,20 +589,7 @@ def _apply_term_to_recent_courses(
         if position < start_index:
             updated.append((line_index, course))
             continue
-        updated.append(
-            (
-                line_index,
-                ParsedTranscriptCourse(
-                    raw_code=course.raw_code,
-                    normalized_code=course.normalized_code,
-                    raw_title=course.raw_title,
-                    status=course.status,
-                    term=term_label,
-                    page_number=course.page_number,
-                    text_confidence=course.text_confidence,
-                ),
-            )
-        )
+        updated.append((line_index, replace(course, term=term_label)))
     return updated
 
 

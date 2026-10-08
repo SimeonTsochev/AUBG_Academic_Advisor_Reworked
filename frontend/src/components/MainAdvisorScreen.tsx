@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, Copy, Download, ArrowLeft, Sparkles, ChevronDown, ChevronUp, Check, Lock } from 'lucide-react';
+import { BookOpenCheck, CalendarRange, Info, ListChecks, Lock, MessageSquare, Sparkles, X } from 'lucide-react';
 import { ChatInterface } from './ChatInterface';
-import { ProgressDashboard } from './ProgressDashboard';
 import { SemesterPlanView } from './SemesterPlanView';
 import { ElectiveRecommendationPanel } from './ElectiveRecommendationPanel';
 import { PrereqConfirmDialog } from './PrereqConfirmDialog';
-import type { ChatMessage, Course, Progress, ElectiveSuggestion, ManualCreditEntry, RetakeEntry } from '../types';
+import { AdvisorHeader } from './advisor/AdvisorHeader';
+import { PlanAlerts } from './advisor/PlanAlerts';
+import { RequirementsTab } from './advisor/RequirementsTab';
+import { SummaryStrip } from './advisor/SummaryStrip';
+import type { ChatMessage, Course, Progress, ElectiveSuggestion, FailedCourse, ManualCreditEntry, RetakeEntry } from '../types';
 import type {
   UploadCatalogResponse,
+  GeneratePlanRequest,
   GeneratePlanResponse,
   PlanCourse,
   PlanOverrideAdd,
@@ -28,10 +32,15 @@ import {
   withOverrideRemove,
 } from '../utils/planOverrides';
 import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
-import { resolveActiveAttempts } from '../utils/retakes';
+import { describeFailedAttempt, resolveActiveAttempts } from '../utils/retakes';
+import { summarizeElectiveRequirements } from '../utils/electiveProgress';
 import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 
 const SNAPSHOT_STORAGE_DISABLED_SESSION_KEY = 'programSnapshotStorageDisabled';
+
+type AdvisorTab = 'plan' | 'requirements' | 'electives' | 'chat';
+/** degree_engine.MAX_PLAN_TERMS */
+const BACKEND_MAX_PLAN_TERMS = 12;
 
 interface MainAdvisorScreenProps {
   catalog: UploadCatalogResponse;
@@ -42,6 +51,8 @@ interface MainAdvisorScreenProps {
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     completedCourses: string[];
     inProgressCourses: string[];
+    /** Transcript courses not passed; the plan schedules them again when still required. */
+    failedCourses?: FailedCourse[];
     manualCredits?: ManualCreditEntry[];
     inProgressOverrides?: Record<string, string>;
     completedOverrides?: Record<string, string>;
@@ -91,6 +102,7 @@ function buildSnapshotPayload(params: {
     economicsIntermediateChoice: params.selection.economicsIntermediateChoice,
     completedCourses: [...params.completedCourses],
     inProgressCourses: [...params.inProgressCourses],
+    failedCourses: (params.selection.failedCourses ?? []).map((entry) => ({ ...entry })),
     manualCredits: params.manualCredits.map((entry) => ({ ...entry })),
     retakeEntries: params.retakeEntries.map((entry) => ({ ...entry })),
     completedOverrides: { ...params.completedOverrides },
@@ -221,24 +233,10 @@ export function MainAdvisorScreen({
   const SEMESTERS_PER_YEAR = 2;
   const advisorChatLocked = true;
   const advisorChatLockMessage = 'Advisor chat is temporarily locked while it is being updated.';
-  const [activeTab, setActiveTab] = useState<'plan' | 'electives' | 'chat'>('plan');
+  const [activeTab, setActiveTab] = useState<AdvisorTab>('plan');
+  const planAlertsRef = useRef<HTMLDivElement | null>(null);
   const [plan, setPlan] = useState<GeneratePlanResponse | null>(null);
-  const [overrides, setOverrides] = useState<PlanOverrides>(() => {
-    if (initialSnapshot?.overrides) {
-      return clonePlanOverrides(initialSnapshot.overrides);
-    }
-    const choice = selection.economicsIntermediateChoice;
-    const economicsSelected = selection.minors.includes("Economics");
-    if (!economicsSelected || !choice) {
-      return { add: [], remove: [], move: [] };
-    }
-    const unselected = choice === "ECO 3001" ? "ECO 3002" : "ECO 3001";
-    return {
-      add: [],
-      remove: [{ code: unselected }],
-      move: [],
-    };
-  });
+  const [overrides, setOverrides] = useState<PlanOverrides>(() => clonePlanOverrides(initialSnapshot?.overrides));
 
   const addOverrideAdd = (
     term: string,
@@ -419,7 +417,6 @@ export function MainAdvisorScreen({
     gened_category: '',
     program: selection.majors[0] ?? '',
   });
-  const [expandedSmartMinor, setExpandedSmartMinor] = useState<string | null>(null);
   type SwappedElectiveRecord = ProgramSnapshotSwappedElective;
   const [swappedElectives, setSwappedElectives] = useState<SwappedElectiveRecord[]>(
     () => (initialSnapshot?.swappedElectives ?? []).map((entry) => ({ ...entry }))
@@ -2009,9 +2006,10 @@ export function MainAdvisorScreen({
       entry.credits = termCredits;
     }
 
-    const finalTerms = termLabels
-      .map((label) => termMap.get(label))
-      .filter((term): term is { term: string; courses: PlanCourse[]; credits: number } => Boolean(term));
+    // Every term the backend planned, plus the padded labels; a late start term must not cut off later terms.
+    const finalTerms = Array.from(termMap.values()).sort(
+      (a, b) => termIndexFromLabel(a.term) - termIndexFromLabel(b.term)
+    );
 
     const dedupedTerms: { term: string; courses: PlanCourse[]; credits: number }[] = [];
     const seenCodes = new Set<string>();
@@ -2313,6 +2311,42 @@ export function MainAdvisorScreen({
     }
   };
 
+  // One request feeds both the plan and the PDF export, so the two can never disagree.
+  const planRequest = useMemo<GeneratePlanRequest>(() => ({
+    catalog_id: catalog.catalog_id,
+    majors: selection.majors,
+    minors: selection.minors,
+    business_concentration: selection.businessConcentration,
+    completed_courses: planningCompleted,
+    manual_credits: manualCredits,
+    retake_courses: [],
+    preferred_courses:
+      selection.minors.includes('Economics') && selection.economicsIntermediateChoice
+        ? [selection.economicsIntermediateChoice]
+        : [],
+    in_progress_courses: effectiveInProgress,
+    in_progress_terms: inProgressOverrides,
+    current_term_label: currentTermLabel,
+    max_credits_per_semester: selection.maxCreditsPerSemester,
+    start_term_season: effectiveStartForPlanning.season,
+    start_term_year: effectiveStartForPlanning.year,
+    waived_mat1000: selection.waivedMat1000,
+    waived_eng1000: selection.waivedEng1000,
+    strict_prereqs: selection.strictPrereqs ?? false,
+    overrides: overridesWithRetakes,
+  }), [
+    catalog.catalog_id,
+    selection,
+    planningCompleted,
+    manualCredits,
+    effectiveInProgress,
+    inProgressOverrides,
+    currentTermLabel,
+    effectiveStartForPlanning.season,
+    effectiveStartForPlanning.year,
+    overridesWithRetakes,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -2321,25 +2355,7 @@ export function MainAdvisorScreen({
       setError(null);
       lastRemovedSnapshot.current = removedCourses;
       try {
-        const resp = await generatePlan({
-          catalog_id: catalog.catalog_id,
-          majors: selection.majors,
-          minors: selection.minors,
-          business_concentration: selection.businessConcentration,
-          completed_courses: planningCompleted,
-          manual_credits: manualCredits,
-          retake_courses: [],
-          in_progress_courses: effectiveInProgress,
-          in_progress_terms: inProgressOverrides,
-          current_term_label: currentTermLabel,
-          max_credits_per_semester: selection.maxCreditsPerSemester,
-          start_term_season: effectiveStartForPlanning.season,
-          start_term_year: effectiveStartForPlanning.year,
-          waived_mat1000: selection.waivedMat1000,
-          waived_eng1000: selection.waivedEng1000,
-          strict_prereqs: selection.strictPrereqs ?? false,
-          overrides: overridesWithRetakes
-        });
+        const resp = await generatePlan(planRequest);
         if (cancelled) return;
         let postSuccessMessage: string | null = null;
         const pendingAtomicAdd = pendingAtomicAddRef.current;
@@ -2524,24 +2540,7 @@ export function MainAdvisorScreen({
     return () => {
       cancelled = true;
     };
-  }, [
-    catalog.catalog_id,
-    selection.majors,
-    selection.minors,
-    planningCompleted,
-    manualCredits,
-    selection.maxCreditsPerSemester,
-    effectiveStartForPlanning.season,
-    effectiveStartForPlanning.year,
-    selection.waivedMat1000,
-    selection.waivedEng1000,
-    selection.strictPrereqs,
-    effectiveInProgress,
-    inProgressOverrides,
-    currentTermLabel,
-    overridesWithRetakes,
-    normalizedRetakeEntries
-  ]);
+  }, [planRequest, normalizedRetakeEntries]);
 
   useEffect(() => {
     if (!plan?.semester_plan?.length) return;
@@ -2652,6 +2651,11 @@ export function MainAdvisorScreen({
     effectiveCompleted
   ]);
 
+  const failedCourseByCode = useMemo(
+    () => new Map((selection.failedCourses ?? []).map((entry) => [entry.code, entry])),
+    [selection.failedCourses]
+  );
+
   const courseObjects: Course[] = useMemo(() => {
     const out: Course[] = [];
     const addedCodes = new Set<string>();
@@ -2755,8 +2759,12 @@ export function MainAdvisorScreen({
       return Number(m[2]) * 2 + (seasonOrder[m[1]] ?? 0);
     };
 
-    const maxTerms = maxPlanTerms;
-    let allPlanTerms = Array.from(plannedCoursesByTerm.keys()).sort((a, b) => termOrder(a) - termOrder(b));
+    // The backend never plans more than MAX_PLAN_TERMS (12) terms; only trim beyond that.
+    const maxTerms = BACKEND_MAX_PLAN_TERMS;
+    // Empty padding terms (e.g. past semesters with nothing recorded) do not count toward the limit.
+    let allPlanTerms = Array.from(plannedCoursesByTerm.keys())
+      .filter((term) => (plannedCoursesByTerm.get(term)?.length ?? 0) > 0)
+      .sort((a, b) => termOrder(a) - termOrder(b));
     const pruneFreeElectivesToFitTerms = () => {
       let terms = [...allPlanTerms];
       while (terms.length > maxTerms) {
@@ -2863,7 +2871,8 @@ export function MainAdvisorScreen({
         if (meta?.wic && !tags.includes('Writing Intensive Course')) {
           tags.push('Writing Intensive Course');
         }
-        if (isRetake && !tags.includes('Retake')) {
+        const failedAttempt = isCompleted ? undefined : failedCourseByCode.get(code);
+        if ((isRetake || failedAttempt) && !tags.includes('Retake')) {
           tags.push('Retake');
         }
         if (isCompleted && !tags.includes('Completed')) tags.push('Completed');
@@ -2889,7 +2898,10 @@ export function MainAdvisorScreen({
           status: isCompleted ? 'completed' : isInProgress ? 'in-progress' : 'remaining',
           prerequisites: getCoursePrereqItems(code),
           prereqText: meta?.prereq_text ?? null,
-          reason: describeCourseReason(course) ?? plan?.course_reasons?.[code],
+          reason: [
+            failedAttempt ? describeFailedAttempt(failedAttempt) : null,
+            describeCourseReason(course) ?? plan?.course_reasons?.[code],
+          ].filter(Boolean).join(' ') || undefined,
           satisfies: course.satisfies,
           courseType: displayCourseType,
           sourceReason: course.source_reason,
@@ -3006,7 +3018,8 @@ export function MainAdvisorScreen({
     currentTermLabel,
     manualCredits,
     selection.maxCreditsPerSemester,
-    inProgressCredits
+    inProgressCredits,
+    failedCourseByCode
   ]);
 
   const pendingSwapSourceCourse = useMemo(
@@ -5093,165 +5106,10 @@ export function MainAdvisorScreen({
     return plan.minor_suggestions.slice(0, 5);
   }, [plan?.minor_suggestions]);
 
-  useEffect(() => {
-    if (smartMinorSuggestions.length === 0) {
-      setExpandedSmartMinor(null);
-      return;
-    }
-    setExpandedSmartMinor((prev) => {
-      if (prev && smartMinorSuggestions.some((entry) => entry.minor === prev)) {
-        return prev;
-      }
-      return smartMinorSuggestions[0].minor;
-    });
-  }, [smartMinorSuggestions]);
-
-  const electiveRequirementStatus = useMemo(() => {
-    const placeholders = plan?.elective_placeholders ?? [];
-    if (placeholders.length === 0) return [] as {
-      key: string;
-      program: string;
-      programType: 'major' | 'minor';
-      tagPrefixes: string[];
-      displayTag: string;
-      allowedCourses: string[];
-      isComplete: boolean;
-    }[];
-
-    const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
-    const normalizeCourseCode = (value: string) => value.replace(/\s+/g, '').toUpperCase();
-    const knownAliases: Record<string, string[]> = {
-      'Business Administration': ['BUS'],
-      'Computer Science': ['COS', 'CS'],
-      'Economics': ['ECO'],
-      'European Studies': ['EUR'],
-      'Finance': ['FIN'],
-      'History and Civilizations': ['HC', 'HTY'],
-      'Information Systems': ['IS', 'ISM'],
-      'Journalism and Mass Communication': ['JMC'],
-      'Literature': ['LIT', 'ENG'],
-      'Mathematics': ['MAT'],
-      'Modern Languages and Cultures': ['MLC'],
-      'Physics': ['PHY'],
-      'Political Science and International Relations': ['POS'],
-      'Psychology': ['PSY'],
-      'Film and Creative Media': ['Film', 'FIL'],
-      'Sustainability Studies': ['Sustainability', 'Sustainabiliy']
-    };
-
-    const grouped = new Map<
-      string,
-      { programType: 'major' | 'minor'; program: string; items: typeof placeholders }
-    >();
-    const manualMajorCreditsByProgram = new Map<string, number>();
-    manualCredits.forEach((entry) => {
-      if (entry.code !== 'OTH 0001' || entry.credit_type !== 'MAJOR_ELECTIVE') return;
-      const program = entry.program?.trim();
-      if (!program) return;
-      manualMajorCreditsByProgram.set(
-        program,
-        (manualMajorCreditsByProgram.get(program) ?? 0) + Number(entry.credits ?? 0)
-      );
-    });
-
-    placeholders.forEach((placeholder) => {
-      const key = `${placeholder.program_type}:${placeholder.program}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, {
-          programType: placeholder.program_type,
-          program: placeholder.program,
-          items: []
-        });
-      }
-      grouped.get(key)?.items.push(placeholder);
-    });
-
-    return Array.from(grouped.entries()).map(([key, group]) => {
-      const { programType, program, items } = group;
-      const headerTotals = items.filter(
-        (item) => item.is_total && (Number(item.credits_required ?? 0) > 0 || Number(item.courses_required ?? 0) > 0)
-      );
-      const totalCredits =
-        headerTotals.length > 0
-          ? Math.max(...headerTotals.map((item) => Number(item.credits_required ?? 0)))
-          : items.reduce((sum, item) => sum + Number(item.credits_required ?? 0), 0);
-      const totalCourses =
-        headerTotals.length > 0
-          ? Math.max(...headerTotals.map((item) => Number(item.courses_required ?? 0)))
-          : items.reduce((sum, item) => sum + Number(item.courses_required ?? 0), 0);
-
-      const allowedByNormalized = new Map<string, string>();
-      items.forEach((item) => {
-        (item.allowed_courses ?? []).forEach((code) => {
-          const trimmed = (code ?? '').trim();
-          if (!trimmed) return;
-          const normalized = normalizeCourseCode(trimmed);
-          if (!allowedByNormalized.has(normalized)) {
-            allowedByNormalized.set(normalized, trimmed);
-          }
-        });
-      });
-
-      const allowedCourses = Array.from(allowedByNormalized.values());
-      const derivedPrefixes = allowedCourses
-        .map((code) => code.trim().split(/\s+/)[0] ?? '')
-        .filter((prefix) => prefix.length > 0);
-      const tagPrefixes = Array.from(
-        new Set([...(knownAliases[program] ?? []), ...derivedPrefixes].map((prefix) => normalizeText(prefix)).filter(Boolean))
-      );
-      const noteNeedle = programType === 'major' ? 'major elective' : 'minor elective';
-
-      const matchingCourses = Array.from(
-        courseObjects.reduce((matched, course) => {
-          const normalizedCode = normalizeCourseCode(course.code);
-          const matchesByAllowedCourse = allowedByNormalized.has(normalizedCode);
-          const matchesByElectiveNote = (course.electiveNotes ?? []).some((note) => {
-            const normalizedNote = normalizeText(note);
-            if (!normalizedNote.includes(noteNeedle)) return false;
-            if (tagPrefixes.length === 0) return false;
-            return tagPrefixes.some((prefix) => normalizedNote.startsWith(`${prefix} `));
-          });
-
-          if (!matchesByAllowedCourse && !matchesByElectiveNote) {
-            return matched;
-          }
-
-          if (!matched.has(normalizedCode)) {
-            matched.set(normalizedCode, course);
-          }
-          return matched;
-        }, new Map<string, Course>())
-          .values()
-      );
-      const manualMajorCredits =
-        programType === 'major' ? Number(manualMajorCreditsByProgram.get(program) ?? 0) : 0;
-      const matchedCredits =
-        matchingCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0) + manualMajorCredits;
-      const matchedCourseCount =
-        matchingCourses.length + (programType === 'major' ? Math.floor(manualMajorCredits / 3) : 0);
-      const isComplete =
-        totalCredits > 0
-          ? matchedCredits >= totalCredits
-          : totalCourses > 0
-            ? matchedCourseCount >= totalCourses
-            : false;
-      const primaryPrefix =
-        (knownAliases[program] ?? []).find((alias) => String(alias ?? '').trim().length > 0) ??
-        derivedPrefixes.find((prefix) => String(prefix ?? '').trim().length > 0) ??
-        program;
-      const displayTag = `${String(primaryPrefix).trim()} ${programType === 'major' ? 'Major' : 'Minor'} Elective`;
-
-      return {
-        key,
-        program,
-        programType,
-        tagPrefixes,
-        displayTag,
-        allowedCourses,
-        isComplete
-      };
-    });
-  }, [courseObjects, manualCredits, plan?.elective_placeholders]);
+  const electiveRequirementStatus = useMemo(
+    () => summarizeElectiveRequirements(plan?.elective_progress ?? [], plan?.elective_placeholders ?? []),
+    [plan?.elective_progress, plan?.elective_placeholders]
+  );
 
   const electiveSuggestions: ElectiveSuggestion[] = useMemo(() => {
     const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -5405,25 +5263,7 @@ export function MainAdvisorScreen({
 
   const handleDownloadPdf = async () => {
     if (!plan) return;
-    const blob = await downloadPlanPdf({
-      catalog_id: catalog.catalog_id,
-      majors: selection.majors,
-      minors: selection.minors,
-      business_concentration: selection.businessConcentration,
-      completed_courses: planningCompleted,
-      manual_credits: manualCredits,
-      retake_courses: [],
-      in_progress_courses: effectiveInProgress,
-      in_progress_terms: inProgressOverrides,
-      current_term_label: currentTermLabel,
-      max_credits_per_semester: selection.maxCreditsPerSemester,
-      start_term_season: effectiveStartForPlanning.season,
-      start_term_year: effectiveStartForPlanning.year,
-      waived_mat1000: selection.waivedMat1000,
-      waived_eng1000: selection.waivedEng1000,
-      strict_prereqs: selection.strictPrereqs ?? false,
-      overrides: overridesWithRetakes
-    });
+    const blob = await downloadPlanPdf(planRequest);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -5637,182 +5477,99 @@ export function MainAdvisorScreen({
     };
   }, [pendingRemoval, courseObjects, termCreditsMap, minCreditsPerTerm, removedCourses, removedCodeSet]);
 
+  const validationErrors = plan?.is_valid === false ? plan.validation_errors ?? [] : [];
+  const remainingTerms = (plan?.semester_plan ?? []).filter(
+    (term) => term.courses.length > 0 && !isEarlierTerm(term.term, currentTermLabel)
+  ).length;
+  const incompleteElectives = electiveRequirementStatus.filter((entry) => !entry.isComplete).length;
+  const tabs: { id: AdvisorTab; label: string; icon: typeof ListChecks; count?: number; disabled?: boolean }[] = [
+    { id: 'plan', label: 'Semester plan', icon: CalendarRange, count: validationErrors.length },
+    { id: 'requirements', label: 'Requirements', icon: ListChecks, count: incompleteElectives },
+    { id: 'electives', label: 'Recommended electives', icon: Sparkles },
+    { id: 'chat', label: 'Advisor chat', icon: advisorChatLocked ? Lock : MessageSquare, disabled: advisorChatLocked },
+  ];
+  const showIssues = () => {
+    setActiveTab('plan');
+    window.requestAnimationFrame(() => {
+      planAlertsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      planAlertsRef.current?.focus({ preventScroll: true });
+    });
+  };
+
   return (
-    <div className="min-h-screen flex flex-col" style={{ backgroundColor: 'var(--neutral-gray)' }}>
-      {/* Top bar */}
-      <div className="px-6 py-4 border-b flex items-center justify-between" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg border"
-          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </button>
+    <div className="advisor-screen">
+      <AdvisorHeader
+        majors={selection.majors}
+        minors={selection.minors}
+        businessConcentration={selection.businessConcentration}
+        canDownload={!!plan}
+        share={{
+          token: currentSnapshotToken,
+          isLoading: isSnapshotTokenLoading,
+          error: snapshotTokenError,
+          copyStatus: tokenCopyStatus,
+          onCopy: copySnapshotToken,
+        }}
+        onBack={onBack}
+        onDownloadJson={handleDownloadJson}
+        onDownloadPdf={handleDownloadPdf}
+      />
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleDownloadJson}
-            disabled={!plan}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border"
-            style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
-            title="Download JSON (re-upload later)"
-          >
-            <Download className="w-4 h-4" />
-            JSON
-          </button>
+      <main className="page advisor-main stack-4">
+        {plan && (
+          <SummaryStrip
+            completedCredits={totalCredits.completed}
+            projectedCredits={Number(plan.summary?.projected_credits ?? 0)}
+            degreeCredits={Number(plan.summary?.degree_total_credits || 120)}
+            remainingTerms={remainingTerms}
+            issueCount={validationErrors.length}
+            onShowIssues={showIssues}
+          />
+        )}
 
-          <button
-            onClick={handleDownloadPdf}
-            disabled={!plan}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg"
-            style={{
-              background: plan ? 'var(--academic-gold)' : 'var(--neutral-border)',
-              color: plan ? 'var(--navy-dark)' : 'var(--neutral-dark)'
-            }}
-            title="Download PDF"
-          >
-            <Download className="w-4 h-4" />
-            PDF
-          </button>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 grid lg:grid-cols-[1fr_420px] gap-6 p-6">
-        {/* Left: Plan / Chat */}
-        <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
-          <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--neutral-border)' }}>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Calendar className="w-5 h-5" style={{ color: 'var(--academic-gold)' }} />
-              <h3 className="m-0">Your Plan</h3>
+        <div className="card advisor-panel">
+          <div className="tabs advisor-tabs" role="tablist" aria-label="Plan sections">
+            {tabs.map(({ id, label, icon: Icon, count, disabled }) => (
               <button
+                key={id}
                 type="button"
-                onClick={copySnapshotToken}
-                disabled={!currentSnapshotToken}
-                className="flex items-center gap-2 px-3 py-1 rounded-lg border text-xs"
-                style={{
-                  borderColor: 'var(--neutral-border)',
-                  background: currentSnapshotToken ? 'var(--neutral-cream)' : 'var(--white)',
-                  color: currentSnapshotToken ? 'var(--navy-dark)' : 'var(--neutral-dark)',
-                  cursor: currentSnapshotToken ? 'pointer' : 'default',
-                  opacity: currentSnapshotToken ? 1 : 0.7
-                }}
-                title={
-                  currentSnapshotToken
-                    ? 'Copy program token'
-                    : isSnapshotTokenLoading
-                      ? 'Generating program token...'
-                      : snapshotTokenError
-                        ? 'Program token unavailable'
-                        : 'Program token pending'
-                }
+                role="tab"
+                id={`tab-${id}`}
+                aria-selected={activeTab === id}
+                aria-controls={`panel-${id}`}
+                className="tab"
+                disabled={disabled}
+                title={disabled ? advisorChatLockMessage : undefined}
+                onClick={() => setActiveTab(id)}
               >
-                <span className="font-mono">
-                  {currentSnapshotToken
-                    ?? (isSnapshotTokenLoading ? 'Generating token...' : 'Token unavailable')}
-                </span>
-                {currentSnapshotToken ? (
-                  tokenCopyStatus === 'copied' ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Copied</span>
-                    </>
-                  ) : tokenCopyStatus === 'error' ? (
-                    <span>Retry</span>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy</span>
-                    </>
-                  )
-                ) : isSnapshotTokenLoading ? (
-                  <>
-                    <span>Saving</span>
-                  </>
-                ) : (
-                  <span>Unavailable</span>
-                )}
+                <Icon aria-hidden="true" />
+                <span>{label}</span>
+                {!!count && <span className="tab-count num">{count}</span>}
               </button>
-              {snapshotTokenError && (
-                <span className="text-xs" style={{ color: '#b91c1c' }}>
-                  {snapshotTokenError}
-                </span>
-              )}
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                className="px-4 py-2 rounded-lg text-sm font-medium"
-                onClick={() => setActiveTab('plan')}
-                style={{
-                  backgroundColor: activeTab === 'plan' ? 'var(--academic-gold)' : 'transparent',
-                  color: activeTab === 'plan' ? 'var(--navy-dark)' : 'var(--neutral-dark)'
-                }}
-              >
-                Semester Plan
-              </button>
-              <button
-                className="px-4 py-2 rounded-lg text-sm font-medium"
-                onClick={() => setActiveTab('electives')}
-                style={{
-                  backgroundColor: activeTab === 'electives' ? 'var(--academic-gold)' : 'transparent',
-                  color: activeTab === 'electives' ? 'var(--navy-dark)' : 'var(--neutral-dark)'
-                }}
-              >
-                Recommended Electives
-              </button>
-              <button
-                className="px-4 py-2 rounded-lg text-sm font-medium inline-flex items-center gap-2 disabled:cursor-not-allowed"
-                onClick={() => setActiveTab('chat')}
-                disabled={advisorChatLocked}
-                title={advisorChatLockMessage}
-                style={{
-                  backgroundColor: advisorChatLocked
-                    ? 'var(--neutral-gray)'
-                    : activeTab === 'chat'
-                      ? 'var(--academic-gold)'
-                      : 'transparent',
-                  color: advisorChatLocked
-                    ? 'var(--neutral-dark)'
-                    : activeTab === 'chat'
-                      ? 'var(--navy-dark)'
-                      : 'var(--neutral-dark)',
-                  opacity: advisorChatLocked ? 0.72 : 1
-                }}
-              >
-                {advisorChatLocked && <Lock className="w-4 h-4" />}
-                <span>Advisor Chat</span>
-              </button>
-            </div>
+            ))}
           </div>
 
-          <div className="h-[calc(100vh-180px)]">
+          <div className="advisor-tab-body">
             {activeTab === 'plan' && (
-              <div className="h-full">
+              <div className="tab-panel stack-4" role="tabpanel" id="panel-plan" aria-labelledby="tab-plan">
                 {!dismissedImpliedStart &&
                   creditsDone > selection.maxCreditsPerSemester &&
                   impliedStart.completedTerms >= 1 &&
                   (impliedStart.season !== startTermSeason || impliedStart.year !== startTermYear) && (
-                    <div
-                      className="mx-6 mt-6 mb-4 p-4 rounded-xl border"
-                      style={{ borderColor: 'var(--neutral-border)', background: 'var(--neutral-cream)' }}
-                    >
+                    <div className="alert alert-info advisor-inset">
+                      <Info aria-hidden="true" />
                       <div className="flex flex-col gap-3">
                         <div>
-                          <div className="font-medium">
+                          <div className="alert-title">
                             Based on your completed/in-progress credits (~{creditsDone} credits), you likely started around{" "}
                             {impliedStart.season} {impliedStart.year}.
                           </div>
-                          <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                            Adjust start term?
-                          </div>
+                          <p>Adjust the start term?</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            className="px-3 py-2 rounded-lg text-sm font-medium"
-                            style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                            className="btn btn-primary btn-sm"
                             onClick={() => {
                               setStartTermUndo({
                                 season: startTermSeason,
@@ -5848,8 +5605,7 @@ export function MainAdvisorScreen({
                           </button>
                           <button
                             type="button"
-                            className="px-3 py-2 rounded-lg text-sm font-medium border"
-                            style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                            className="btn btn-outline btn-sm"
                             onClick={() => {
                               setAppliedImpliedStartKey(impliedStartKey);
                               setDismissedImpliedStart(true);
@@ -5862,19 +5618,14 @@ export function MainAdvisorScreen({
                     </div>
                   )}
                 {startTermUndo && (
-                  <div
-                    className="mx-6 mt-4 mb-4 p-4 rounded-xl border"
-                    style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
-                  >
+                  <div className="alert alert-info advisor-inset">
+                    <Info aria-hidden="true" />
                     <div className="flex flex-col gap-3">
-                      <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                        Start term updated to {startTermSeason} {startTermYear}. Undo if this was a mistake.
-                      </div>
+                      <p>Start term updated to {startTermSeason} {startTermYear}. Undo if this was a mistake.</p>
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium border"
-                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => {
                             setStartTermSeason(startTermUndo.season);
                             setStartTermYear(startTermUndo.year);
@@ -5892,8 +5643,7 @@ export function MainAdvisorScreen({
                         </button>
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium"
-                          style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                          className="btn btn-primary btn-sm"
                           onClick={() => setStartTermUndo(null)}
                         >
                           Keep changes
@@ -5903,43 +5653,35 @@ export function MainAdvisorScreen({
                   </div>
                 )}
                 {loading && !plan && (
-                  <div className="h-full flex items-center justify-center">
+                  <div className="advisor-loading" role="status">
                     <div className="spinner" />
+                    <span className="muted">Building your plan…</span>
                   </div>
                 )}
                 {!loading && error && (
-                  <div className="p-6">
-                    <h4 className="mb-2">Error</h4>
-                    <p style={{ color: 'var(--neutral-dark)' }}>{error}</p>
+                  <div className="alert alert-danger advisor-inset" role="alert">
+                    <div>
+                      <p className="alert-title">The plan could not be generated</p>
+                      <p>{error}</p>
+                    </div>
                   </div>
                 )}
                 {plan && (
                   <>
-                    {plan.is_valid === false && plan.validation_errors && plan.validation_errors.length > 0 && (
-                      <div className="mb-4 p-3 rounded-lg border" style={{ background: 'var(--neutral-cream)', borderColor: 'var(--neutral-border)', color: 'var(--navy-dark)' }}>
-                        <div className="font-medium">Plan needs attention</div>
-                        <div className="text-sm mt-1">
-                          {plan.validation_errors.slice(0, 3).join(' | ')}
-                          {plan.validation_errors.length > 3 ? ` | (+${plan.validation_errors.length - 3} more)` : ''}
-                        </div>
-                        <div className="text-xs mt-1" style={{ color: 'var(--neutral-dark)' }}>
-                          You can still view and edit the plan, but graduation rules may not be fully satisfied yet.
-                        </div>
+                    {validationErrors.length > 0 && (
+                      <div className="advisor-inset">
+                        <PlanAlerts ref={planAlertsRef} errors={validationErrors} />
                       </div>
                     )}
                     {pendingElectiveSwap && (
-                      <div
-                        className="mb-4 p-3 rounded-lg border flex items-center justify-between gap-3"
-                        style={{ background: 'var(--neutral-cream)', borderColor: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
-                      >
-                        <div className="text-sm">
+                      <div className="alert alert-info advisor-inset items-center justify-between">
+                        <div>
                           Choose a course to replace <span className="font-medium">{pendingElectiveSwap.addedCourseCode}</span> in{' '}
                           {pendingElectiveSwap.termLabel}: search for it below and press Add.
                         </div>
                         <button
                           type="button"
-                          className="text-sm px-3 py-1 rounded-lg border"
-                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => setPendingElectiveSwap(null)}
                         >
                           Cancel
@@ -5959,7 +5701,6 @@ export function MainAdvisorScreen({
                     startTermSeason={startTermSeason}
                     startTermYear={startTermYear}
                     totalTerms={maxPlanTerms}
-                    electivePlaceholders={plan.elective_placeholders ?? []}
                     onToggleCompleted={(instanceId) => {
                       const target = courseObjects.find(c => c.instanceId === instanceId);
                       const code = target?.code;
@@ -6106,29 +5847,17 @@ export function MainAdvisorScreen({
 
                 {showManualCreditModal && (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1100,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1100 }}
                     onClick={() => setShowManualCreditModal(false)}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '14px',
-                        width: 'min(920px, 94vw)',
+                      className="modal"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ width: 'min(920px, 94vw)',
                         maxHeight: '90vh',
-                        border: '1px solid var(--neutral-border)',
                         display: 'flex',
-                        flexDirection: 'column',
-                        boxShadow: '0 16px 40px rgba(0, 0, 0, 0.18)'
-                      }}
+                        flexDirection: 'column' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div
@@ -6144,8 +5873,7 @@ export function MainAdvisorScreen({
                         <button
                           type="button"
                           onClick={() => setShowManualCreditModal(false)}
-                          className="text-sm"
-                          style={{ color: 'var(--neutral-dark)' }}
+                          className="btn btn-ghost btn-sm"
                         >
                           Close
                         </button>
@@ -6165,8 +5893,7 @@ export function MainAdvisorScreen({
                             onChange={(e) =>
                               setManualCreditDraft((prev) => ({ ...prev, credits: e.target.value }))
                             }
-                            className="px-3 py-2 rounded-lg border"
-                            style={{ borderColor: 'var(--neutral-border)' }}
+                            className="input"
                           />
                         </label>
 
@@ -6177,8 +5904,7 @@ export function MainAdvisorScreen({
                             onChange={(e) =>
                               setManualCreditDraft((prev) => ({ ...prev, term: e.target.value }))
                             }
-                            className="px-3 py-2 rounded-lg border"
-                            style={{ borderColor: 'var(--neutral-border)' }}
+                            className="input"
                           >
                             {manualCreditTermOptions.map((term) => (
                               <option key={term} value={term}>
@@ -6211,8 +5937,7 @@ export function MainAdvisorScreen({
                               onChange={(e) =>
                                 setManualCreditDraft((prev) => ({ ...prev, gened_category: e.target.value }))
                               }
-                              className="px-3 py-2 rounded-lg border"
-                              style={{ borderColor: 'var(--neutral-border)' }}
+                              className="input"
                             >
                               <option value="">Select Gen-Ed category</option>
                               {genEdCategoryOptions.map((category) => (
@@ -6244,8 +5969,7 @@ export function MainAdvisorScreen({
                               onChange={(e) =>
                                 setManualCreditDraft((prev) => ({ ...prev, program: e.target.value }))
                               }
-                              className="px-3 py-2 rounded-lg border"
-                              style={{ borderColor: 'var(--neutral-border)' }}
+                              className="input"
                             >
                               <option value="">Select major</option>
                               {selection.majors.map((major) => (
@@ -6289,8 +6013,7 @@ export function MainAdvisorScreen({
                         <button
                           type="button"
                           onClick={saveManualCredit}
-                          className="px-3 py-2 rounded-lg text-sm font-medium"
-                          style={{ background: 'var(--navy-blue)', color: 'var(--white)' }}
+                          className="btn btn-primary btn-sm"
                         >
                           Save
                         </button>
@@ -6301,27 +6024,16 @@ export function MainAdvisorScreen({
 
                 {pendingRemoval && pendingRemovalDetails && (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1100,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1100 }}
                     onClick={() => setPendingRemoval(null)}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '520px',
+                      className="modal"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ maxWidth: '520px',
                         width: '100%',
-                        padding: '20px',
-                        border: '1px solid var(--neutral-border)'
-                      }}
+                        padding: '20px' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -6335,11 +6047,10 @@ export function MainAdvisorScreen({
                         </div>
                         <button
                           type="button"
-                          className="text-sm"
-                          style={{ color: 'var(--neutral-dark)' }}
+                          className="btn btn-ghost btn-icon" aria-label="Close"
                           onClick={() => setPendingRemoval(null)}
                         >
-                          X
+                          <X aria-hidden="true" />
                         </button>
                       </div>
 
@@ -6381,16 +6092,14 @@ export function MainAdvisorScreen({
                       <div className="flex flex-wrap gap-2 mt-4">
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium"
-                          style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                          className="btn btn-primary btn-sm"
                           onClick={confirmRemoveCourse}
                         >
                           Remove
                         </button>
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium border"
-                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => setPendingRemoval(null)}
                         >
                           Cancel
@@ -6402,27 +6111,16 @@ export function MainAdvisorScreen({
 
                 {moveCourseWarning && (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1150,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1150 }}
                     onClick={() => setMoveCourseWarning(null)}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '560px',
+                      className="modal modal-warning"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ maxWidth: '560px',
                         width: '100%',
-                        padding: '20px',
-                        border: '1px solid #fdba74'
-                      }}
+                        padding: '20px' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -6434,18 +6132,16 @@ export function MainAdvisorScreen({
                         </div>
                         <button
                           type="button"
-                          className="text-sm"
-                          style={{ color: '#9a3412' }}
+                          className="btn btn-ghost btn-sm" aria-label="Close"
                           onClick={() => setMoveCourseWarning(null)}
                         >
-                          X
+                          <X aria-hidden="true" />
                         </button>
                       </div>
                       <div className="flex flex-wrap gap-2 mt-4">
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium border"
-                          style={{ borderColor: '#fdba74', background: '#fff7ed', color: '#9a3412' }}
+                          className="btn btn-primary btn-sm"
                           onClick={() => setMoveCourseWarning(null)}
                         >
                           OK
@@ -6457,34 +6153,23 @@ export function MainAdvisorScreen({
 
                 {pendingAddCourse && (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1000,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1000 }}
                     onClick={() => {
                       setPendingAddCourse(null);
                       setPendingAddTerm(null);
                     }}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '520px',
+                      className="modal"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ maxWidth: '520px',
                         width: '100%',
                         padding: '20px',
-                        border: '1px solid var(--neutral-border)',
                         maxHeight: '80vh',
                         overflow: 'hidden',
                         display: 'flex',
-                        flexDirection: 'column'
-                      }}
+                        flexDirection: 'column' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -6496,14 +6181,13 @@ export function MainAdvisorScreen({
                         </div>
                         <button
                           type="button"
-                          className="text-sm"
-                          style={{ color: 'var(--neutral-dark)' }}
+                          className="btn btn-ghost btn-icon" aria-label="Close"
                           onClick={() => {
                             setPendingAddCourse(null);
                             setPendingAddTerm(null);
                           }}
                         >
-                          X
+                          <X aria-hidden="true" />
                         </button>
                       </div>
 
@@ -6543,7 +6227,7 @@ export function MainAdvisorScreen({
                               key={term}
                               type="button"
                               disabled={disabled}
-                              className="text-left p-3 rounded-lg border hover:shadow-sm"
+                              className="option-tile"
                               style={{
                                 borderColor: isSelected ? 'var(--navy-blue)' : 'var(--neutral-border)',
                                 background: blockedByAvailability
@@ -6579,8 +6263,7 @@ export function MainAdvisorScreen({
                       <div className="flex flex-wrap gap-2 mt-4">
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium"
-                          style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                          className="btn btn-primary btn-sm"
                           disabled={!pendingAddTerm || addableTermOptions.length === 0}
                           onClick={() => {
                             const term = pendingAddTerm;
@@ -6653,8 +6336,7 @@ export function MainAdvisorScreen({
                         </button>
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium border"
-                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => {
                             setPendingAddCourse(null);
                             setPendingAddTerm(null);
@@ -6676,27 +6358,16 @@ export function MainAdvisorScreen({
                       ) ?? placeholdersForTerm[0] ?? null;
                     return (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1000,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1000 }}
                     onClick={() => setPendingRetakeCourse(null)}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '460px',
+                      className="modal"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ maxWidth: '460px',
                         width: '100%',
-                        padding: '20px',
-                        border: '1px solid var(--neutral-border)'
-                      }}
+                        padding: '20px' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -6709,11 +6380,10 @@ export function MainAdvisorScreen({
                         </div>
                         <button
                           type="button"
-                          className="text-sm"
-                          style={{ color: 'var(--neutral-dark)' }}
+                          className="btn btn-ghost btn-icon" aria-label="Close"
                           onClick={() => setPendingRetakeCourse(null)}
                         >
-                          X
+                          <X aria-hidden="true" />
                         </button>
                       </div>
 
@@ -6782,8 +6452,7 @@ export function MainAdvisorScreen({
                       <div className="flex flex-wrap gap-2 mt-4">
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium"
-                          style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                          className="btn btn-primary btn-sm"
                           onClick={savePendingRetake}
                           disabled={!selectedPlaceholder}
                         >
@@ -6791,8 +6460,7 @@ export function MainAdvisorScreen({
                         </button>
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium border"
-                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => setPendingRetakeCourse(null)}
                         >
                           Cancel
@@ -6807,31 +6475,20 @@ export function MainAdvisorScreen({
                 
                 {pendingAddConfirm && (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1000,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1000 }}
                     onClick={() => setPendingAddConfirm(null)}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '520px',
+                      className="modal"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ maxWidth: '520px',
                         width: '100%',
                         padding: '20px',
-                        border: '1px solid var(--neutral-border)',
                         maxHeight: '80vh',
                         overflow: 'hidden',
                         display: 'flex',
-                        flexDirection: 'column'
-                      }}
+                        flexDirection: 'column' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <PrereqConfirmDialog
@@ -6888,34 +6545,23 @@ export function MainAdvisorScreen({
                 )}
                 {pendingPrereqPlacement && (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1000,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1000 }}
                     onClick={() => {
                       setPendingPrereqPlacement(null);
                       setPendingPrereqTerm(null);
                     }}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '520px',
+                      className="modal"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ maxWidth: '520px',
                         width: '100%',
                         padding: '20px',
-                        border: '1px solid var(--neutral-border)',
                         maxHeight: '80vh',
                         overflow: 'hidden',
                         display: 'flex',
-                        flexDirection: 'column'
-                      }}
+                        flexDirection: 'column' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -6928,14 +6574,13 @@ export function MainAdvisorScreen({
                         </div>
                         <button
                           type="button"
-                          className="text-sm"
-                          style={{ color: 'var(--neutral-dark)' }}
+                          className="btn btn-ghost btn-icon" aria-label="Close"
                           onClick={() => {
                             setPendingPrereqPlacement(null);
                             setPendingPrereqTerm(null);
                           }}
                         >
-                          X
+                          <X aria-hidden="true" />
                         </button>
                       </div>
 
@@ -6963,7 +6608,7 @@ export function MainAdvisorScreen({
                               key={term}
                               type="button"
                               disabled={willExceed}
-                              className="text-left p-3 rounded-lg border hover:shadow-sm"
+                              className="option-tile"
                               style={{
                                 borderColor: isSelected ? 'var(--navy-blue)' : 'var(--neutral-border)',
                                 background: isSelected ? 'var(--neutral-gray)' : 'var(--white)',
@@ -6984,8 +6629,7 @@ export function MainAdvisorScreen({
                       <div className="flex flex-wrap gap-2 mt-4">
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium"
-                          style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                          className="btn btn-primary btn-sm"
                           disabled={!pendingPrereqTerm || prereqTermOptions.length === 0}
                           onClick={() => {
                             if (!pendingPrereqPlacement) return;
@@ -7066,8 +6710,7 @@ export function MainAdvisorScreen({
                         </button>
                         <button
                           type="button"
-                          className="px-3 py-2 rounded-lg text-sm font-medium border"
-                          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                          className="btn btn-outline btn-sm"
                           onClick={() => {
                             setPendingPrereqPlacement(null);
                             setPendingPrereqTerm(null);
@@ -7081,31 +6724,20 @@ export function MainAdvisorScreen({
                 )}
 {replacementTarget && replacementTargetCode && (
                   <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      zIndex: 1000,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '24px'
-                    }}
+                    className="modal-overlay" style={{ zIndex: 1000 }}
                     onClick={resetReplacementState}
                   >
                     <div
-                      style={{
-                        background: 'var(--white)',
-                        borderRadius: '12px',
-                        maxWidth: '640px',
+                      className="modal"
+                      role="dialog"
+                      aria-modal="true"
+                      style={{ maxWidth: '640px',
                         width: '100%',
                         padding: '20px',
-                        border: '1px solid var(--neutral-border)',
                         maxHeight: '80vh',
                         overflow: 'hidden',
                         display: 'flex',
-                        flexDirection: 'column'
-                      }}
+                        flexDirection: 'column' }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-start justify-between gap-4">
@@ -7123,11 +6755,10 @@ export function MainAdvisorScreen({
                         </div>
                         <button
                           type="button"
-                          className="text-sm"
-                          style={{ color: 'var(--neutral-dark)' }}
+                          className="btn btn-ghost btn-icon" aria-label="Close"
                           onClick={resetReplacementState}
                         >
-                          X
+                          <X aria-hidden="true" />
                         </button>
                       </div>
 
@@ -7197,7 +6828,7 @@ export function MainAdvisorScreen({
                               key={code}
                               type="button"
                               disabled={disabled}
-                              className="text-left p-3 rounded-lg border hover:shadow-sm"
+                              className="option-tile"
                               style={{
                                 borderColor: isSelected ? 'var(--navy-blue)' : 'var(--neutral-border)',
                                 background: isSelected ? 'var(--neutral-gray)' : 'var(--white)',
@@ -7238,27 +6869,16 @@ export function MainAdvisorScreen({
 
                       {pendingReplacementImpact && (
                         <div
-                          style={{
-                            position: 'fixed',
-                            inset: 0,
-                            background: 'rgba(0,0,0,0.45)',
-                            zIndex: 1200,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            padding: '24px'
-                          }}
+                          className="modal-overlay" style={{ zIndex: 1200 }}
                           onClick={() => setPendingReplacementImpact(null)}
                         >
                           <div
-                            style={{
-                              background: 'var(--white)',
-                              borderRadius: '12px',
-                              maxWidth: '520px',
+                            className="modal"
+                            role="dialog"
+                            aria-modal="true"
+                            style={{ maxWidth: '520px',
                               width: '100%',
-                              padding: '20px',
-                              border: '1px solid var(--neutral-border)'
-                            }}
+                              padding: '20px' }}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div className="flex items-start justify-between gap-4">
@@ -7270,12 +6890,11 @@ export function MainAdvisorScreen({
                               </div>
                               <button
                                 type="button"
-                                className="text-sm"
-                                style={{ color: 'var(--neutral-dark)' }}
+                                className="btn btn-ghost btn-icon" aria-label="Close"
                                 onClick={() => setPendingReplacementImpact(null)}
                               >
-                                X
-                              </button>
+                          <X aria-hidden="true" />
+                        </button>
                             </div>
                             <div
                               className="mt-3 text-sm p-3 rounded-lg border"
@@ -7297,8 +6916,7 @@ export function MainAdvisorScreen({
                             <div className="flex flex-wrap gap-2 mt-4">
                               <button
                                 type="button"
-                                className="px-3 py-2 rounded-lg text-sm font-medium"
-                                style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+                                className="btn btn-primary btn-sm"
                                 onClick={() => {
                                   confirmReplacement(true);
                                   setPendingReplacementImpact(null);
@@ -7308,8 +6926,7 @@ export function MainAdvisorScreen({
                               </button>
                               <button
                                 type="button"
-                                className="px-3 py-2 rounded-lg text-sm font-medium border"
-                                style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+                                className="btn btn-outline btn-sm"
                                 onClick={() => setPendingReplacementImpact(null)}
                               >
                                 Cancel
@@ -7366,21 +6983,21 @@ export function MainAdvisorScreen({
             )}
 
             {activeTab === 'electives' && (
-              <div className="h-full p-6 overflow-y-auto">
+              <div className="tab-panel advisor-tab-pad" role="tabpanel" id="panel-electives" aria-labelledby="tab-electives">
                 {loading && !plan && (
-                  <div className="h-full flex items-center justify-center">
+                  <div className="advisor-loading" role="status">
                     <div className="spinner" />
                   </div>
                 )}
-                {!plan && !loading && (
-                  <p style={{ color: 'var(--neutral-dark)' }}>No plan yet.</p>
-                )}
+                {!plan && !loading && <p className="muted">No plan yet.</p>}
                 {plan && (
                   <>
                     {electiveSuggestions.length === 0 && (
-                      <p style={{ color: 'var(--neutral-dark)' }}>
-                        No elective recommendations yet. As you get close to a minor, suggestions will appear here.
-                      </p>
+                      <div className="empty-state">
+                        <BookOpenCheck aria-hidden="true" />
+                        <p className="section-title">No recommendations right now</p>
+                        <p className="muted">Suggestions appear here as your majors and minors have elective credits left to fill.</p>
+                      </div>
                     )}
                     {electiveSuggestions.length > 0 && (
                       <ElectiveRecommendationPanel
@@ -7397,22 +7014,10 @@ export function MainAdvisorScreen({
 
             {activeTab === 'chat' && (
               advisorChatLocked ? (
-                <div className="h-full flex items-center justify-center p-6">
-                  <div
-                    className="w-full max-w-md rounded-2xl border p-6 text-center"
-                    style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}
-                  >
-                    <div
-                      className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-                      style={{ background: 'var(--neutral-gray)' }}
-                    >
-                      <Lock className="w-5 h-5" style={{ color: 'var(--navy-dark)' }} />
-                    </div>
-                    <h3 style={{ color: 'var(--navy-dark)' }}>Advisor Chat Locked</h3>
-                    <p className="mt-2 text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                      {advisorChatLockMessage}
-                    </p>
-                  </div>
+                <div className="tab-panel empty-state" role="tabpanel" id="panel-chat" aria-labelledby="tab-chat">
+                  <Lock aria-hidden="true" />
+                  <p className="section-title">Advisor chat is locked</p>
+                  <p className="muted">{advisorChatLockMessage}</p>
                 </div>
               ) : (
                 <ChatInterface
@@ -7434,311 +7039,23 @@ export function MainAdvisorScreen({
                 />
               )
             )}
-          </div>
-        </div>
-
-        {/* Right: Progress + Alerts */}
-        <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--white)', borderColor: 'var(--neutral-border)' }}>
-          <div className="p-4 border-b" style={{ borderColor: 'var(--neutral-border)' }}>
-            {plan?.business_concentration_audit?.selected && plan.business_concentration_audit.selected !== 'General' && (
-              <div
-                className="p-3 rounded-lg border mb-4"
-                style={{ borderColor: 'var(--neutral-border)', background: 'var(--neutral-cream)' }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold" style={{ color: 'var(--navy-dark)' }}>
-                      BUS Concentration
-                    </div>
-                    <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                      {plan.business_concentration_audit.selected}
-                    </div>
-                  </div>
-                  <span
-                    className="px-2 py-0.5 rounded text-xs font-medium"
-                    style={
-                      Number(plan.business_concentration_audit.summary?.missing_required_courses ?? 0) === 0
-                      && Number(plan.business_concentration_audit.summary?.remaining_pool_credits ?? 0) === 0
-                      && Number(plan.business_concentration_audit.summary?.remaining_pool_courses ?? 0) === 0
-                        ? { background: '#D7F4E6', color: '#0B6E4F' }
-                        : { background: '#FCE8B2', color: '#6A4B00' }
-                    }
-                  >
-                    {Number(plan.business_concentration_audit.summary?.missing_required_courses ?? 0) === 0
-                    && Number(plan.business_concentration_audit.summary?.remaining_pool_credits ?? 0) === 0
-                    && Number(plan.business_concentration_audit.summary?.remaining_pool_courses ?? 0) === 0
-                      ? 'Satisfied'
-                      : 'In progress'}
-                  </span>
-                </div>
-
-                {(plan.business_concentration_audit.messages ?? []).length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {(plan.business_concentration_audit.messages ?? []).map((message, index) => (
-                      <div
-                        key={`${message.kind}:${index}`}
-                        className="text-xs px-2 py-2 rounded border"
-                        style={{
-                          borderColor: message.kind === 'conflict' ? '#fdba74' : 'var(--neutral-border)',
-                          background: message.kind === 'conflict' ? '#fff7ed' : 'var(--white)',
-                          color: message.kind === 'conflict' ? '#9a3412' : 'var(--navy-dark)'
-                        }}
-                      >
-                        {message.message}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {(plan.business_concentration_audit.required_courses ?? []).length > 0 && (
-                  <div className="mt-3">
-                    <div className="text-xs font-semibold" style={{ color: 'var(--navy-dark)' }}>
-                      Required courses
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      {(plan.business_concentration_audit.required_courses ?? []).map((course) => (
-                        <div key={course.code} className="flex items-center justify-between gap-2 text-xs">
-                          <span style={{ color: 'var(--neutral-dark)' }}>{course.code}</span>
-                          <span
-                            className="px-2 py-0.5 rounded"
-                            style={
-                              course.status === 'completed'
-                                ? { background: '#D7F4E6', color: '#0B6E4F' }
-                                : course.status === 'planned'
-                                  ? { background: '#DBEAFE', color: '#1D4ED8' }
-                                  : { background: '#FCE8B2', color: '#6A4B00' }
-                            }
-                          >
-                            {course.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {(plan.business_concentration_audit.elective_pools ?? []).length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    {(plan.business_concentration_audit.elective_pools ?? []).map((pool) => (
-                      <div
-                        key={pool.id}
-                        className="p-2 rounded border"
-                        style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
-                      >
-                        <div className="text-xs font-semibold" style={{ color: 'var(--navy-dark)' }}>
-                          {pool.label}
-                        </div>
-                        <div className="text-xs mt-1" style={{ color: 'var(--neutral-dark)' }}>
-                          {(pool.required_credits ?? 0) > 0
-                            ? `${pool.counted_credits ?? 0}/${pool.required_credits ?? 0} credits counted`
-                            : `${pool.counted_courses ?? 0}/${pool.courses_required ?? 0} courses counted`}
-                        </div>
-                        {(pool.matched_courses ?? []).length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {(pool.matched_courses ?? []).map((course) => (
-                              <span
-                                key={`${pool.id}:${course.code}`}
-                                className="text-[11px] px-2 py-0.5 rounded-full border"
-                                style={{ borderColor: 'var(--neutral-border)', color: 'var(--navy-dark)' }}
-                              >
-                                {course.code}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {(pool.notes ?? []).length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            {(pool.notes ?? []).map((note, index) => (
-                              <div key={`${pool.id}:note:${index}`} className="text-[11px]" style={{ color: 'var(--neutral-dark)' }}>
-                                {note}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex items-center gap-3 mb-3">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{ background: 'var(--academic-gold)' }}
-              >
-                <Sparkles className="w-4 h-4" style={{ color: 'var(--white)' }} />
-              </div>
-              <div>
-                <h4 style={{ color: 'var(--navy-dark)', marginBottom: '2px' }}>Smart Minor Suggestions</h4>
-                <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                  Complete minors efficiently
-                </p>
-              </div>
-            </div>
-            {smartMinorSuggestions.length === 0 && (
-              <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                No minor suggestions available.
-              </p>
-            )}
-            {smartMinorSuggestions.length > 0 && (
-              <div className="space-y-2">
-                {smartMinorSuggestions.map((suggestion) => (
-                  (() => {
-                    const needCount = Math.max(0, Number(suggestion.remaining_count ?? suggestion.remaining_courses.length ?? 0));
-                    const estimatedTotal = Math.max(3, needCount + 1);
-                    const doneCount = Math.max(0, estimatedTotal - needCount);
-                    const isOpen = expandedSmartMinor === suggestion.minor;
-                    const remainingItems = (suggestion.remaining_courses ?? []).slice(0, 4);
-                    const creditImpact = needCount * 3;
-
-                    return (
-                      <div
-                        key={suggestion.minor}
-                        className="rounded-xl border"
-                        style={{
-                          borderColor: isOpen ? 'var(--academic-gold)' : 'var(--neutral-border)',
-                          background: 'var(--white)'
-                        }}
-                      >
-                        <button
-                          type="button"
-                          className="w-full p-3 text-left"
-                          onClick={() => setExpandedSmartMinor(prev => (prev === suggestion.minor ? null : suggestion.minor))}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold" style={{ color: 'var(--navy-dark)' }}>
-                                {suggestion.minor}
-                              </span>
-                              <span
-                                className="px-1.5 py-0.5 rounded text-xs font-semibold"
-                                style={{ color: 'var(--black)' }}
-                              >
-                                {needCount}
-                              </span>
-                            </div>
-                            {isOpen ? (
-                              <ChevronUp className="w-4 h-4" style={{ color: 'var(--neutral-dark)' }} />
-                            ) : (
-                              <ChevronDown className="w-4 h-4" style={{ color: 'var(--neutral-dark)' }} />
-                            )}
-                          </div>
-                          <div className="text-sm mt-1" style={{ color: 'var(--neutral-dark)' }}>
-                            +{creditImpact} credits
-                          </div>
-                          <div className="mt-2 flex items-center justify-end">
-                            <span className="text-xs font-medium" style={{ color: 'var(--navy-dark)' }}>
-                              {doneCount}/{estimatedTotal}
-                            </span>
-                          </div>
-                        </button>
-
-                        {isOpen && (
-                          <div className="px-3 pb-3 pt-0 border-t" style={{ borderColor: 'var(--neutral-border)' }}>
-                            <div
-                              className="mt-2 p-2 rounded text-sm"
-                              style={{ background: 'var(--neutral-cream)', color: 'var(--navy-dark)' }}
-                            >
-                              {suggestion.why}
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 mt-2">
-                              <div>
-                                <div className="text-sm font-semibold flex items-center gap-1" style={{ color: '#10B981' }}>
-                                  <Check className="w-4 h-4" />
-                                  Done ({doneCount})
-                                </div>
-                                <div
-                                  className="mt-1 p-2 rounded text-xs"
-                                  style={{ background: 'var(--neutral-gray)', color: 'var(--neutral-dark)' }}
-                                >
-                                  Completed items are tracked automatically from your plan and transcript.
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--academic-gold)' }}>
-                                  Need ({needCount})
-                                </div>
-                                <div className="mt-1 space-y-1">
-                                  {remainingItems.map((courseCode, index) => (
-                                    <div
-                                      key={`${suggestion.minor}:${courseCode}:${index}`}
-                                      className="px-2 py-1 rounded text-xs border"
-                                      style={{ borderColor: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
-                                    >
-                                      {courseCode}
-                                    </div>
-                                  ))}
-                                  {remainingItems.length === 0 && (
-                                    <div className="text-xs" style={{ color: 'var(--neutral-dark)' }}>
-                                      No missing courses listed.
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()
-                ))}
-              </div>
-            )}
-
-            {(genEdCategoryNeeds.length > 0 || !!plan) && (
-              <div
-                className="p-3 rounded-lg border mt-4"
-                style={{ borderColor: 'var(--neutral-border)', background: 'var(--neutral-cream)' }}
-              >
-                <div className="font-semibold" style={{ color: 'var(--navy-dark)' }}>
-                  GenEd Categories
-                </div>
-                <div className="mt-2 space-y-2">
-                  {genEdCategoryNeeds.map((entry) => (
-                    <div key={entry.label} className="flex items-center justify-between gap-3">
-                      <span className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                        {entry.label}
-                      </span>
-                      <span
-                        className="px-2 py-0.5 rounded text-xs font-medium"
-                        style={
-                          entry.need === 0
-                            ? { background: '#D7F4E6', color: '#0B6E4F' }
-                            : { background: '#FCE8B2', color: '#6A4B00' }
-                        }
-                      >
-                        {entry.need === 0 ? 'Satisfied' : `Need ${entry.need}`}
-                      </span>
-                    </div>
-                  ))}
-                  <div key="wic-requirement" className="flex items-center justify-between gap-3">
-                    <span className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                      Writing Intensive Courses (WICs) ({wicRequirementStatus.completed}/{wicRequirementStatus.required})
-                    </span>
-                    <span
-                      className="px-2 py-0.5 rounded text-xs font-medium"
-                      style={
-                        wicRequirementStatus.need === 0
-                          ? { background: '#D7F4E6', color: '#0B6E4F' }
-                          : { background: '#FCE8B2', color: '#6A4B00' }
-                      }
-                    >
-                      {wicRequirementStatus.need === 0 ? 'Satisfied' : `Need ${wicRequirementStatus.need}`}
-                    </span>
-                  </div>
-                </div>
+            {activeTab === 'requirements' && (
+              <div className="tab-panel advisor-tab-pad" role="tabpanel" id="panel-requirements" aria-labelledby="tab-requirements">
+                <RequirementsTab
+                  electiveRequirements={electiveRequirementStatus}
+                  progress={progress}
+                  totalCredits={totalCredits}
+                  catalogYear={catalog.catalog_year ?? '2025-26'}
+                  genEdNeeds={genEdCategoryNeeds}
+                  wic={wicRequirementStatus}
+                  concentrationAudit={plan?.business_concentration_audit ?? null}
+                  minorSuggestions={smartMinorSuggestions}
+                />
               </div>
             )}
           </div>
-
-          <ProgressDashboard
-            progress={progress}
-            totalCredits={totalCredits}
-            catalogYear={catalog.catalog_year ?? '2025-26'}
-          />
         </div>
-      </div>
+      </main>
       {loading && plan && (
         <div
           className="plan-update-overlay"
@@ -7758,21 +7075,7 @@ export function MainAdvisorScreen({
         </div>
       )}
       {pendingSwapSourceCourse && (
-        <div
-          style={{
-            position: "fixed",
-            right: "16px",
-            bottom: "16px",
-            zIndex: 1050,
-            width: "min(460px, calc(100vw - 32px))",
-            background: "var(--neutral-cream)",
-            border: "1px solid var(--neutral-border)",
-            borderRadius: "10px",
-            padding: "10px 12px",
-            boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
-            color: "var(--navy-dark)",
-          }}
-        >
+        <div className="floating-banner" role="status">
           <div className="text-sm">
             Move course mode: selected <b>{pendingSwapSourceCourse.code}</b> in{" "}
             <b>{pendingSwapSourceCourse.semester}</b>. Click <b>Move course</b> on another planned course to swap.
@@ -7780,8 +7083,7 @@ export function MainAdvisorScreen({
           <div className="mt-2">
             <button
               type="button"
-              className="text-xs px-2 py-1 rounded border"
-              style={{ borderColor: "var(--neutral-border)", color: "var(--navy-dark)", background: "var(--white)" }}
+              className="btn btn-outline btn-sm"
               onClick={() => {
                 setPendingSwapSourceInstanceId(null);
                 setMoveCourseWarning(null);

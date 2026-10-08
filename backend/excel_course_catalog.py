@@ -141,16 +141,13 @@ def _parse_numeric(value: object) -> Optional[float]:
 
 
 def _credits_from_value_or_notes(credits_value: object, notes_value: object) -> Optional[int]:
+    """A positive Credits cell wins; otherwise an explicit "Credits: N CR" note, which may be 0 (labs, recitations)."""
     parsed = _parse_numeric(credits_value)
-    if parsed is None:
-        notes = _raw_cell(notes_value)
-        match = _CREDITS_RE.search(notes)
-        if match:
-            parsed = float(match.group(1))
     if parsed is None or parsed <= 0:
+        match = _CREDITS_RE.search(_raw_cell(notes_value))
+        parsed = float(match.group(1)) if match else None
+    if parsed is None or parsed < 0:
         return None
-    if float(parsed).is_integer():
-        return int(parsed)
     return int(round(parsed))
 
 
@@ -333,13 +330,9 @@ def _normalize_course_from_payload(raw_course: Dict[str, Any]) -> Optional[Dict[
 
     credits_raw = raw_course.get("credits")
     credits = None
-    if isinstance(credits_raw, bool):
-        credits = None
-    elif isinstance(credits_raw, (int, float)) and credits_raw > 0:
-        credits = int(round(float(credits_raw)))
-    else:
+    if not isinstance(credits_raw, bool):
         parsed_credits = _parse_numeric(credits_raw)
-        if parsed_credits is not None and parsed_credits > 0:
+        if parsed_credits is not None and parsed_credits >= 0:
             credits = int(round(parsed_credits))
 
     area_of_study_tags = [

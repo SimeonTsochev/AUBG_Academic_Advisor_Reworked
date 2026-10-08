@@ -71,3 +71,30 @@ export function resolveActiveAttempts(attempts: CourseAttemptLike[]): ActiveAtte
 
   return { activeInstanceIds, replacedInstanceIds };
 }
+
+export type FailedAttempt = { code: string; grade: string | null; term: string | null };
+
+/** Snapshot data is untrusted JSON: keep only well-formed failed attempts, keyed by normalized code. */
+export function normalizeFailedCourses(value: unknown): FailedAttempt[] {
+  if (!Array.isArray(value)) return [];
+  const byCode = new Map<string, FailedAttempt>();
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const entry = raw as Record<string, unknown>;
+    const code = typeof entry.code === 'string' ? normalizeCode(entry.code) : '';
+    if (!code) continue;
+    byCode.set(code, {
+      code,
+      grade: typeof entry.grade === 'string' && entry.grade.trim() ? entry.grade.trim().toUpperCase() : null,
+      term: typeof entry.term === 'string' && entry.term.trim() ? entry.term.trim() : null,
+    });
+  }
+  return Array.from(byCode.values());
+}
+
+/** "Retake: not passed in Fall 2025 (grade F)." for a course the plan schedules again. */
+export function describeFailedAttempt(attempt: FailedAttempt): string {
+  const when = attempt.term ? ` in ${attempt.term}` : '';
+  const grade = attempt.grade ? ` (grade ${attempt.grade})` : '';
+  return `Retake: not passed${when}${grade}.`;
+}

@@ -12,7 +12,8 @@ import {
   type ProgramSnapshotSwappedElective,
   type UploadCatalogResponse,
 } from './api';
-import type { ManualCreditEntry, RetakeEntry } from './types';
+import type { FailedCourse, ManualCreditEntry, RetakeEntry } from './types';
+import { normalizeFailedCourses } from './utils/retakes';
 import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from './constants/academic';
 
 type Screen = 'welcome' | 'setup' | 'advisor';
@@ -24,6 +25,7 @@ interface AcademicSelection {
   economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
   completedCourses: string[];
   inProgressCourses: string[];
+  failedCourses: FailedCourse[];
   manualCredits: ManualCreditEntry[];
   inProgressOverrides?: Record<string, string>;
   completedOverrides?: Record<string, string>;
@@ -243,6 +245,7 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
     economicsIntermediateChoice,
     completedCourses: toStringArray(raw.completedCourses),
     inProgressCourses: toStringArray(raw.inProgressCourses),
+    failedCourses: normalizeFailedCourses(raw.failedCourses),
     manualCredits: normalizeManualCredits(raw.manualCredits),
     completedOverrides: toStringMap(raw.completedOverrides),
     inProgressOverrides: toStringMap(raw.inProgressOverrides),
@@ -289,6 +292,7 @@ export default function App() {
     economicsIntermediateChoice: null,
     completedCourses: [],
     inProgressCourses: [],
+    failedCourses: [],
     manualCredits: [],
     inProgressOverrides: {},
     completedOverrides: {},
@@ -341,6 +345,7 @@ export default function App() {
           economicsIntermediateChoice: normalized.economicsIntermediateChoice ?? null,
           completedCourses: normalized.completedCourses,
           inProgressCourses: normalized.inProgressCourses,
+          failedCourses: normalized.failedCourses ?? [],
           manualCredits: normalized.manualCredits,
           inProgressOverrides: normalized.inProgressOverrides,
           completedOverrides: normalized.completedOverrides,

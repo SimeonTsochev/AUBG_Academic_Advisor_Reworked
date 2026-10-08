@@ -30,6 +30,13 @@ export interface ManualCreditEntry {
   note?: string;
 }
 
+/** A transcript course whose latest attempt earned no credit (F, W, WF, U, NP, NR, I). */
+export interface FailedCourse {
+  code: string;
+  grade: string | null;
+  term: string | null;
+}
+
 export interface RetakeEntry {
   instance_id: string;
   code: string;

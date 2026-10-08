@@ -90,16 +90,14 @@ export function PrereqConfirmDialog({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          className="px-3 py-2 rounded-lg text-sm font-medium"
-          style={{ background: 'var(--academic-gold)', color: 'var(--navy-dark)' }}
+          className="btn btn-primary btn-sm"
           onClick={onConfirm}
         >
           Confirm
         </button>
         <button
           type="button"
-          className="px-3 py-2 rounded-lg text-sm font-medium border"
-          style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
+          className="btn btn-outline btn-sm"
           onClick={onCancel}
         >
           Cancel

@@ -151,5 +151,36 @@
     "rules": {}
   },
   "majors": {},
-  "minors": {}
+  "minors": {
+    "Economics": {
+      "source": "AY 2025-26 catalog p.118: required ECO 1001, ECO 1002, and ECO 3001 or ECO 3002; the PDF parser splits the 'or' line into a required ECO 3001 plus a one-course ECO 3002 choice.",
+      "required_courses": [
+        "ECO 1001",
+        "ECO 1002"
+      ],
+      "elective_requirements": [
+        {
+          "id": "economics-intermediate",
+          "label": "Program Choice",
+          "allowed_courses": [
+            "ECO 3001",
+            "ECO 3002"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "is_total": false,
+          "rule_text": "ECO 3001 Intermediate Microeconomics or ECO 3002 Intermediate Macroeconomics"
+        },
+        {
+          "allowed_courses": [],
+          "courses_required": null,
+          "credits_required": 9,
+          "id": "economics-elective-2",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (9 credit hours) Any other ECO courses."
+        }
+      ]
+    }
+  }
 }

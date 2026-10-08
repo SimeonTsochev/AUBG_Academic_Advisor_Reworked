@@ -22,8 +22,7 @@ export function HowItWorksModal({ onClose }: HowItWorksModalProps) {
             <h2>How It Works</h2>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg transition-all hover:bg-gray-100"
-              style={{ color: 'var(--neutral-dark)' }}
+              className="btn btn-ghost btn-icon"
             >
               <X className="w-6 h-6" />
             </button>
@@ -126,11 +125,7 @@ export function HowItWorksModal({ onClose }: HowItWorksModalProps) {
           {/* CTA */}
           <button
             onClick={onClose}
-            className="w-full mt-6 px-6 py-4 rounded-lg transition-all hover:shadow-lg"
-            style={{
-              backgroundColor: 'var(--navy-blue)',
-              color: 'var(--white)'
-            }}
+            className="btn btn-primary btn-lg btn-block mt-6"
           >
             Get Started
           </button>

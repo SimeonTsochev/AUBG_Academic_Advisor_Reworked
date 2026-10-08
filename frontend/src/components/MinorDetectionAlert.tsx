@@ -69,23 +69,14 @@ export function MinorDetectionAlert({ suggestion, onAddMinor, onIgnore }: MinorD
           <div className="flex flex-wrap gap-3">
             <button
               onClick={onAddMinor}
-              className="px-5 py-2.5 rounded-lg flex items-center gap-2 transition-all hover:shadow-md"
-              style={{
-                backgroundColor: 'var(--navy-blue)',
-                color: 'var(--white)'
-              }}
+              className="btn btn-primary"
             >
               <Plus className="w-4 h-4" />
               Add Minor to My Plan
             </button>
             <button
               onClick={onIgnore}
-              className="px-5 py-2.5 rounded-lg flex items-center gap-2 transition-all border-2"
-              style={{
-                backgroundColor: 'var(--white)',
-                color: 'var(--neutral-dark)',
-                borderColor: 'var(--neutral-border)'
-              }}
+              className="btn btn-outline"
             >
               <X className="w-4 h-4" />
               Ignore for Now

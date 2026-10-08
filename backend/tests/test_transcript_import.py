@@ -58,6 +58,69 @@ class TranscriptImportTests(IsolatedTestCase):
         self.assertEqual(parsed[1].term, "Spring 2026")
         self.assertEqual(parsed[1].raw_title, "Academic Writing II")
 
+    def test_failing_grades_mark_the_course_failed_so_it_is_not_completed(self):
+        parsed = parse_transcript_lines(
+            [
+                TranscriptLine(page_number=1, text="Fall 2025"),
+                TranscriptLine(page_number=1, text="MAT-1003 Calculus I 3.00 F"),
+                TranscriptLine(page_number=1, text="ECO-1001 Principles of Microeconomics 3.00 B+"),
+                TranscriptLine(page_number=1, text="BUS-1001 Management in a Global Environment 0.00 W"),
+                TranscriptLine(page_number=1, text="ENG-1001 Academic Writing I"),
+                TranscriptLine(page_number=1, text="WF"),
+                TranscriptLine(page_number=1, text="COS-1020 C++ Programming 3.00 I"),
+                # The term-totals line re-stamps the term on every course above; the grades must survive it.
+                TranscriptLine(page_number=1, text="Term Fall 2025 Totals"),
+            ]
+        )
+        by_code = {course.normalized_code: course for course in parsed}
+        self.assertEqual((by_code["MAT 1003"].status, by_code["MAT 1003"].grade), ("failed", "F"))
+        self.assertEqual((by_code["ECO 1001"].status, by_code["ECO 1001"].grade), ("completed", "B+"))
+        self.assertEqual((by_code["BUS 1001"].status, by_code["BUS 1001"].grade), ("failed", "W"))
+        self.assertEqual((by_code["ENG 1001"].status, by_code["ENG 1001"].grade), ("failed", "WF"))
+        self.assertEqual((by_code["COS 1020"].status, by_code["COS 1020"].grade), ("failed", "I"))
+        self.assertEqual(by_code["MAT 1003"].raw_title, "Calculus I")
+
+    def test_a_roman_numeral_title_is_not_read_as_an_incomplete_grade(self):
+        parsed = parse_transcript_lines(
+            [
+                TranscriptLine(page_number=1, text="Fall 2025"),
+                TranscriptLine(page_number=1, text="MAT-1003 Calculus I"),
+            ]
+        )
+        self.assertEqual((parsed[0].status, parsed[0].grade), ("completed", None))
+
+    def test_a_passed_retake_replaces_the_failed_attempt(self):
+        parsed = parse_transcript_lines(
+            [
+                TranscriptLine(page_number=1, text="Fall 2025"),
+                TranscriptLine(page_number=1, text="MAT-1003 Calculus I 3.00 F"),
+                TranscriptLine(page_number=1, text="Term Fall 2025 Totals"),
+                TranscriptLine(page_number=1, text="Spring 2026"),
+                TranscriptLine(page_number=1, text="MAT-1003 Calculus I 3.00 B"),
+            ]
+        )
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual((parsed[0].status, parsed[0].grade, parsed[0].term), ("completed", "B", "Spring 2026"))
+
+    def test_failed_courses_are_returned_separately(self):
+        response = build_transcript_import_response(
+            [
+                ParsedTranscriptCourse(
+                    raw_code="MAT-1003",
+                    normalized_code="MAT 1003",
+                    raw_title="Calculus I",
+                    status="failed",
+                    term="Fall 2025",
+                    page_number=1,
+                    text_confidence=1.0,
+                    grade="F",
+                )
+            ]
+        )
+        self.assertEqual(response["completed"], [])
+        self.assertEqual(response["failed"][0]["matched_code"], "MAT 1003")
+        self.assertEqual(response["failed"][0]["grade"], "F")
+
     def test_build_transcript_import_response_keeps_unmatched_rows_for_review(self):
         response = build_transcript_import_response(
             [

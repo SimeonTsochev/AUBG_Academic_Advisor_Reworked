@@ -5,6 +5,10 @@
   import App from "./App";
   import "./index.css";
   import "./styles/globals.css";
+  import "./styles/components.css";
+  import "./styles/plan.css";
+  import "./styles/advisor.css";
+  import "./styles/onboarding.css";
 
 createRoot(document.getElementById("root")!).render(
   <>

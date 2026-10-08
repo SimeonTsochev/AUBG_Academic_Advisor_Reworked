@@ -27,17 +27,12 @@ export function DisclaimerModal({ onClose, onConfirm }: DisclaimerModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[1200] flex items-center justify-center p-6"
-      style={{ backgroundColor: 'rgba(15, 30, 58, 0.42)' }}
+      className="modal-overlay"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl border shadow-2xl"
-        style={{
-          backgroundColor: 'var(--white)',
-          borderColor: 'var(--neutral-border)',
-          boxShadow: '0 24px 48px rgba(15, 30, 58, 0.24)',
-        }}
+        className="modal"
+        style={{ width: 'min(100%, 42rem)' }}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -95,12 +90,7 @@ export function DisclaimerModal({ onClose, onConfirm }: DisclaimerModalProps) {
               type="button"
               onClick={onConfirm}
               disabled={!accepted}
-              className="px-6 py-3 rounded-xl font-semibold transition-all"
-              style={{
-                backgroundColor: accepted ? 'var(--academic-gold)' : 'var(--neutral-border)',
-                color: accepted ? 'var(--navy-dark)' : 'var(--neutral-dark)',
-                cursor: accepted ? 'pointer' : 'not-allowed',
-              }}
+              className="btn btn-primary btn-lg btn-forward"
             >
               Continue to Plan
             </button>

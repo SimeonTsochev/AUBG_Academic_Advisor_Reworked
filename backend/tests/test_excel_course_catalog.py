@@ -55,6 +55,23 @@ class ExcelCourseCatalogTests(IsolatedTestCase):
         finally:
             path.unlink(missing_ok=True)
 
+    def test_explicit_zero_credit_note_is_kept_and_missing_credits_stay_unknown(self):
+        path = _write_xlsx(
+            headers=["Department", "Course", "Label", "Area of Study", "Course Notes", "term"],
+            rows=[
+                ["PHY", "1011", "PHY 1010 Lab", "Scientific Investigation", "Credits: 0 CR / 0 ECTS.", "Fall 2026"],
+                ["PHY", "1010", "Physics I", "Scientific Investigation", "Credits: 4 CR / 8 ECTS.", "Fall 2026"],
+                ["BUS", "4498", "Women in Leadership", "", "", "Fall 2026"],
+            ],
+        )
+        try:
+            load_course_catalog(path)
+            self.assertEqual(get_course("PHY 1011")["credits"], 0)
+            self.assertEqual(get_course("PHY 1010")["credits"], 4)
+            self.assertIsNone(get_course("BUS 4498")["credits"])
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_artifact_payload_normalizes_excel_escape_sequences(self):
         load_course_catalog_from_data(
             {

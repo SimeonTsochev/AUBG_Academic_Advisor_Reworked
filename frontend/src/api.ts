@@ -1,4 +1,4 @@
-import type { ManualCreditEntry, RetakeEntry } from "./types";
+import type { FailedCourse, ManualCreditEntry, RetakeEntry } from "./types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -83,16 +83,33 @@ export interface TranscriptImportCourse {
   matched_code?: string | null;
   title?: string | null;
   raw_title?: string | null;
-  status: "completed" | "in_progress";
+  status: "completed" | "in_progress" | "failed";
+  /** Final grade read from the transcript row, e.g. "B+" or "F". */
+  grade?: string | null;
   term?: string | null;
   confidence: number;
   matched_confidently: boolean;
   match_candidates: TranscriptImportMatchCandidate[];
 }
 
+/** Elective credits (or courses) a program already has from completed and planned courses. */
+export interface ElectiveProgress {
+  program: string;
+  program_type: "major" | "minor";
+  credits_required?: number | null;
+  courses_required?: number | null;
+  credits_counted: number;
+  remaining: number;
+  unit: "credits" | "courses";
+  rule_text: string;
+  courses: { code: string; credits: number; completed: boolean }[];
+}
+
 export interface TranscriptImportResponse {
   completed: TranscriptImportCourse[];
   in_progress: TranscriptImportCourse[];
+  /** Latest attempt not passed (F, W, WF, U, NP, NR, I): retaken by the plan when still required. */
+  failed: TranscriptImportCourse[];
   unmatched: TranscriptImportCourse[];
   warnings: string[];
 }
@@ -260,6 +277,7 @@ export interface ProgramSnapshotPayload {
   economicsIntermediateChoice?: "ECO 3001" | "ECO 3002" | null;
   completedCourses: string[];
   inProgressCourses: string[];
+  failedCourses?: FailedCourse[];
   manualCredits: ManualCreditEntry[];
   completedOverrides: Record<string, string>;
   inProgressOverrides: Record<string, string>;
@@ -298,6 +316,8 @@ export interface GeneratePlanRequest {
   completed_courses: string[];
   manual_credits?: ManualCreditEntry[];
   retake_courses?: string[];
+  /** The student's pick for a "choose one" requirement, e.g. ECO 3002 for the Economics minor. */
+  preferred_courses?: string[];
   in_progress_courses?: string[];
   in_progress_terms?: Record<string, string>;
   current_term_label?: string | null;
@@ -406,6 +426,7 @@ export interface GeneratePlanResponse {
     rule_text?: string;
     is_total?: boolean;
   }[];
+  elective_progress?: ElectiveProgress[];
   business_concentration_audit?: {
     selected?: string;
     required_courses?: {

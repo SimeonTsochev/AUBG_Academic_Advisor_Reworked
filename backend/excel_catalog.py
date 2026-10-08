@@ -254,6 +254,13 @@ def _tag_has_words(tag: str, *needles: str) -> bool:
     return all(n.lower() in t for n in needles)
 
 
+def is_program_elective_tag(tag: str, program: str) -> bool:
+    """True when an Excel area-of-study tag marks an elective of `program`, e.g. "ECO Major Elective"."""
+    return _tag_has_words(tag, "elective") and any(
+        _tag_starts_with_prefix(tag, prefix) for prefix in PROGRAM_TAG_ALIASES.get(program, [])
+    )
+
+
 def get_recommended_electives(
     excel_catalog: Dict[str, object],
     selected_majors: List[str],

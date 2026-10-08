@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveActiveAttempts } from "./retakes";
+import { describeFailedAttempt, normalizeFailedCourses, resolveActiveAttempts } from "./retakes";
 
 describe("resolveActiveAttempts", () => {
   it("keeps the latest attempt of each course active", () => {
@@ -27,5 +27,29 @@ describe("resolveActiveAttempts", () => {
     ]);
     expect([...activeInstanceIds]).toEqual(["idx:1"]);
     expect([...replacedInstanceIds]).toEqual(["idx:0"]);
+  });
+});
+
+describe('failed transcript attempts', () => {
+  it('keeps well-formed entries, normalizes codes and grades, and drops junk', () => {
+    expect(
+      normalizeFailedCourses([
+        { code: 'mat  1003', grade: 'f', term: 'Fall 2025' },
+        { code: 'BUS 1001', grade: '', term: null },
+        { code: 42 },
+        null,
+      ])
+    ).toEqual([
+      { code: 'MAT 1003', grade: 'F', term: 'Fall 2025' },
+      { code: 'BUS 1001', grade: null, term: null },
+    ]);
+    expect(normalizeFailedCourses('not an array')).toEqual([]);
+  });
+
+  it('explains why a course is in the plan again', () => {
+    expect(describeFailedAttempt({ code: 'MAT 1003', grade: 'F', term: 'Fall 2025' })).toBe(
+      'Retake: not passed in Fall 2025 (grade F).'
+    );
+    expect(describeFailedAttempt({ code: 'MAT 1003', grade: null, term: null })).toBe('Retake: not passed.');
   });
 });

@@ -1261,8 +1261,9 @@ def _course_credits(catalog: Dict, code: str) -> int:
     policy_credits = _policy_course_credits(catalog, code)
     if policy_credits is not None:
         return policy_credits
+    # The Excel catalog records explicit 0-credit courses (labs, recitations); null means unknown.
     excel_credits = _excel_course_record(catalog, code).get("credits")
-    if isinstance(excel_credits, (int, float)) and excel_credits > 0:
+    if isinstance(excel_credits, (int, float)) and not isinstance(excel_credits, bool) and excel_credits >= 0:
         return int(excel_credits)
     meta = catalog.get("course_meta", {}).get(code, {})
     credits = meta.get("credits")
@@ -1276,6 +1277,9 @@ def _course_credits(catalog: Dict, code: str) -> int:
 
 
 def _course_gened_categories(catalog: Dict, code: str) -> List[str]:
+    # A 0-credit lab (PHY 1011) inherits its lecture's GenEd tag in Excel, but cannot fill a GenEd slot.
+    if _course_credits(catalog, code) == 0:
+        return []
     excel = _excel_course_record(catalog, code)
     excel_tags = _coerce_gened_labels(excel.get("gen_ed_tags"))
     if excel_tags:
@@ -2325,17 +2329,6 @@ def build_requirement_slots(
         fixed, choices = parse_requirements(data)
         fixed, choices = merge_program_choice_requirements(minor, data, fixed, choices)
 
-        # Economics minor special case from catalog:
-        # Required: ECO 1001, ECO 1002, and (ECO 3001 OR ECO 3002).
-        # If the parser/structure lists both ECO 3001 and ECO 3002 as fixed required,
-        # convert them into a single OR choice group so we don't schedule both.
-        if minor.strip().lower() == "economics":
-            or_group = {"ECO 3001", "ECO 3002"}
-            fixed_set = set(fixed)
-            if fixed_set & or_group:
-                fixed = [c for c in fixed if c not in or_group]
-                add_choice_group(sorted(or_group), 1, minor, "minor", "Economics minor: ECO 3001 OR ECO 3002")
-
         if _is_cs_minor(minor):
             for course in sorted(CS_MINOR_REQUIRED_COURSES):
                 normalized = _normalize_course_code(course)
@@ -2517,12 +2510,14 @@ def _pick_best_course(
     prefer_high_credits: bool,
     eligible_only: Set[str] | None = None,
     retake_courses: Set[str] | None = None,
+    preferred_courses: Set[str] | None = None,
 ) -> Tuple[str | None, Set[str]]:
     best_code = None
     best_slots: Set[str] = set()
     best_score = None
     catalog_courses = _planning_course_pool(catalog)
     retakes = set(retake_courses or set())
+    preferred = set(preferred_courses or set())
     candidates = sorted(catalog_courses)
     for code in candidates:
         if code in selected or (code in completed and code not in retakes):
@@ -2538,7 +2533,8 @@ def _pick_best_course(
         covers_gened = any(slots["by_id"][sid]["owner"] == "gened" for sid in chosen)
         multipurpose = 1 if (covers_program and covers_gened) else 0
         credit_score = _course_credits(catalog, code) if prefer_high_credits else 0
-        score = (len(chosen), multipurpose, credit_score)
+        # The student's own pick (e.g. ECO 3002 over ECO 3001) wins among courses that cover as many slots.
+        score = (len(chosen), code in preferred, multipurpose, credit_score)
         if best_score is None or score > best_score:
             best_score = score
             best_code = code
@@ -2551,6 +2547,7 @@ def select_courses_for_slots(
     slots: Dict,
     completed_courses: Set[str],
     retake_courses: Set[str] | None = None,
+    preferred_courses: Set[str] | None = None,
 ) -> Dict:
     completed = set([_normalize_course_code(c) for c in completed_courses])
     planning_course_pool = _planning_course_pool(catalog)
@@ -2593,6 +2590,7 @@ def select_courses_for_slots(
             completed=completed,
             prefer_high_credits=True,
             retake_courses=retakes,
+            preferred_courses=preferred_courses,
         )
         if not code:
             break
@@ -2868,12 +2866,14 @@ def generate_semester_plan(
     fill_underloaded_terms: bool = True,
     occupied_credits_by_term: Dict[str, int] | None = None,
     credit_offset: int = 0,
+    preferred_courses: Set[str] | None = None,
 ) -> Dict:
     selection = select_courses_for_slots(
         catalog,
         slots,
         completed_courses,
         retake_courses=retake_courses,
+        preferred_courses=preferred_courses,
     )
     direct_reason_map = _build_direct_reason_map(slots, selection["course_assignments"])
     direct_required_all = set(selection.get("course_assignments", {}).keys())
@@ -3139,7 +3139,6 @@ def compute_minor_proximity_smart_details(
     Smart proximity includes:
     - fixed required courses
     - structured required choice groups (choose N of options)
-    - OR requirement fallback for known catalog quirks (Economics: ECO 3001 OR ECO 3002)
     - CS/COS minor group constraints (Foundations, Software Development, Advanced Topics)
     - elective requirement blocks (credits_required or courses_required)
 
@@ -3216,32 +3215,6 @@ def compute_minor_proximity_smart_details(
         required_used_for_progress |= (taken & cs_required)
         if not cs_required:
             logging.warning("CS minor key '%s' matched but COS 1020 is missing from catalog courses.", minor_name)
-
-    # Economics minor fallback: ECO 3001 OR ECO 3002 counts as ONE requirement.
-    if _norm_minor_name(minor_name) == "economics":
-        econ_required_core = {"ECO 1001", "ECO 1002"} & catalog_courses
-        econ_or_group = {"ECO 3001", "ECO 3002"} & catalog_courses
-        required_set |= econ_required_core
-        remaining_required |= econ_required_core
-        required_exclusions |= econ_required_core
-        required_exclusions |= econ_or_group
-        required_used_for_progress |= (taken & econ_required_core)
-        if len(econ_or_group) >= 2:
-            has_econ_choice_group = any(
-                econ_or_group <= {
-                    _normalize_course_code(code)
-                    for code in (group.get("courses", []) or [])
-                    if isinstance(code, str)
-                }
-                for group in choice_groups
-            )
-            if not has_econ_choice_group:
-                choice_groups.append({
-                    "courses": sorted(econ_or_group),
-                    "count": 1,
-                    "label": "ECO 3001 / ECO 3002",
-                })
-            remaining_required -= econ_or_group
 
     missing_fixed = sorted(remaining_required - taken)
     remaining_items.extend(missing_fixed)
@@ -4998,6 +4971,8 @@ def compute_elective_recommendations(
         normalized_code = _normalize_course_code(code)
         if not normalized_code or normalized_code in taken or normalized_code not in catalog_courses:
             return
+        if _course_credits(catalog, normalized_code) == 0:
+            return  # a 0-credit internship or lab adds no elective credit
 
         entry = result_by_code.get(normalized_code)
         if entry is None:
@@ -5278,6 +5253,7 @@ def generate_plan(
     business_concentration: str | None = None,
     manual_credits: List[Dict[str, Any]] | None = None,
     retake_courses: Set[str] | List[str] | None = None,
+    preferred_courses: Set[str] | List[str] | None = None,
     max_credits_per_semester: int = 16,
     start_term_season: str | None = None,
     start_term_year: int | None = None,
@@ -5366,6 +5342,7 @@ def generate_plan(
         fill_underloaded_terms=fill_underloaded_terms,
         occupied_credits_by_term=occupied_credits_by_term,
         credit_offset=credit_offset,
+        preferred_courses={_normalize_course_code(c) for c in (preferred_courses or []) if isinstance(c, str)},
     )
 
     plan = semester_result["plan"]
@@ -5667,6 +5644,22 @@ def generate_plan(
     _apply_manual_credit_progress(category_progress, manual_credit_breakdown)
     total_completed_credits += total_manual_credits
 
+    from elective_progress import compute_elective_progress  # imports this module's helpers
+
+    elective_progress = compute_elective_progress(
+        catalog,
+        programs=[(name, "major") for name in majors] + [(name, "minor") for name in minors],
+        slots=slots,
+        completed=set(effective_completed_courses),
+        planned={
+            course["code"]
+            for term in semester_plan
+            for course in term.get("courses", [])
+            if not _is_free_elective(course.get("code") or "")
+        },
+        manual_major_elective_credits=manual_credit_breakdown.get("major_electives", {}),
+    )
+
     return {
         "majors": majors,
         "minors": minors,
@@ -5688,6 +5681,7 @@ def generate_plan(
         "elective_course_codes": elective_course_codes,
         "excel_elective_tags": excel_elective_tags,
         "elective_placeholders": elective_placeholders,
+        "elective_progress": elective_progress,
         "gened_discovery": {
             "case_studies_textual_analysis": case_studies,
         },

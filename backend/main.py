@@ -91,6 +91,7 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
         completed_courses=set(req.completed_courses),
         manual_credits=[entry.model_dump() for entry in req.manual_credits],
         retake_courses=set(req.retake_courses or []),
+        preferred_courses=set(req.preferred_courses),
         max_credits_per_semester=req.max_credits_per_semester,
         start_term_season=req.start_term_season,
         start_term_year=req.start_term_year,
@@ -197,7 +198,7 @@ def _catalog_course_meta_for_response(catalog: Dict[str, Any]) -> Dict[str, Dict
         credits = record.get("credits")
         # Same precedence as degree_engine._course_credits: a policy override beats the Excel value.
         policy_has_credits = "credits" in (policy_meta.get(code) or {})
-        if isinstance(credits, (int, float)) and credits > 0 and not policy_has_credits:
+        if isinstance(credits, (int, float)) and credits >= 0 and not policy_has_credits:
             entry["credits"] = int(credits)
 
         gen_ed_tags = record.get("gen_ed_tags")

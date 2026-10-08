@@ -91,11 +91,7 @@ export function ChatInterface({ messages, onSendMessage }: ChatInterfaceProps) {
           <button
             type="submit"
             disabled={!input.trim()}
-            className="px-6 py-3 rounded-lg flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              backgroundColor: 'var(--navy-blue)',
-              color: 'var(--white)'
-            }}
+            className="btn btn-primary btn-lg"
           >
             <Send className="w-5 h-5" />
           </button>
@@ -105,34 +101,19 @@ export function ChatInterface({ messages, onSendMessage }: ChatInterfaceProps) {
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             onClick={() => onSendMessage("Why is this course recommended?")}
-            className="px-3 py-2 rounded-md text-sm border transition-all hover:shadow-sm"
-            style={{
-              borderColor: 'var(--neutral-border)',
-              backgroundColor: 'var(--white)',
-              color: 'var(--neutral-dark)'
-            }}
+            className="btn btn-outline btn-sm"
           >
             Why is this course recommended?
           </button>
           <button
             onClick={() => onSendMessage("Can I graduate early?")}
-            className="px-3 py-2 rounded-md text-sm border transition-all hover:shadow-sm"
-            style={{
-              borderColor: 'var(--neutral-border)',
-              backgroundColor: 'var(--white)',
-              color: 'var(--neutral-dark)'
-            }}
+            className="btn btn-outline btn-sm"
           >
             Can I graduate early?
           </button>
           <button
             onClick={() => onSendMessage("What happens if I add a minor in Economics?")}
-            className="px-3 py-2 rounded-md text-sm border transition-all hover:shadow-sm"
-            style={{
-              borderColor: 'var(--neutral-border)',
-              backgroundColor: 'var(--white)',
-              color: 'var(--neutral-dark)'
-            }}
+            className="btn btn-outline btn-sm"
           >
             What if I add a minor?
           </button>

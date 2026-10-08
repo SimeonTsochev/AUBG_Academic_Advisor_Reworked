@@ -1,5 +1,5 @@
 import { ElectiveSuggestion } from '../types';
-import { Award, Info } from 'lucide-react';
+import { Award, Check, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 export interface ElectiveRecommendationFilter {
@@ -24,7 +24,6 @@ export function ElectiveRecommendationPanel({
   existingCodes,
   requirementFilters = []
 }: ElectiveRecommendationPanelProps) {
-  const [showTooltip, setShowTooltip] = useState<string | null>(null);
   const [selectedRequirement, setSelectedRequirement] = useState<string>('ALL');
   const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
   const tagMatchesFilter = (tag: string, filter: ElectiveRecommendationFilter) => {
@@ -98,41 +97,27 @@ export function ElectiveRecommendationPanel({
   }, [electives, requirementOptions]);
 
   return (
-    <div className="rounded-xl p-6 shadow-sm" style={{ backgroundColor: '#EAF4FF' }}>
-      <div className="flex items-center gap-3 mb-5">
-        <div
-          className="w-10 h-10 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: 'var(--academic-gold)' }}
-        >
-          <Award className="w-5 h-5" style={{ color: 'var(--white)' }} />
-        </div>
+    <section className="stack-4" aria-labelledby="recommended-electives-title">
+      <header className="flex items-center gap-3">
+        <span className="icon-tile" aria-hidden="true">
+          <Award />
+        </span>
         <div>
-          <h4>Recommended Electives</h4>
-          <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-            Optimized for your degree requirements
-          </p>
+          <h2 id="recommended-electives-title" className="section-title">Recommended electives</h2>
+          <p className="section-subtitle">Courses that count toward the elective credits your programs still need.</p>
         </div>
-      </div>
+      </header>
 
       {requirementOptions.length > 0 && (
-        <div className="mb-5 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by program">
           <button
             type="button"
             onClick={() => setSelectedRequirement('ALL')}
-            className="px-3 py-1.5 rounded-lg border text-sm font-medium"
-            style={{
-              background: activeRequirement === 'ALL' ? 'var(--academic-gold)' : 'var(--white)',
-              borderColor: activeRequirement === 'ALL' ? 'var(--academic-gold)' : 'var(--neutral-border)',
-              color: 'var(--navy-dark)'
-            }}
+            className={`chip filter-chip${activeRequirement === 'ALL' ? ' is-active' : ''}`}
+            aria-pressed={activeRequirement === 'ALL'}
           >
-            All selected programs
-            <span
-              className="text-xs"
-              style={{ color: 'var(--neutral-dark)', marginLeft: '0.5rem' }}
-            >
-              {electives.length}
-            </span>
+            All programs
+            <span className="filter-chip-count num">{electives.length}</span>
           </button>
           {requirementOptions.map((requirement) => {
             const isActive = activeRequirement === requirement.id;
@@ -141,137 +126,69 @@ export function ElectiveRecommendationPanel({
                 key={requirement.id}
                 type="button"
                 onClick={() => setSelectedRequirement(requirement.id)}
-                className="px-3 py-1.5 rounded-lg border text-sm font-medium"
-                style={{
-                  background: isActive ? 'var(--navy-blue)' : 'var(--white)',
-                  borderColor: isActive ? 'var(--navy-blue)' : 'var(--neutral-border)',
-                  color: isActive ? 'var(--white)' : 'var(--navy-dark)'
-                }}
+                className={`chip filter-chip${isActive ? ' is-active' : ''}`}
+                aria-pressed={isActive}
               >
                 {requirement.label}
-                <span
-                  className="text-xs"
-                  style={{ color: isActive ? 'var(--white)' : 'var(--neutral-dark)', marginLeft: '0.5rem' }}
-                >
-                  {requirementCounts.get(requirement.id) ?? 0}
-                </span>
+                <span className="filter-chip-count num">{requirementCounts.get(requirement.id) ?? 0}</span>
               </button>
             );
           })}
         </div>
       )}
 
-      <div className="space-y-3">
-        {filteredElectives.map((elective) => (
-          <div
-            key={elective.code}
-            className="p-4 rounded-lg border-2 transition-all hover:shadow-md cursor-pointer relative"
-            style={{
-              borderColor: 'var(--neutral-border)',
-              backgroundColor: 'var(--neutral-gray)'
-            }}
-            onMouseEnter={() => setShowTooltip(elective.code)}
-            onMouseLeave={() => setShowTooltip(null)}
-          >
-            <div className="flex items-start justify-between gap-3 mb-2">
-              <div className="flex-1">
-                <div className="flex items-baseline gap-2 mb-1">
-                  <span style={{ fontWeight: 600, color: 'var(--navy-dark)' }}>
-                    {elective.code}
-                  </span>
-                  <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--academic-gold)', color: 'var(--white)' }}>
-                    Rank #{rankByCode.get(elective.code) ?? 1}
-                  </span>
+      <div className="grid-2">
+        {filteredElectives.map((elective) => {
+          const inPlan = existingCodes?.has(elective.code) ?? false;
+          return (
+            <article key={elective.code} className="card card-interactive recommendation-card">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="course-code">{elective.code}</span>
+                    <span className="muted text-xs num">{elective.credits} cr</span>
+                    <span className="badge badge-gold num">#{rankByCode.get(elective.code) ?? 1}</span>
+                  </div>
+                  <p className="course-name">{elective.name}</p>
                 </div>
-                <p className="text-sm mb-2" style={{ color: 'var(--neutral-dark)' }}>
-                  {elective.name}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
-                  {elective.credits} cr
-                </span>
                 {onAdd && (
                   <button
                     type="button"
                     onClick={() => onAdd(elective.code)}
-                    disabled={existingCodes?.has(elective.code)}
-                    className="text-xs px-2 py-1 rounded border"
-                    style={{
-                      borderColor: 'var(--neutral-border)',
-                      color: 'var(--navy-dark)',
-                      background: existingCodes?.has(elective.code) ? 'var(--neutral-gray)' : 'var(--white)',
-                      cursor: existingCodes?.has(elective.code) ? 'not-allowed' : 'pointer',
-                      opacity: existingCodes?.has(elective.code) ? 0.6 : 1
-                    }}
-                    title={existingCodes?.has(elective.code) ? 'Already in plan' : 'Add to plan'}
+                    disabled={inPlan}
+                    className={`btn btn-sm ${inPlan ? 'btn-outline' : 'btn-primary'}`}
+                    title={inPlan ? 'Already in plan' : 'Add to plan'}
                   >
-                    {existingCodes?.has(elective.code) ? 'In plan' : 'Add'}
+                    {inPlan ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
+                    <span>{inPlan ? 'In plan' : 'Add'}</span>
                   </button>
                 )}
               </div>
-            </div>
 
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className="text-sm px-2 py-1 rounded"
-                style={{
-                  backgroundColor: 'var(--navy-blue)',
-                  color: 'var(--white)',
-                  fontWeight: 500
-                }}
-              >
-                Requirements satisfied: {elective.requirementsSatisfied}
-              </span>
-            </div>
+              <p className="course-reason">{elective.explanation}</p>
 
-            <div className="flex flex-wrap gap-2">
-              {elective.tags.map((tag, i) => {
-                const normalized = tag.toLowerCase();
-                const isWic = normalized.includes('writing intensive');
-                const isGenEd = normalized.includes('gen ed');
-                const background = isWic
-                  ? 'var(--navy-blue)'
-                  : isGenEd
-                    ? 'var(--academic-gold)'
-                    : 'var(--white)';
-                const color = isWic ? 'var(--white)' : 'var(--neutral-dark)';
-                return (
-                  <span
-                    key={i}
-                    className="px-2 py-1 rounded text-xs"
-                    style={{
-                      backgroundColor: background,
-                      color,
-                      border: background === 'var(--white)' ? '1px solid var(--neutral-border)' : 'none'
-                    }}
-                  >
-                    {tag}
-                  </span>
-                );
-              })}
-            </div>
-
-            {/* Explanation Tooltip */}
-            {showTooltip === elective.code && (
-              <div
-                className="absolute left-0 top-full mt-2 p-3 rounded-lg shadow-lg z-20"
-                style={{
-                  backgroundColor: 'var(--navy-dark)',
-                  color: 'var(--white)',
-                  width: '100%',
-                  maxWidth: '320px'
-                }}
-              >
-                <div className="flex items-start gap-2">
-                  <Info className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#EAF4FF' }} />
-                  <p style={{ fontSize: '0.875rem', color: '#EAF4FF' }}>{elective.explanation}</p>
-                </div>
+              <div className="flex flex-wrap gap-1">
+                <span className="badge badge-navy num">
+                  Counts toward {elective.requirementsSatisfied} requirement{elective.requirementsSatisfied === 1 ? '' : 's'}
+                </span>
+                {elective.tags.map((tag) => {
+                  const normalized = tag.toLowerCase();
+                  const tone = normalized.includes('writing intensive')
+                    ? 'badge-info'
+                    : normalized.includes('gen ed')
+                      ? 'badge-gold'
+                      : 'badge-neutral';
+                  return (
+                    <span key={tag} className={`badge ${tone}`}>
+                      {tag}
+                    </span>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        ))}
+            </article>
+          );
+        })}
       </div>
-    </div>
+    </section>
   );
 }

@@ -3,8 +3,17 @@ import { createPortal } from 'react-dom';
 import {
   searchCourses,
   type SearchCoursesContext,
+  type TranscriptImportCourse,
   type TranscriptImportMatchCandidate,
 } from '../api';
+
+export type TranscriptCourseStatus = TranscriptImportCourse['status'];
+
+const STATUS_LABELS: Record<TranscriptCourseStatus, string> = {
+  completed: 'Completed',
+  in_progress: 'In Progress',
+  failed: 'Not passed (retake)',
+};
 
 export interface TranscriptImportReviewEntry {
   reviewId: string;
@@ -12,7 +21,8 @@ export interface TranscriptImportReviewEntry {
   matchedCode: string | null;
   title: string | null;
   rawTitle: string | null;
-  status: 'completed' | 'in_progress';
+  status: TranscriptCourseStatus;
+  grade: string | null;
   term: string | null;
   confidence: number;
   matchedConfidently: boolean;
@@ -27,7 +37,7 @@ interface TranscriptImportReviewDialogProps {
   onCancel: () => void;
   onConfirm: () => void;
   onRemove: (reviewId: string) => void;
-  onUpdateStatus: (reviewId: string, nextStatus: 'completed' | 'in_progress') => void;
+  onUpdateStatus: (reviewId: string, nextStatus: TranscriptCourseStatus) => void;
   onUpdateMatch: (
     reviewId: string,
     nextMatch: {
@@ -176,6 +186,7 @@ function TranscriptMatchSelector({
 
 function TranscriptReviewSection({
   title,
+  description,
   entries,
   searchContext,
   onRemove,
@@ -183,6 +194,7 @@ function TranscriptReviewSection({
   onUpdateMatch,
 }: {
   title: string;
+  description?: string;
   entries: TranscriptImportReviewEntry[];
   searchContext: SearchCoursesContext;
   onRemove: (reviewId: string) => void;
@@ -197,6 +209,9 @@ function TranscriptReviewSection({
           {entries.length} detected
         </div>
       </div>
+      {description && (
+        <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>{description}</p>
+      )}
       {entries.length === 0 && (
         <div
           className="px-4 py-3 rounded-xl border text-sm"
@@ -206,7 +221,7 @@ function TranscriptReviewSection({
         </div>
       )}
       {entries.map((entry) => {
-        const statusLabel = entry.status === 'completed' ? 'Completed' : 'In Progress';
+        const statusLabel = STATUS_LABELS[entry.status];
         const titleText = entry.title ?? entry.rawTitle ?? entry.matchedCode ?? entry.rawCode;
         const needsReview = !entry.matchedCode;
         const matchLabel = needsReview
@@ -242,6 +257,11 @@ function TranscriptReviewSection({
                   >
                     {statusLabel}
                   </span>
+                  {entry.grade && (
+                    <span className={`badge ${entry.status === 'failed' ? 'badge-danger' : 'badge-neutral'}`}>
+                      Grade {entry.grade}
+                    </span>
+                  )}
                   {entry.term && (
                     <span
                       className="px-2 py-1 rounded-full border"
@@ -270,12 +290,13 @@ function TranscriptReviewSection({
               </label>
               <select
                 value={entry.status}
-                onChange={(event) => onUpdateStatus(entry.reviewId, event.target.value as 'completed' | 'in_progress')}
+                onChange={(event) => onUpdateStatus(entry.reviewId, event.target.value as TranscriptCourseStatus)}
                 className="w-full px-3 py-2 rounded-lg border text-sm"
                 style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)' }}
               >
-                <option value="completed">Completed</option>
-                <option value="in_progress">In Progress</option>
+                {(Object.keys(STATUS_LABELS) as TranscriptCourseStatus[]).map((status) => (
+                  <option key={status} value={status}>{STATUS_LABELS[status]}</option>
+                ))}
               </select>
               <div className="text-xs" style={{ color: 'var(--neutral-dark)' }}>
                 Change this if the transcript parser picked the wrong status.
@@ -314,6 +335,10 @@ export function TranscriptImportReviewDialog({
     () => entries.filter((entry) => entry.status === 'in_progress'),
     [entries]
   );
+  const failedEntries = useMemo(
+    () => entries.filter((entry) => entry.status === 'failed'),
+    [entries]
+  );
   const unresolvedCount = entries.filter((entry) => !entry.matchedCode).length;
 
   useEffect(() => {
@@ -340,33 +365,15 @@ export function TranscriptImportReviewDialog({
     <div
       onClick={onCancel}
       role="presentation"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1200,
-        backgroundColor: 'rgba(15, 30, 58, 0.42)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1rem',
-      }}
+      className="modal-overlay"
     >
       <div
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="transcript-import-title"
-        style={{
-          width: 'min(100%, 56rem)',
-          maxHeight: '90vh',
-          overflow: 'hidden',
-          borderRadius: '1rem',
-          border: '1px solid var(--neutral-border)',
-          background: 'var(--white)',
-          boxShadow: '0 24px 48px rgba(15, 30, 58, 0.24)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+        className="modal"
+        style={{ width: 'min(100%, 56rem)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
       >
         <div
           className="flex items-start justify-between gap-4"
@@ -384,8 +391,7 @@ export function TranscriptImportReviewDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="px-3 py-2 rounded-lg border text-sm"
-            style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)', color: 'var(--neutral-dark)' }}
+            className="btn btn-outline btn-sm"
           >
             Close
           </button>
@@ -438,6 +444,18 @@ export function TranscriptImportReviewDialog({
             onUpdateStatus={onUpdateStatus}
             onUpdateMatch={onUpdateMatch}
           />
+
+          {failedEntries.length > 0 && (
+            <TranscriptReviewSection
+              title="Not Passed: Retaken If Required"
+              description="These grades (F, W, WF, U, NP, NR, I) earn no credit. They are not counted as completed, so your plan schedules the course again when a requirement still needs it."
+              entries={failedEntries}
+              searchContext={searchContext}
+              onRemove={onRemove}
+              onUpdateStatus={onUpdateStatus}
+              onUpdateMatch={onUpdateMatch}
+            />
+          )}
         </div>
 
         <div
@@ -450,8 +468,7 @@ export function TranscriptImportReviewDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 rounded-lg border text-sm font-medium"
-            style={{ borderColor: 'var(--neutral-border)', background: 'var(--white)', color: 'var(--neutral-dark)' }}
+            className="btn btn-outline"
           >
             Cancel
           </button>
@@ -459,12 +476,7 @@ export function TranscriptImportReviewDialog({
             type="button"
             onClick={onConfirm}
             disabled={entries.length === 0 || unresolvedCount > 0}
-            className="px-4 py-2 rounded-lg text-sm font-semibold"
-            style={{
-              background: entries.length > 0 && unresolvedCount === 0 ? 'var(--academic-gold)' : 'var(--neutral-border)',
-              color: entries.length > 0 && unresolvedCount === 0 ? 'var(--navy-dark)' : 'var(--neutral-dark)',
-              cursor: entries.length > 0 && unresolvedCount === 0 ? 'pointer' : 'not-allowed',
-            }}
+            className="btn btn-primary"
           >
             Import Courses
           </button>

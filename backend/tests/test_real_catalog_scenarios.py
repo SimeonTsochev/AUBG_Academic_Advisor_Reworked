@@ -315,6 +315,31 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         self.assertEqual(_course_credits(self.catalog, "AUB 1000"), 0)
         self.assertEqual(_course_credits(self.catalog, "MAT 1001"), 0)
 
+    def test_zero_credit_labs_count_zero_and_fill_no_gened(self):
+        # The Excel notes say "Credits: 0 CR" for the physics labs; they used to fall back to 3 credits
+        # and, through their lecture's Scientific Investigation tag, could fill a GenEd slot.
+        for lab in ("PHY 1011", "PHY 1021"):
+            self.assertEqual(_course_credits(self.catalog, lab), 0)
+            self.assertEqual(degree_engine._course_gened_categories(self.catalog, lab), [])
+        self.assertEqual(_course_credits(self.catalog, "PHY 1010"), 4)
+        for scenario in self.scenarios:
+            planned = {c["code"] for t in scenario.result["semester_plan"] for c in t["courses"]}
+            self.assertFalse(planned & {"PHY 1011", "PHY 1021"}, scenario.label)
+
+    def test_economics_minor_plans_the_intermediate_course_the_student_picked(self):
+        # The minor needs ECO 3001 or ECO 3002. Picking ECO 3002 used to be sent as "remove ECO 3001",
+        # which left the choice empty and raised "Requirements not covered ... Minor: Economics (choice)".
+        programs = (["Business Administration", "Journalism and Mass Communication"], ["Economics"])
+        default = _plan(self.catalog, *programs, set())
+        self.assertIsNotNone(_term_of(default, "ECO 3001"))
+        self.assertIsNone(_term_of(default, "ECO 3002"))
+
+        picked = _plan(self.catalog, *programs, set(), preferred_courses={"ECO 3002"})
+        self.assertIsNotNone(_term_of(picked, "ECO 3002"))
+        self.assertIsNone(_term_of(picked, "ECO 3001"))
+        self.assertIsNone(_term_of(picked, "ECO 3000"))  # ECO 3001's prerequisite is not needed any more
+        self.assertFalse([e for e in picked["validation_errors"] if "not covered" in e], picked["validation_errors"])
+
     def test_a_chosen_elective_can_be_swapped_for_another(self):
         fresh = self._fresh("Computer Science")
         term, slot = next(
