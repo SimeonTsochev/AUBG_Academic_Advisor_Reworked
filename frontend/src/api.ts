@@ -323,12 +323,23 @@ export interface SemesterPlan {
   credits: number;
 }
 
+export interface CourseRequirement {
+  program?: string | null;
+  program_type: "major" | "minor" | "gened" | "foundation" | "free" | string;
+  kind: "required" | "choice" | "gened" | "elective" | string;
+  /** e.g. "Computer Science major: required course", "GenEd: Aesthetic Expression" */
+  label: string;
+}
+
 export interface PlanCourse {
   code: string;
   name: string;
   credits: number;
   tags: string[];
   satisfies: string[];
+  requirements?: CourseRequirement[];
+  /** Planned courses that list this one as a prerequisite. */
+  unlocks?: string[];
   excel_elective_tags?: string[];
   type: "PROGRAM" | "GENED" | "FREE" | "FOUNDATION" | "FREE_ELECTIVE";
   source_reason?: string;

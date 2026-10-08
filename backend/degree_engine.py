@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any, Dict, List, Set, Tuple
 import datetime
 import logging
@@ -58,15 +59,18 @@ GEN_ED_TAG_RE = re.compile(r"\bgen[\s-]?ed\b", re.IGNORECASE)
 SOURCE_REASON_MAJOR = "MAJOR_REQUIRED"
 SOURCE_REASON_MINOR = "MINOR_REQUIRED"
 SOURCE_REASON_GENED = "GENED_REQUIRED"
+SOURCE_REASON_FOUNDATION = "FOUNDATION_REQUIRED"
 SOURCE_REASON_PREREQ = "PREREQ_FOR_REQUIRED"
 SOURCE_REASON_FREE = "FREE_ELECTIVE_PLACEHOLDER"
 ALLOWED_SOURCE_REASONS = {
     SOURCE_REASON_MAJOR,
     SOURCE_REASON_MINOR,
     SOURCE_REASON_GENED,
+    SOURCE_REASON_FOUNDATION,
     SOURCE_REASON_PREREQ,
     SOURCE_REASON_FREE,
 }
+FREE_ELECTIVE_REQUIREMENT = {"program": None, "program_type": "free", "kind": "elective", "label": "Free elective"}
 
 INSTANCE_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "aubg-plan-instance-v1")
 
@@ -798,6 +802,8 @@ def _normalize_space(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+# Pure string functions on the hot path (hundreds of thousands of calls per plan), so memoized.
+@lru_cache(maxsize=8192)
 def _normalize_gened_label(label: str) -> str:
     cleaned = _normalize_space(label or "")
     if not cleaned:
@@ -808,17 +814,22 @@ def _normalize_gened_label(label: str) -> str:
 
 
 def _catalog_gened_lookup(catalog: Dict) -> Dict[str, str]:
-    lookup: Dict[str, str] = {}
+    """Normalized GenEd label -> catalog category name. The returned dict is shared; do not mutate."""
     gen_ed = catalog.get("gen_ed", {}) or {}
+    category_names: List[str] = []
     for source in (gen_ed.get("rules", {}), gen_ed.get("categories", {})):
-        if not isinstance(source, dict):
-            continue
-        for category in source.keys():
-            if not isinstance(category, str):
-                continue
-            normalized = _normalize_gened_label(category).lower()
-            if normalized and normalized not in lookup:
-                lookup[normalized] = category
+        if isinstance(source, dict):
+            category_names.extend(category for category in source.keys() if isinstance(category, str))
+    return _gened_lookup_for(tuple(category_names))
+
+
+@lru_cache(maxsize=64)
+def _gened_lookup_for(category_names: Tuple[str, ...]) -> Dict[str, str]:
+    lookup: Dict[str, str] = {}
+    for category in category_names:
+        normalized = _normalize_gened_label(category).lower()
+        if normalized and normalized not in lookup:
+            lookup[normalized] = category
     return lookup
 
 
@@ -1074,6 +1085,7 @@ def _apply_latest_attempt_credit_rule(
             if normalized_instance_id in replaced_ids:
                 course["credits"] = 0
                 course["satisfies"] = []
+                course["requirements"] = []
                 course["is_retake"] = True
                 if "Previous Attempt" not in clean_tags:
                     clean_tags.append("Previous Attempt")
@@ -2619,17 +2631,39 @@ def _build_direct_reason_map(slots: Dict, course_assignments: Dict[str, Set[str]
             and slots["by_id"][sid].get("program_type") == "minor"
             for sid in sids
         )
-        has_gened = any(
-            slots["by_id"][sid].get("owner") in {"gened", "foundation"}
-            for sid in sids
-        )
+        has_foundation = any(slots["by_id"][sid].get("owner") == "foundation" for sid in sids)
+        has_gened = any(slots["by_id"][sid].get("owner") == "gened" for sid in sids)
         if has_major:
             reasons[code] = SOURCE_REASON_MAJOR
         elif has_minor:
             reasons[code] = SOURCE_REASON_MINOR
+        elif has_foundation:
+            reasons[code] = SOURCE_REASON_FOUNDATION
         elif has_gened:
             reasons[code] = SOURCE_REASON_GENED
     return reasons
+
+
+def _requirement_entry(slot: Dict) -> Dict[str, Any]:
+    """What a requirement slot means to a student, e.g. 'Computer Science major: required course'."""
+    if slot.get("type") == "gened":
+        return {"program": None, "program_type": "gened", "kind": "gened", "label": f"GenEd: {slot.get('category')}"}
+    if slot.get("owner") == "foundation":
+        return {"program": None, "program_type": "foundation", "kind": "required", "label": "Foundation (first year)"}
+    program = slot.get("program") or ""
+    program_type = slot.get("program_type") or "program"
+    owner_label = f"{program} {program_type}".strip()
+    if slot.get("type") == "choice":
+        options = len(slot.get("courses") or [])
+        count = int(slot.get("count") or 1)
+        choice = "one" if count == 1 else str(count)
+        return {
+            "program": program,
+            "program_type": program_type,
+            "kind": "choice",
+            "label": f"{owner_label}: {choice} of {options} options",
+        }
+    return {"program": program, "program_type": program_type, "kind": "required", "label": f"{owner_label}: required course"}
 
 
 def _course_level(code: str) -> int:
@@ -3939,6 +3973,8 @@ def _build_course_output(
     course_type = "FREE"
     if source_reason in {SOURCE_REASON_MAJOR, SOURCE_REASON_MINOR}:
         course_type = "PROGRAM"
+    elif source_reason == SOURCE_REASON_FOUNDATION:
+        course_type = "FOUNDATION"
     elif source_reason == SOURCE_REASON_GENED:
         if any(slots["by_id"][sid]["owner"] == "foundation" for sid in satisfies_ids):
             course_type = "FOUNDATION"
@@ -3946,12 +3982,23 @@ def _build_course_output(
             course_type = "GENED"
     elif source_reason == SOURCE_REASON_PREREQ:
         course_type = "FREE"
+
+    # One entry per distinct requirement the course fills; `satisfies` keeps its coarse
+    # strings because the frontend parses them ('GenEd: ...').
+    requirements: List[Dict[str, Any]] = []
+    for sid in sorted(satisfies_ids):
+        entry = _requirement_entry(slots["by_id"][sid])
+        if entry not in requirements:
+            requirements.append(entry)
+    if not requirements and source_reason == SOURCE_REASON_FREE:
+        requirements.append(dict(FREE_ELECTIVE_REQUIREMENT))
     return {
         "code": code,
         "name": _course_name(catalog, code),
         "credits": _course_credits(catalog, code),
         "tags": _planned_course_tags(catalog, code),
         "satisfies": satisfies,
+        "requirements": requirements,
         "type": course_type,
         "source_reason": source_reason,
     }
@@ -4091,6 +4138,24 @@ def _term_availability_warnings(catalog: Dict, semester_plan: List[Dict]) -> Lis
                     message=f"{code} is not on the published {term.get('term')} schedule.",
                 ))
     return warnings
+
+
+def _annotate_unlocks(catalog: Dict, semester_plan: List[Dict]) -> None:
+    """Set course['unlocks'] to the planned courses that list it as a prerequisite."""
+    courses = [
+        course
+        for term in semester_plan
+        for course in term.get("courses", []) or []
+        if isinstance(course, dict) and isinstance(course.get("code"), str) and not _is_free_elective(course["code"])
+    ]
+    dependents: Dict[str, Set[str]] = {}
+    for course in courses:
+        for block in _course_prereq_blocks(catalog, course["code"]):
+            for prereq in _prereq_block_course_codes(block):
+                if prereq != course["code"]:
+                    dependents.setdefault(prereq, set()).add(course["code"])
+    for course in courses:
+        course["unlocks"] = sorted(dependents.get(course["code"], set()))
 
 
 def _foundation_timing_warnings(
@@ -5601,6 +5666,8 @@ def generate_plan(
         is_valid = False
         validation_errors_out = validation_errors
 
+    _annotate_unlocks(catalog, semester_plan)
+
     if excel_elective_tags:
         for term in semester_plan:
             for course in term.get("courses", []) or []:
@@ -6009,6 +6076,12 @@ def _apply_plan_overrides(
                     "credits": _course_credits(catalog, code),
                     "tags": _planned_course_tags(catalog, code),
                     "satisfies": [f"GenEd: {gen_ed_category}"],
+                    "requirements": [{
+                        "program": None,
+                        "program_type": "gened",
+                        "kind": "gened",
+                        "label": f"GenEd: {gen_ed_category}",
+                    }],
                     "type": "GENED",
                     "source_reason": SOURCE_REASON_GENED,
                     "instance_id": instance_id or _course_instance_id(term, code, "override"),

@@ -203,7 +203,6 @@ class RealCatalogScenarioTests(IsolatedTestCase):
                 planned = sum(term["credits"] for term in s.result["semester_plan"])
                 self.assertGreaterEqual(completed + planned, total_required)
 
-    @unittest.expectedFailure  # Plan step 2.9: courses carry no structured reason yet.
     def test_every_planned_course_states_why_it_is_there(self):
         for s in self.scenarios:
             with self.subTest(s.label):

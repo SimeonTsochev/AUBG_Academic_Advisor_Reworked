@@ -196,6 +196,7 @@ class PlanInvariantTests(IsolatedTestCase):
             "MAJOR_REQUIRED",
             "MINOR_REQUIRED",
             "GENED_REQUIRED",
+            "FOUNDATION_REQUIRED",
             "PREREQ_FOR_REQUIRED",
         }
 
@@ -216,7 +217,7 @@ class PlanInvariantTests(IsolatedTestCase):
                 direct_required |= set(catalog["minors"][m]["required_courses"])
             for term in plan["semester_plan"]:
                 for course in term["courses"]:
-                    if course.get("source_reason") == "GENED_REQUIRED":
+                    if course.get("source_reason") in {"GENED_REQUIRED", "FOUNDATION_REQUIRED"}:
                         direct_required.add(course.get("code"))
             completed = set(plan.get("completed_courses", []))
             prefer_set = set(direct_required) | completed

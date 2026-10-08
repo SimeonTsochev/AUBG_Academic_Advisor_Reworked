@@ -118,12 +118,23 @@ class PlanOverrides(BaseModel):
     locks: List[PlanOverrideLock] = Field(default_factory=list)
 
 
+class CourseRequirement(BaseModel):
+    """One requirement a planned course fills, e.g. label 'Computer Science major: required course'."""
+    program: Optional[str] = None
+    program_type: str  # "major" | "minor" | "gened" | "foundation" | "free"
+    kind: str  # "required" | "choice" | "gened" | "elective"
+    label: str
+
+
 class PlanCourse(BaseModel):
     code: str
     name: str
     credits: int
     tags: List[str] = Field(default_factory=list)
     satisfies: List[str] = Field(default_factory=list)
+    requirements: List[CourseRequirement] = Field(default_factory=list)
+    # Planned courses that list this one as a prerequisite.
+    unlocks: List[str] = Field(default_factory=list)
     excel_elective_tags: List[str] = Field(default_factory=list)
     type: str
     source_reason: str

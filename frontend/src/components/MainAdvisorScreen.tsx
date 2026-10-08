@@ -19,6 +19,7 @@ import type {
 } from '../api';
 import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
+import { describeCourseReason } from '../utils/courseReasons';
 import {
   fillSlotWithCourse,
   removeChosenElective,
@@ -2114,6 +2115,8 @@ export function MainAdvisorScreen({
           return true;
         }
 
+        // Program- and foundation-required courses (MAJOR/MINOR/FOUNDATION_REQUIRED) are always kept;
+        // only GenEd picks are trimmed to what each category needs.
         const isProgramRequired = Boolean(course.source_reason && course.source_reason !== 'GENED_REQUIRED');
         if (isProgramRequired) {
           normalizedCategories.forEach((category) => {
@@ -2888,7 +2891,7 @@ export function MainAdvisorScreen({
           status: isCompleted ? 'completed' : isInProgress ? 'in-progress' : 'remaining',
           prerequisites: getCoursePrereqItems(code),
           prereqText: meta?.prereq_text ?? null,
-          reason: course.satisfies?.join("; ") ?? plan?.course_reasons?.[code],
+          reason: describeCourseReason(course) ?? plan?.course_reasons?.[code],
           satisfies: course.satisfies,
           courseType: displayCourseType,
           sourceReason: course.source_reason,
