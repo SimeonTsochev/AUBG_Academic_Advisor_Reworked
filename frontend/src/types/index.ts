@@ -61,12 +61,6 @@ export interface Progress {
   total: number;
 }
 
-export interface ChatMessage {
-  role: 'assistant' | 'user';
-  content: string;
-  timestamp: Date;
-}
-
 export interface ElectiveSuggestion {
   code: string;
   name: string;

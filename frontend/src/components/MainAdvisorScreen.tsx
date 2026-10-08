@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpenCheck, CalendarRange, Info, ListChecks, Lock, MessageSquare, Sparkles, X } from 'lucide-react';
-import { ChatInterface } from './ChatInterface';
+import { BookOpenCheck, CalendarRange, Info, ListChecks, Sparkles, X } from 'lucide-react';
 import { SemesterPlanView } from './SemesterPlanView';
 import { ElectiveRecommendationPanel } from './ElectiveRecommendationPanel';
 import { PrereqConfirmDialog } from './PrereqConfirmDialog';
@@ -8,7 +7,7 @@ import { AdvisorHeader } from './advisor/AdvisorHeader';
 import { PlanAlerts } from './advisor/PlanAlerts';
 import { RequirementsTab } from './advisor/RequirementsTab';
 import { SummaryStrip } from './advisor/SummaryStrip';
-import type { ChatMessage, Course, Progress, ElectiveSuggestion, FailedCourse, ManualCreditEntry, RetakeEntry } from '../types';
+import type { Course, Progress, ElectiveSuggestion, FailedCourse, ManualCreditEntry, RetakeEntry } from '../types';
 import type {
   UploadCatalogResponse,
   GeneratePlanRequest,
@@ -38,7 +37,7 @@ import { MIN_CREDITS_PER_TERM } from '../constants/academic';
 
 const SNAPSHOT_STORAGE_DISABLED_SESSION_KEY = 'programSnapshotStorageDisabled';
 
-type AdvisorTab = 'plan' | 'requirements' | 'electives' | 'chat';
+type AdvisorTab = 'plan' | 'requirements' | 'electives';
 /** degree_engine.MAX_PLAN_TERMS */
 const BACKEND_MAX_PLAN_TERMS = 12;
 
@@ -231,8 +230,6 @@ export function MainAdvisorScreen({
   onBack,
 }: MainAdvisorScreenProps) {
   const SEMESTERS_PER_YEAR = 2;
-  const advisorChatLocked = true;
-  const advisorChatLockMessage = 'Advisor chat is temporarily locked while it is being updated.';
   const [activeTab, setActiveTab] = useState<AdvisorTab>('plan');
   const planAlertsRef = useRef<HTMLDivElement | null>(null);
   const [plan, setPlan] = useState<GeneratePlanResponse | null>(null);
@@ -439,7 +436,6 @@ export function MainAdvisorScreen({
     previousSwappedElectives: SwappedElectiveRecord[];
     previousRetakeEntries: RetakeEntry[];
   } | null>(null);
-  const suppressNextSummaryRef = useRef(false);
 
   const minCreditsPerTerm = MIN_CREDITS_PER_TERM;
   const createInstanceId = () =>
@@ -487,14 +483,6 @@ export function MainAdvisorScreen({
     }
   ) => {
     if (pendingAtomicAddRef.current) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Please wait for the previous add operation to finish.",
-          timestamp: new Date(),
-        },
-      ]);
       return false;
     }
 
@@ -605,14 +593,6 @@ export function MainAdvisorScreen({
     ];
     return next;
   }, [overrides, normalizedRetakeEntries]);
-
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: 'assistant',
-      content: "Upload processed. I'm generating your degree plan based on the official catalog rules...",
-      timestamp: new Date()
-    }
-  ]);
 
   const termIndex = (season: string, year: number) => year * 2 + (season === "Fall" ? 1 : 0);
   const termFromIndex = (idx: number) => {
@@ -2357,7 +2337,6 @@ export function MainAdvisorScreen({
       try {
         const resp = await generatePlan(planRequest);
         if (cancelled) return;
-        let postSuccessMessage: string | null = null;
         const pendingAtomicAdd = pendingAtomicAddRef.current;
         if (pendingAtomicAdd) {
           const addedInExpectedTerm = (resp.semester_plan ?? []).some(
@@ -2385,86 +2364,20 @@ export function MainAdvisorScreen({
               )
           );
           if (!addedInExpectedTerm) {
-            const availabilityWarning = (resp.warnings ?? []).find(
-              (warning) =>
-                warning?.type === "OVERRIDE_ADD_TERM_UNAVAILABLE" &&
-                warning?.course === pendingAtomicAdd.expectedCode &&
-                warning?.term === pendingAtomicAdd.expectedTerm
-            );
-            const addFailureWarning = (resp.warnings ?? []).find(
-              (warning) =>
-                typeof warning?.type === 'string' &&
-                String(warning.type).startsWith('OVERRIDE_ADD_') &&
-                warning?.course === pendingAtomicAdd.expectedCode &&
-                warning?.term === pendingAtomicAdd.expectedTerm
-            );
-            const offeredTerms = Array.isArray(availabilityWarning?.offered_terms)
-              ? availabilityWarning.offered_terms.filter(
-                  (value): value is string => typeof value === "string" && value.trim().length > 0
-                )
-              : [];
             pendingAtomicAddRef.current = null;
-            suppressNextSummaryRef.current = true;
             setOverrides(pendingAtomicAdd.previousOverrides);
             setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
             setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
             setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
-            const addFailureReasons: Record<string, string> = {
-              OVERRIDE_ADD_ALREADY_COMPLETED: "It is already completed.",
-              OVERRIDE_ADD_UNKNOWN: "It is not in the course catalog.",
-            };
-            const reasonText = availabilityWarning
-              ? `It is not on the published ${pendingAtomicAdd.expectedTerm} schedule${
-                  offeredTerms.length > 0 ? ` (listed for: ${offeredTerms.join(", ")})` : ""
-                }.`
-              : addFailureWarning?.type
-                ? addFailureReasons[String(addFailureWarning.type)] ?? `Reason: ${String(addFailureWarning.type)}.`
-                : "The backend rejected the add operation.";
-            const failureLead = {
-              retake_swap: `Could not complete retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}.`,
-              elective_swap: `Could not swap ${pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "your elective"} for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}.`,
-              course_add: `Could not add ${pendingAtomicAdd.expectedCode} to ${pendingAtomicAdd.expectedTerm}.`,
-            }[pendingAtomicAdd.mode];
-            setMessages((prev) => [
-              ...prev,
-              {
-                role: "assistant",
-                content: `${failureLead} ${reasonText} No changes were applied.`,
-                timestamp: new Date(),
-              },
-            ]);
             return;
           }
-          const replacedLabel = pendingAtomicAdd.expectedRemovedPlaceholderCode ?? "the selected FREE ELECTIVE slot";
           if (removedPlaceholderStillPresent) {
             pendingAtomicAddRef.current = null;
-            suppressNextSummaryRef.current = true;
             setOverrides(pendingAtomicAdd.previousOverrides);
             setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
             setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
             setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
-            setMessages((prev) => [
-              ...prev,
-              {
-                role: "assistant",
-                content:
-                  pendingAtomicAdd.mode === 'retake_swap'
-                    ? `Retake swap for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} did not remove ${replacedLabel}. No changes were applied.`
-                    : `Could not put ${pendingAtomicAdd.expectedCode} in place of ${replacedLabel} in ${pendingAtomicAdd.expectedTerm}. No changes were applied.`,
-                timestamp: new Date(),
-              },
-            ]);
             return;
-          }
-          if (pendingAtomicAdd.mode === 'retake_swap') {
-            suppressNextSummaryRef.current = true;
-            postSuccessMessage =
-              `Retake swap applied: added ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm} and removed ${replacedLabel}.`;
-          }
-          if (pendingAtomicAdd.mode === 'elective_swap') {
-            suppressNextSummaryRef.current = true;
-            postSuccessMessage =
-              `Swapped ${replacedLabel} for ${pendingAtomicAdd.expectedCode} in ${pendingAtomicAdd.expectedTerm}.`;
           }
           pendingAtomicAddRef.current = null;
         }
@@ -2481,39 +2394,11 @@ export function MainAdvisorScreen({
         setPendingAddTerm(null);
         setPendingRetakeCourse(null);
 
-        const summary = resp.summary ?? {};
-        if (suppressNextSummaryRef.current) {
-          suppressNextSummaryRef.current = false;
-          if (postSuccessMessage) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                role: 'assistant',
-                content: postSuccessMessage,
-                timestamp: new Date()
-              }
-            ]);
-          }
-        } else {
-          setMessages([
-            {
-              role: 'assistant',
-              content:
-                `Done. I found requirements referenced in the catalog for your selected programs.\n\n` +
-                `Required courses detected: ${summary.total_required ?? 0}\n` +
-                `Already completed (counting toward requirements): ${summary.completed ?? 0}\n` +
-                `Remaining courses: ${summary.remaining ?? 0}\n\n` +
-                `You can download a PDF once you review the plan.`,
-              timestamp: new Date()
-            }
-          ]);
-        }
       } catch (e: any) {
         if (cancelled) return;
         const pendingAtomicAdd = pendingAtomicAddRef.current;
         if (pendingAtomicAdd) {
           pendingAtomicAddRef.current = null;
-          suppressNextSummaryRef.current = true;
           setOverrides(pendingAtomicAdd.previousOverrides);
           setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
           setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
@@ -2522,15 +2407,6 @@ export function MainAdvisorScreen({
           setRemovedCourses(lastRemovedSnapshot.current);
         }
         setError(e?.message ?? 'Failed to generate plan.');
-        setMessages([
-          {
-            role: 'assistant',
-            content:
-              `I couldn't generate the plan. ${e?.message ?? ''}\n\n` +
-              `Tip: make sure the backend API is running at ${import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'}.`,
-            timestamp: new Date()
-          }
-        ]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -3197,14 +3073,6 @@ export function MainAdvisorScreen({
   const openReplacementDialog = (instanceId: string, code: string, semester: string) => {
     const categories = getCourseGenEdTags(code);
     if (categories.length === 0) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `No GenEd category found for ${code}, so I can't suggest a category-matched replacement.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
     const eligibleCategories = categories.filter((entry) => categoryHasNeed(entry, genEdNeedByCategory));
@@ -3448,14 +3316,6 @@ export function MainAdvisorScreen({
     setRemovedCourses(Array.from(nextRemoved));
 
     if (targetCode === nextCode) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `Kept ${targetCode} in ${semester}.`,
-          timestamp: new Date()
-        }
-      ]);
       resetReplacementState();
       return;
     }
@@ -3536,14 +3396,6 @@ export function MainAdvisorScreen({
       return updated;
     });
 
-    setMessages(prev => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `Replaced ${targetCode} with ${nextCode} in ${semester}.`,
-        timestamp: new Date()
-      }
-    ]);
     resetReplacementState();
   };
 
@@ -3687,16 +3539,6 @@ export function MainAdvisorScreen({
           remove: (prev.remove ?? []).filter((entry) => entry.instance_id !== instanceId),
         }));
       }
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: swappedRetake
-            ? `Removed retake ${code} and restored ${swappedRetake.placeholderCode} in ${swappedRetake.termLabel}.`
-            : `Removed retake ${code}.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
@@ -3716,14 +3558,6 @@ export function MainAdvisorScreen({
         return next;
       });
       setRemovedCourses(prev => prev.filter(c => c !== instanceId));
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `Removed ${code} from completed courses and returned it to the plan.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
@@ -3768,15 +3602,6 @@ export function MainAdvisorScreen({
         const swapped = findSwappedElective(dep.instanceId ?? "", dep.term ?? null, dep.code);
         if (swapped) removeSwappedElective(swapped);
       });
-      const labels = Array.from(new Set(downstreamDependents.map((dep) => dep.code)));
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `Also removed dependent courses: ${labels.join(', ')}.`,
-          timestamp: new Date()
-        }
-      ]);
     };
     addOverrideRemove(semester, instanceId, code);
     setRemovedCourses(prev => (prev.includes(instanceId) ? prev : [...prev, instanceId]));
@@ -3852,14 +3677,6 @@ export function MainAdvisorScreen({
         }
 
         addOverrideMove(nextTerm.term, semester, candidate.code, candidate.instance_id);
-        setMessages(prev => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: `Moved ${candidate.code} from ${nextTerm.term} to ${semester} to keep at least ${minCreditsPerTerm} credits.`,
-            timestamp: new Date()
-          }
-        ]);
         return candidate.code;
       }
       return null;
@@ -3874,35 +3691,10 @@ export function MainAdvisorScreen({
           // old instance id made the next elective put in that slot fail (it was rolled back).
           setOverrides((prev) => removeChosenElective(prev, swappedElective, instanceId));
           removeSwappedElective(swappedElective);
-          setMessages(prev => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: `Restored ${swappedElective.placeholderCode} in ${swappedElective.termLabel} after removing ${code}.`,
-              timestamp: new Date()
-            }
-          ]);
         } else {
           const placeholder = nextFreeElectiveCode();
           addOverrideAdd(semester, placeholder, createInstanceId());
-          setMessages(prev => [
-            ...prev,
-            {
-              role: 'assistant',
-              content: `Replaced ${code} with ${placeholder} in ${semester}.`,
-              timestamp: new Date()
-            }
-          ]);
         }
-      } else {
-        setMessages(prev => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: `Removed ${code} from ${semester}.`,
-            timestamp: new Date()
-          }
-        ]);
       }
       applyDownstreamDependentRemovals();
       return;
@@ -3933,28 +3725,12 @@ export function MainAdvisorScreen({
     if (!pendingSwapSourceInstanceId) {
       setMoveCourseWarning(null);
       setPendingSwapSourceInstanceId(instanceId);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `Selected ${picked.code} (${picked.semester}). Click "Move course" on another planned course to swap positions.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
     if (pendingSwapSourceInstanceId === instanceId) {
       setMoveCourseWarning(null);
       setPendingSwapSourceInstanceId(null);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `Move course canceled for ${picked.code}.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
@@ -3962,14 +3738,6 @@ export function MainAdvisorScreen({
     if (!source || source.status !== 'remaining') {
       setMoveCourseWarning(null);
       setPendingSwapSourceInstanceId(instanceId);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `Selected ${picked.code} (${picked.semester}). Click "Move course" on another planned course to swap positions.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
@@ -3977,14 +3745,6 @@ export function MainAdvisorScreen({
       const warning = `${source.code} and ${picked.code} are already in ${source.semester}. Pick a course from a different term.`;
       setMoveCourseWarning(warning);
       setPendingSwapSourceInstanceId(instanceId);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: warning,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
@@ -4114,28 +3874,12 @@ export function MainAdvisorScreen({
     const sourcePlacementIssue = validateCoursePlacement(source, picked.semester);
     if (sourcePlacementIssue) {
       setMoveCourseWarning(sourcePlacementIssue);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: sourcePlacementIssue,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
     const pickedPlacementIssue = validateCoursePlacement(picked, source.semester);
     if (pickedPlacementIssue) {
       setMoveCourseWarning(pickedPlacementIssue);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: pickedPlacementIssue,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
 
@@ -4153,14 +3897,6 @@ export function MainAdvisorScreen({
 
     setMoveCourseWarning(null);
     setPendingSwapSourceInstanceId(null);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `Swapped ${source.code} (${source.semester}) with ${picked.code} (${picked.semester}).`,
-        timestamp: new Date()
-      }
-    ]);
   };
 
   const pendingReplacementStatus = pendingReplacement
@@ -4196,23 +3932,12 @@ export function MainAdvisorScreen({
     if (!record) return;
     setActiveTab('plan');
     setPendingElectiveSwap(record);
-    setMessages(prev => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: `Search for the course that should replace ${record.addedCourseCode} in ${record.termLabel}, then press Add.`,
-        timestamp: new Date()
-      }
-    ]);
   };
 
   const commitElectiveSwap = (record: SwappedElectiveRecord, rawCode: string) => {
     const code = normalizeCourseCode(rawCode);
     const term = record.termLabel;
-    const say = (content: string) =>
-      setMessages(prev => [...prev, { role: 'assistant', content, timestamp: new Date() }]);
     if (code === normalizeCourseCode(record.addedCourseCode)) {
-      say(`${code} is already in that slot.`);
       return;
     }
     const availability = getCourseAvailabilityInfo(
@@ -4220,7 +3945,6 @@ export function MainAdvisorScreen({
       { mode: "plan_add", isExcelOnly: isExcelOnlyCourse(code), currentTermLabel, targetTermLabel: term, scheduleTerms }
     );
     if (availability.isSelectionBlocked) {
-      say(`${availability.warningLabel}. ${availability.detailsLabel}.`);
       return;
     }
     const oldCredits = Number(
@@ -4229,12 +3953,10 @@ export function MainAdvisorScreen({
     );
     const nextCredits = (termCreditsMap[term] ?? 0) - oldCredits + getCourseCredits(code);
     if (nextCredits > selection.maxCreditsPerSemester) {
-      say(`Swapping in ${code} would put ${term} at ${nextCredits} credits, above your maximum of ${selection.maxCreditsPerSemester}.`);
       return;
     }
     const status = getPrereqStatusForTerm(code, term);
     if (status.unmet.length > 0) {
-      say(`${code} needs ${status.unmet.join(', ')} before ${term}. Pick another elective or move it to a later term first.`);
       return;
     }
     setPendingElectiveSwap(null);
@@ -4245,17 +3967,9 @@ export function MainAdvisorScreen({
     if (!plan) return;
 
     if (effectiveCompleted.includes(code)) {
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: `${code} is already marked as completed.`, timestamp: new Date() }
-      ]);
       return;
     }
     if (effectiveInProgress.includes(code)) {
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: `${code} is already marked as in progress.`, timestamp: new Date() }
-      ]);
       return;
     }
     if (pendingElectiveSwap) {
@@ -4272,14 +3986,6 @@ export function MainAdvisorScreen({
     const normalizedCode = normalizeCourseCode(code);
     if (!normalizedCode) return;
     if (isFreeElectivePlaceholder(normalizedCode)) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `${code} is an elective placeholder. Retakes can only be added for actual courses already in your record/plan.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
     const existsInRecord = courseObjects.some(
@@ -4289,28 +3995,12 @@ export function MainAdvisorScreen({
         !isFreeElectivePlaceholder(course.code)
     );
     if (!existsInRecord) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `${code} is not in your current record/plan yet. Add it first, then add a retake.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
     const retakeEligibleTerms = Object.keys(freeElectiveSlotsByTerm).sort(
       (a, b) => termIndexFromLabel(a) - termIndexFromLabel(b)
     );
     if (retakeEligibleTerms.length === 0) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `No FREE ELECTIVE placeholder slots are currently available to swap with ${code}.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
     const defaultTerm = retakeEligibleTerms[0];
@@ -4326,17 +4016,9 @@ export function MainAdvisorScreen({
   const runAddCourseWithPrereqs = (
     code: string,
     preferredTerm?: string | null,
-    options?: { genEdCategory?: string | null; suppressMessages?: boolean }
+    options?: { genEdCategory?: string | null }
   ) => {
     if (!plan) return false;
-
-    const notify = (content: string) => {
-      if (options?.suppressMessages) return;
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content, timestamp: new Date() }
-      ]);
-    };
 
     const primaryGenEdCategory = getPrimaryGenEdCategory(code, options?.genEdCategory);
 
@@ -4761,11 +4443,6 @@ export function MainAdvisorScreen({
       const placement = addCourseToPlan(workingPlan, code, preferredTerm);
       if (!placement.term && !placement.restored) {
         const blockedReason = (placement as { blockedReason?: string }).blockedReason;
-        notify(
-          blockedReason
-            ? `Cannot add ${code}. ${blockedReason}.`
-            : 'No semesters found to place this course.'
-        );
         return false;
       }
 
@@ -4801,11 +4478,9 @@ export function MainAdvisorScreen({
         const unmetList = prereqStatus.unmet.length > 0
           ? prereqStatus.unmet
           : Array.from(unplacedPrereqs);
-        notify(`Added ${code} to ${preferredTerm}, but prerequisites are still unmet before that term: ${unmetList.join(", ")}.`);
       }
 
       if (placement.term) {
-        notify(`Added ${code} to ${placement.term}.`);
       }
       return true;
     }
@@ -4920,7 +4595,6 @@ export function MainAdvisorScreen({
             setRemovedCourses(prev => prev.filter((id) => !restoredInstanceIds.has(id)));
           }
         }
-        notify(`Replaced a ${targetGenEd} GenEd course with ${code} in ${replacedTerm}.`);
         return true;
       }
     }
@@ -4928,11 +4602,6 @@ export function MainAdvisorScreen({
     const placement = addCourseToPlan(workingPlan, code, preferredTargetTerm);
     if (!placement.term && !placement.restored) {
       const blockedReason = (placement as { blockedReason?: string }).blockedReason;
-      notify(
-        blockedReason
-          ? `Cannot add ${code}. ${blockedReason}.`
-          : 'No semesters found to place this course.'
-      );
       return false;
     }
 
@@ -4952,11 +4621,6 @@ export function MainAdvisorScreen({
     }
 
     if (placement.term) {
-      notify(
-        placement.appendedTerm
-          ? `Added ${code} to ${placement.term}. (Created a new term because existing semesters were full.)`
-          : `Added ${code} to ${placement.term}.`
-      );
     }
     return true;
   };
@@ -5358,14 +5022,6 @@ export function MainAdvisorScreen({
   const savePendingRetake = () => {
     if (!pendingRetakeCourse) return;
     if (pendingAtomicAddRef.current) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: 'Please wait for the previous add operation to finish.',
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
     const term = pendingRetakeCourse.term.trim();
@@ -5377,14 +5033,6 @@ export function MainAdvisorScreen({
       placeholders.find((entry) => entry.instance_id === pendingRetakeCourse.placeholderInstanceId) ??
       placeholders[0];
     if (!selectedPlaceholder?.instance_id) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `No FREE ELECTIVE placeholder slot is available in ${term} to swap with ${code}.`,
-          timestamp: new Date()
-        }
-      ]);
       return;
     }
     const committed = commitAtomicOverrideAdd(term, code, {
@@ -5482,11 +5130,10 @@ export function MainAdvisorScreen({
     (term) => term.courses.length > 0 && !isEarlierTerm(term.term, currentTermLabel)
   ).length;
   const incompleteElectives = electiveRequirementStatus.filter((entry) => !entry.isComplete).length;
-  const tabs: { id: AdvisorTab; label: string; icon: typeof ListChecks; count?: number; disabled?: boolean }[] = [
+  const tabs: { id: AdvisorTab; label: string; icon: typeof ListChecks; count?: number }[] = [
     { id: 'plan', label: 'Semester plan', icon: CalendarRange, count: validationErrors.length },
     { id: 'requirements', label: 'Requirements', icon: ListChecks, count: incompleteElectives },
     { id: 'electives', label: 'Recommended electives', icon: Sparkles },
-    { id: 'chat', label: 'Advisor chat', icon: advisorChatLocked ? Lock : MessageSquare, disabled: advisorChatLocked },
   ];
   const showIssues = () => {
     setActiveTab('plan');
@@ -5529,7 +5176,7 @@ export function MainAdvisorScreen({
 
         <div className="card advisor-panel">
           <div className="tabs advisor-tabs" role="tablist" aria-label="Plan sections">
-            {tabs.map(({ id, label, icon: Icon, count, disabled }) => (
+            {tabs.map(({ id, label, icon: Icon, count }) => (
               <button
                 key={id}
                 type="button"
@@ -5538,8 +5185,6 @@ export function MainAdvisorScreen({
                 aria-selected={activeTab === id}
                 aria-controls={`panel-${id}`}
                 className="tab"
-                disabled={disabled}
-                title={disabled ? advisorChatLockMessage : undefined}
                 onClick={() => setActiveTab(id)}
               >
                 <Icon aria-hidden="true" />
@@ -5743,32 +5388,9 @@ export function MainAdvisorScreen({
                           { mode: "in_progress", isExcelOnly: isExcelOnlyCourse(code), currentTermLabel, scheduleTerms }
                         );
                         if (availability.isSelectionBlocked) {
-                          setMessages(prev => [
-                            ...prev,
-                            {
-                              role: 'assistant',
-                              content: `${availability.warningLabel}. ${availability.detailsLabel}.`,
-                              timestamp: new Date()
-                            }
-                          ]);
                           return;
                         }
 
-                        const targetTerm = currentTermLabel;
-                        const termCourses = courseObjects.filter(c => c.semester === targetTerm);
-                        const termCredits = termCourses.reduce((sum, c) => sum + Number(c.credits ?? 0), 0);
-                        const alreadyInCurrentTerm = target.semester === currentTermLabel;
-                        const nextCredits = alreadyInCurrentTerm ? termCredits : termCredits + Number(target.credits ?? 0);
-                        if (nextCredits > selection.maxCreditsPerSemester) {
-                          setMessages(prev => [
-                            ...prev,
-                            {
-                              role: 'assistant',
-                              content: `${code} marked as in progress in ${targetTerm}. Note: this term is now above your max of ${selection.maxCreditsPerSemester} credits.`,
-                              timestamp: new Date()
-                            }
-                          ]);
-                        }
                       }
 
                       setInProgressCourses(prev => {
@@ -6272,14 +5894,6 @@ export function MainAdvisorScreen({
                             const placeholders = freeElectiveSlotsByTerm[term] ?? [];
                             const placeholder = placeholders[0];
                             if (!placeholder) {
-                              setMessages(prev => [
-                                ...prev,
-                                {
-                                  role: 'assistant',
-                                  content: `No FREE ELECTIVE slot found in ${term}.`,
-                                  timestamp: new Date()
-                                }
-                              ]);
                               return;
                             }
                             const placeholderId = placeholder.instance_id ?? `${term}:${placeholder.code}`;
@@ -6294,14 +5908,6 @@ export function MainAdvisorScreen({
                               }
                             );
                             if (availability.isSelectionBlocked) {
-                              setMessages(prev => [
-                                ...prev,
-                                {
-                                  role: 'assistant',
-                                  content: `${availability.warningLabel}. ${availability.detailsLabel}.`,
-                                  timestamp: new Date()
-                                }
-                              ]);
                               return;
                             }
                             const status = getPrereqStatusForTerm(code, term);
@@ -6326,10 +5932,6 @@ export function MainAdvisorScreen({
                               replaceFreeElective: { instanceId: placeholderId, code: placeholder.code },
                             });
                             if (!committed) return;
-                            setMessages(prev => [
-                              ...prev,
-                              { role: 'assistant', content: `Replaced ${placeholder.code} with ${code} in ${term}.`, timestamp: new Date() }
-                            ]);
                           }}
                         >
                           Confirm
@@ -6527,16 +6129,6 @@ export function MainAdvisorScreen({
                             const committed = commitAtomicOverrideAdd(term, code);
                             if (!committed) return;
                           }
-                          setMessages(prev => [
-                            ...prev,
-                            {
-                              role: 'assistant',
-                              content: placeholder
-                                ? `Replaced ${placeholder.code} with ${code} in ${term}.`
-                                : `Added ${code} to ${term}.`,
-                              timestamp: new Date()
-                            }
-                          ]);
                         }}
                         onCancel={() => setPendingAddConfirm(null)}
                       />
@@ -6639,14 +6231,6 @@ export function MainAdvisorScreen({
                             const placeholders = freeElectiveSlotsByTerm[term] ?? [];
                             const placeholder = placeholders[0];
                             if (!placeholder) {
-                              setMessages(prev => [
-                                ...prev,
-                                {
-                                  role: 'assistant',
-                                  content: `No FREE ELECTIVE slot found in ${term}.`,
-                                  timestamp: new Date()
-                                }
-                              ]);
                               return;
                             }
                             const placeholderId = placeholder.instance_id ?? `${term}:${placeholder.code}`;
@@ -6655,10 +6239,6 @@ export function MainAdvisorScreen({
                               prev.includes(placeholderId) ? prev : [...prev, placeholderId]
                             );
                             addOverrideAdd(term, prereqCode, createInstanceId());
-                            setMessages(prev => [
-                              ...prev,
-                              { role: 'assistant', content: `Scheduled prerequisite ${prereqCode} in ${term}.`, timestamp: new Date() }
-                            ]);
 
                             const nextIndex = pendingPrereqPlacement.index + 1;
                             if (nextIndex < pendingPrereqPlacement.prereqs.length) {
@@ -6692,16 +6272,6 @@ export function MainAdvisorScreen({
                                 placeholderCredits: getCourseCredits(targetPlaceholder.code),
                               });
                             }
-                            setMessages(prev => [
-                              ...prev,
-                              {
-                                role: 'assistant',
-                                content: targetPlaceholder
-                                  ? `Replaced ${targetPlaceholder.code} with ${pendingPrereqPlacement.courseCode} in ${targetTerm}.`
-                                  : `Added ${pendingPrereqPlacement.courseCode} to ${targetTerm}.`,
-                                timestamp: new Date()
-                              }
-                            ]);
                             setPendingPrereqPlacement(null);
                             setPendingPrereqTerm(null);
                           }}
@@ -7012,33 +6582,6 @@ export function MainAdvisorScreen({
               </div>
             )}
 
-            {activeTab === 'chat' && (
-              advisorChatLocked ? (
-                <div className="tab-panel empty-state" role="tabpanel" id="panel-chat" aria-labelledby="tab-chat">
-                  <Lock aria-hidden="true" />
-                  <p className="section-title">Advisor chat is locked</p>
-                  <p className="muted">{advisorChatLockMessage}</p>
-                </div>
-              ) : (
-                <ChatInterface
-                  messages={messages}
-                  onSendMessage={(msg) => {
-                    // For now, chat is explanatory; we append the question and a deterministic reply.
-                    setMessages(prev => [
-                      ...prev,
-                      { role: 'user', content: msg, timestamp: new Date() },
-                      {
-                        role: 'assistant',
-                        content:
-                          'Right now, the advisor chat is connected to the real plan engine but does not change your plan. ' +
-                          "In the next iteration we can add actions like \"add minor\", \"recompute\", and \"why this course?\".",
-                        timestamp: new Date()
-                      }
-                    ]);
-                  }}
-                />
-              )
-            )}
             {activeTab === 'requirements' && (
               <div className="tab-panel advisor-tab-pad" role="tabpanel" id="panel-requirements" aria-labelledby="tab-requirements">
                 <RequirementsTab

@@ -9,7 +9,7 @@ import {
   type TranscriptImportResponse,
 } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
-import { extractTranscriptLinesFromImage } from '../utils/transcriptOcr';
+import { extractTranscriptLinesFromImage, extractTranscriptLinesFromPdf } from '../utils/transcriptOcr';
 import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from '../constants/academic';
 import type { FailedCourse, ManualCreditEntry } from '../types';
 import {
@@ -526,7 +526,12 @@ export function AcademicSetupScreen({
             await extractTranscriptLinesFromImage(file),
             { usedOcr: true }
           )
-        : await importTranscript(file, catalogId);
+        : await importTranscript(file, catalogId).catch(async (serverError) => {
+            // No text layer (e.g. a browser "Print to PDF" transcript): OCR the pages here instead.
+            const ocrLines = await extractTranscriptLinesFromPdf(file).catch(() => []);
+            if (ocrLines.length === 0) throw serverError;
+            return importTranscriptText(ocrLines, { usedOcr: true });
+          });
       clearTranscriptPhaseTimers();
       const nextEntries = buildTranscriptReviewEntries(response);
       if (nextEntries.length === 0) {
