@@ -116,7 +116,7 @@ class CourseRequirement(BaseModel):
     """One requirement a planned course fills, e.g. label 'Computer Science major: required course'."""
     program: Optional[str] = None
     program_type: str  # "major" | "minor" | "gened" | "foundation" | "free"
-    kind: str  # "required" | "choice" | "gened" | "elective"
+    kind: str  # "required" | "concentration" | "choice" | "gened" | "elective"
     label: str
 
 

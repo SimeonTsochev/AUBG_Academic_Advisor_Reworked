@@ -192,10 +192,9 @@ def _is_business_administration_bus_ent_upper_level(code: str) -> bool:
     return number is not None and 3000 <= int(number) <= 4999
 
 
-def _business_administration_required_courses(
-    catalog: Dict,
-    business_concentration: str | None = None,
-) -> Set[str]:
+def _business_administration_required_courses(catalog: Dict) -> Set[str]:
+    """The major's own required courses. Concentration courses are not among them: they count
+    toward the major's elective credits (AY 2025-26 catalog, Business Administration)."""
     majors = catalog.get("majors", {}) or {}
     required_courses: Set[str] = set()
     if not isinstance(majors, dict):
@@ -214,14 +213,6 @@ def _business_administration_required_courses(
             if isinstance(code, str) and _normalize_course_code(code)
         }
         break
-
-    required_courses.update(
-        get_business_concentration_required_courses(
-            catalog=catalog,
-            majors=["Business Administration"],
-            business_concentration=business_concentration,
-        )
-    )
     return required_courses
 
 
@@ -235,7 +226,7 @@ def _business_administration_elective_credit_breakdown(
         for code in (taken_courses or set())
         if isinstance(code, str) and _normalize_course_code(code)
     }
-    required_courses = _business_administration_required_courses(catalog, business_concentration)
+    required_courses = _business_administration_required_courses(catalog)
 
     non_bus_earned = sum(
         _course_credits(catalog, code)
@@ -2290,10 +2281,12 @@ def build_requirement_slots(
         slots.append(slot)
         by_id[slot["id"]] = slot
 
-    def add_fixed_course(course: str, program_name: str, program_type: str) -> None:
+    def add_fixed_course(
+        course: str, program_name: str, program_type: str, concentration: str | None = None
+    ) -> None:
         if course not in catalog_courses:
             return
-        add_slot({
+        slot = {
             "type": "fixed",
             "course": course,
             "owner": "program",
@@ -2301,7 +2294,10 @@ def build_requirement_slots(
             "program_type": program_type,
             "group_id": None,
             "label": f"{program_type.title()}: {program_name}",
-        })
+        }
+        if concentration:
+            slot["concentration"] = concentration
+        add_slot(slot)
 
     def add_choice_group(courses: List[str], count: int, program_name: str, program_type: str, label: str) -> None:
         group_id = f"choice:{program_type}:{program_name}:{label}"
@@ -2412,7 +2408,10 @@ def build_requirement_slots(
         data = catalog.get("majors", {}).get(major, {})
         fixed, choices = parse_requirements(data)
         fixed, choices = merge_program_choice_requirements(major, data, fixed, choices)
+        concentration_courses: List[str] = []
+        concentration = None
         if _is_business_administration_major(major):
+            concentration = active_business_concentration(majors, business_concentration, catalog=catalog)
             fixed_seen = {
                 _normalize_course_code(code)
                 for code in fixed
@@ -2426,10 +2425,12 @@ def build_requirement_slots(
                 normalized = _normalize_course_code(course)
                 if not normalized or normalized in fixed_seen:
                     continue
-                fixed.append(normalized)
+                concentration_courses.append(normalized)
                 fixed_seen.add(normalized)
         for course in fixed:
             add_fixed_course(course, major, "major")
+        for course in concentration_courses:
+            add_fixed_course(course, major, "major", concentration=concentration)
         for group in choices:
             add_choice_group(group["courses"], group["count"], major, "major", group["label"])
 
@@ -2772,6 +2773,13 @@ def _requirement_entry(slot: Dict) -> Dict[str, Any]:
             "program_type": program_type,
             "kind": "choice",
             "label": f"{owner_label}: {choice} of {options} options",
+        }
+    if slot.get("concentration"):
+        return {
+            "program": program,
+            "program_type": program_type,
+            "kind": "concentration",
+            "label": f"{owner_label}: {slot['concentration']} concentration (counts as a major elective)",
         }
     return {"program": program, "program_type": program_type, "kind": "required", "label": f"{owner_label}: required course"}
 

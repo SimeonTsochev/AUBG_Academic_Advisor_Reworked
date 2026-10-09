@@ -100,6 +100,23 @@ class ElectiveProgressTests(IsolatedTestCase):
         bus_credits = sum(c["credits"] for c in ba["courses"] if c["code"] not in non_bus)
         self.assertEqual(ba["credits_counted"], bus_credits + 3)
 
+    def test_concentration_courses_count_as_major_electives(self):
+        result = self._plan(business_concentration="Marketing")
+        ba = _by_program(result)["Business Administration"]
+        self.assertIn("BUS 3061", {c["code"] for c in ba["courses"]})
+
+        labels = [
+            requirement["label"]
+            for term in result["semester_plan"]
+            for course in term["courses"]
+            if course["code"] == "BUS 3061"
+            for requirement in course.get("requirements") or []
+        ]
+        self.assertEqual(
+            labels,
+            ["Business Administration major: Marketing concentration (counts as a major elective)"],
+        )
+
     def test_completed_electives_are_marked_completed(self):
         result = generate_plan(
             self.catalog, MAJORS, MINORS, {"ECO 3011"}, start_term_season="Fall", start_term_year=2026

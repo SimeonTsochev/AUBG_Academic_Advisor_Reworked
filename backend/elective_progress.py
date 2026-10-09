@@ -100,6 +100,8 @@ def _own_requirement_courses(program: str, slots: Dict, taken: Set[str]) -> Set[
     for slot in slots.get("slots", []):
         if slot.get("program") != program:
             continue
+        if slot.get("concentration"):
+            continue  # Concentration courses count toward the major's electives.
         if slot.get("type") == "fixed":
             own.add(slot["course"])
         elif slot.get("type") == "choice":

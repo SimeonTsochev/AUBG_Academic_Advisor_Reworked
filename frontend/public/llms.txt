@@ -1,0 +1,17 @@
+# AUBG Academic Advisor
+
+> A degree planner for students of the American University in Bulgaria (AUBG). It builds a
+> semester-by-semester plan from the AY 2025-26 catalog for the majors and minors a student picks,
+> taking completed courses, prerequisites, class standing and GenEd rules into account.
+
+The planner is an unofficial tool. Students must confirm their choices with their academic advisor and
+register through the official AUBG system.
+
+## App
+
+- [Academic Advisor](/): pick majors, minors and a Business concentration, import a transcript, then review and edit the generated plan.
+
+## Notes
+
+- Plans follow the AUBG Academic Catalog AY 2025-26 and the Fall 2026 course schedule.
+- Shared plans are opened from links of the form `/p/<token>`; they contain a student's own selections and are not meant to be crawled.
