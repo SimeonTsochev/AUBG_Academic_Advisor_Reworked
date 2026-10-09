@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { PlanOverrides, ProgramSnapshotSwappedElective } from "../api";
-import { fillSlotWithCourse, removeChosenElective, swapChosenElective, withOverrideAdd } from "./planOverrides";
+import {
+  fillSlotWithCourse,
+  isAddedInstance,
+  moveAddedCourse,
+  removeChosenElective,
+  swapChosenElective,
+  withOverrideAdd,
+} from "./planOverrides";
 
 const TERM = "Fall 2027";
 const SLOT = { instanceId: "slot-x", code: "FREE ELECTIVE 2" };
@@ -62,6 +69,27 @@ describe("elective slot overrides", () => {
     };
     const withB = fillSlotWithCourse(legacy, TERM, SLOT, { term: TERM, code: "COS 3031", instance_id: "b" });
     expectSlotHolds(withB, "COS 3031");
+  });
+
+  it("moves a chosen elective by changing its add, so it can swap with a FREE ELECTIVE slot", () => {
+    const withA = fillSlotWithCourse(empty(), TERM, SLOT, { term: TERM, code: "COS 2031", instance_id: "a" });
+    // A swap: the elective goes to Spring 2028, another slot comes over to TERM via a move override.
+    const swapped = moveAddedCourse(
+      { ...withA, move: [{ from_term: TERM, to_term: "Spring 2028", code: "COS 2031", instance_id: "a" }] },
+      "a",
+      "Spring 2028"
+    );
+    expect(isAddedInstance(swapped, "a")).toBe(true);
+    expect(isAddedInstance(swapped, SLOT.instanceId)).toBe(false);
+    expect(swapped.add).toEqual([expect.objectContaining({ code: "COS 2031", instance_id: "a", term: "Spring 2028" })]);
+    expect(swapped.move).toEqual([]);
+    expectSlotHolds(swapped, "COS 2031");
+
+    // Swapping the moved elective for another course keeps one removal of the original slot.
+    const moved = recordFor("COS 2031", "a");
+    const withB = swapChosenElective(swapped, { ...moved, termLabel: "Spring 2028" }, { term: TERM, code: "COS 3031", instance_id: "b" });
+    expectSlotHolds(withB, "COS 3031");
+    expect(withB.add[0]).toMatchObject({ term: "Spring 2028", instance_id: "b" });
   });
 
   it("keeps a GenEd category from an earlier add of the same course", () => {

@@ -25,11 +25,14 @@ import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils
 import { describeCourseReason } from '../utils/courseReasons';
 import {
   fillSlotWithCourse,
+  isAddedInstance,
+  moveAddedCourse,
   removeChosenElective,
   swapChosenElective,
   withOverrideAdd,
   withOverrideRemove,
 } from '../utils/planOverrides';
+import { ordinal, semesterOfStudy, standingRequirement } from '../utils/standing';
 import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
 import { describeFailedAttempt, resolveActiveAttempts } from '../utils/retakes';
 import { summarizeElectiveRequirements } from '../utils/electiveProgress';
@@ -2980,21 +2983,10 @@ export function MainAdvisorScreen({
     return `Fall ${year}`;
   }
 
-  const minTermIndexForCourse = (code: string) => {
-    const meta = catalog.course_meta?.[code];
-    const text = (meta?.prereq_text ?? "").toLowerCase();
-    let minTerm = 0;
-    if (text.includes("declared major")) minTerm = Math.max(minTerm, 1 * SEMESTERS_PER_YEAR);
-    if (text.includes("junior standing")) minTerm = Math.max(minTerm, 2 * SEMESTERS_PER_YEAR + 1);
-    if (text.includes("sophomore standing")) minTerm = Math.max(minTerm, 1 * SEMESTERS_PER_YEAR);
-    const m = code.match(/^[A-Z]{3}\s?(\d{3,4})$/);
-    if (m) {
-      const level = Number(m[1]);
-      if (level >= 4000) minTerm = Math.max(minTerm, 2 * SEMESTERS_PER_YEAR);
-      else if (level >= 3000) minTerm = Math.max(minTerm, 1 * SEMESTERS_PER_YEAR);
-    }
-    return minTerm;
-  };
+  const getStandingRequirement = (code: string) =>
+    standingRequirement(code, catalog.course_meta?.[code]?.prereq_text);
+  // Terms after the start term before `code` may be taken (0 = from the first semester).
+  const minTermIndexForCourse = (code: string) => getStandingRequirement(code).minSemester - 1;
 
   const getGenEdCategoryCourses = (category: string) => {
     const matches = new Set<string>();
@@ -3753,15 +3745,7 @@ export function MainAdvisorScreen({
       [picked.instanceId, source.semester],
     ]);
 
-    const getStandingRequirementText = (code: string): string | null => {
-      const meta = catalog.course_meta?.[code];
-      const text = (meta?.prereq_text ?? '').toLowerCase();
-      const reasons: string[] = [];
-      if (text.includes('junior standing')) reasons.push('junior standing');
-      if (text.includes('sophomore standing')) reasons.push('sophomore standing');
-      if (text.includes('declared major')) reasons.push('declared major');
-      return reasons.length > 0 ? reasons.join(' and ') : null;
-    };
+    const getStandingRequirementText = (code: string): string | null => getStandingRequirement(code).reason;
 
     const validateCoursePlacement = (course: Course, targetTerm: string): string | null => {
       const targetIdx = termIndexFromLabel(targetTerm);
@@ -3845,26 +3829,24 @@ export function MainAdvisorScreen({
       return null;
     };
 
-    const moveRetakeInstance = (retakeCourse: Course, targetTerm: string) => {
-      setRetakeEntries((prev) =>
-        prev.map((entry) =>
-          entry.instance_id === retakeCourse.instanceId
-            ? { ...entry, term: targetTerm }
-            : entry
-        )
-      );
-      setOverrides((prev) => ({
-        ...prev,
-        add: (prev.add ?? []).map((entry) =>
-          entry.instance_id === retakeCourse.instanceId && entry.is_retake === true
-            ? { ...entry, term: targetTerm }
-            : entry
-        ),
-        move: (prev.move ?? []).filter((entry) => entry.instance_id !== retakeCourse.instanceId),
-      }));
+    // Courses the student added (chosen electives, retakes) live in overrides.add, which the backend
+    // applies after moves, so they are moved by changing their add's term. Generated courses and
+    // FREE ELECTIVE placeholders use move overrides.
+    const isStudentAdded = (course: Course) => course.isRetake || isAddedInstance(overrides, course.instanceId);
+    const moveAddedInstance = (addedCourse: Course, targetTerm: string) => {
+      if (addedCourse.isRetake) {
+        setRetakeEntries((prev) =>
+          prev.map((entry) =>
+            entry.instance_id === addedCourse.instanceId
+              ? { ...entry, term: targetTerm }
+              : entry
+          )
+        );
+      }
+      setOverrides((prev) => moveAddedCourse(prev, addedCourse.instanceId, targetTerm));
       setSwappedElectives((prev) =>
         prev.map((entry) =>
-          entry.addedCourseInstanceId === retakeCourse.instanceId
+          entry.addedCourseInstanceId === addedCourse.instanceId
             ? { ...entry, termLabel: targetTerm }
             : entry
         )
@@ -3883,14 +3865,14 @@ export function MainAdvisorScreen({
       return;
     }
 
-    if (source.isRetake) {
-      moveRetakeInstance(source, picked.semester);
+    if (isStudentAdded(source)) {
+      moveAddedInstance(source, picked.semester);
     } else {
       addOverrideMove(source.semester, picked.semester, source.code, source.instanceId);
     }
 
-    if (picked.isRetake) {
-      moveRetakeInstance(picked, source.semester);
+    if (isStudentAdded(picked)) {
+      moveAddedInstance(picked, source.semester);
     } else {
       addOverrideMove(picked.semester, source.semester, picked.code, picked.instanceId);
     }
@@ -5067,9 +5049,23 @@ export function MainAdvisorScreen({
     return map;
   }, [courseObjects, termPickerOptions]);
 
+  // Standing needed by the course being added, and the semesters it rules out.
+  const pendingAddStanding = useMemo(() => {
+    if (!pendingAddCourse) return null;
+    const requirement = getStandingRequirement(pendingAddCourse.code);
+    if (requirement.minSemester <= 1) return null;
+    const startIdx = termIndex(startTermSeason, startTermYear);
+    const earliest = termFromIndex(startIdx + requirement.minSemester - 1);
+    return { ...requirement, startIdx, earliestTerm: `${earliest.season} ${earliest.year}` };
+  }, [pendingAddCourse, startTermSeason, startTermYear, catalog.course_meta]);
+
   const addableTermOptions = useMemo(() => {
-    return termPickerOptions.filter((term) => (freeElectiveSlotsByTerm[term]?.length ?? 0) > 0);
-  }, [termPickerOptions, freeElectiveSlotsByTerm]);
+    return termPickerOptions.filter((term) => {
+      if ((freeElectiveSlotsByTerm[term]?.length ?? 0) === 0) return false;
+      if (!pendingAddStanding) return true;
+      return semesterOfStudy(termIndexFromLabel(term), pendingAddStanding.startIdx) >= pendingAddStanding.minSemester;
+    });
+  }, [termPickerOptions, freeElectiveSlotsByTerm, pendingAddStanding]);
 
   const prereqTermOptions = useMemo(() => {
     if (!pendingPrereqPlacement) return [];
@@ -5800,6 +5796,12 @@ export function MainAdvisorScreen({
                           <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
                             Replace a FREE ELECTIVE slot with {pendingAddCourse.code}.
                           </p>
+                          {pendingAddStanding && (
+                            <p className="text-sm mt-1" style={{ color: 'var(--neutral-dark)' }}>
+                              Requires {pendingAddStanding.reason}, so only your {ordinal(pendingAddStanding.minSemester)} semester
+                              ({pendingAddStanding.earliestTerm}) and later are shown.
+                            </p>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -5819,7 +5821,9 @@ export function MainAdvisorScreen({
                             className="text-sm p-3 rounded-lg border"
                             style={{ color: 'var(--neutral-dark)', borderColor: 'var(--neutral-border)' }}
                           >
-                            No FREE ELECTIVE slots are available to replace. Remove a free elective placeholder first.
+                            {pendingAddStanding
+                              ? `No FREE ELECTIVE slots from ${pendingAddStanding.earliestTerm} onward. Free up a slot in a later semester first.`
+                              : 'No FREE ELECTIVE slots are available to replace. Remove a free elective placeholder first.'}
                           </div>
                         )}
                         {addableTermOptions.map((term) => {

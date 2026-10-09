@@ -44,13 +44,30 @@ export function withOverrideRemove(
   instanceId?: string | null,
   code?: string
 ): PlanOverrides {
-  const exists = overrides.remove.some(
-    (r) =>
-      (r.term ?? null) === term &&
-      (instanceId ? r.instance_id === instanceId : !r.instance_id && r.code === code)
+  // Instance ids are unique, so one removal of an id covers it whatever term it was recorded under
+  // (a chosen elective can move away from the term of the slot it replaced).
+  const exists = overrides.remove.some((r) =>
+    instanceId ? r.instance_id === instanceId : (r.term ?? null) === term && !r.instance_id && r.code === code
   );
   if (exists) return overrides;
   return { ...overrides, remove: [...overrides.remove, { term, code, instance_id: instanceId ?? undefined }] };
+}
+
+/** True when the student added this course instance (a chosen elective, a retake, a manual add). */
+export function isAddedInstance(overrides: PlanOverrides, instanceId: string | null | undefined): boolean {
+  return Boolean(instanceId) && overrides.add.some((a) => a.instance_id === instanceId);
+}
+
+/**
+ * Move a course the student added to another term. The backend applies moves before adds, so a
+ * move override never finds an added course; its add has to carry the new term instead.
+ */
+export function moveAddedCourse(overrides: PlanOverrides, instanceId: string, toTerm: string): PlanOverrides {
+  return {
+    ...overrides,
+    add: overrides.add.map((a) => (a.instance_id === instanceId ? { ...a, term: toTerm } : a)),
+    move: overrides.move.filter((m) => m.instance_id !== instanceId),
+  };
 }
 
 /** Put `course` into a FREE ELECTIVE slot of `term`. */
