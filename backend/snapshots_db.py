@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
 import time
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
-from supabase import Client, create_client
+if TYPE_CHECKING:
+    from supabase import Client
 
 SNAPSHOT_TTL_SECONDS = 4 * 365 * 24 * 3600
 SNAPSHOT_TABLE = "program_snapshots"
 
 _supabase_client: Client | None = None
+_supabase_client_lock = threading.Lock()
 
 
 class SnapshotExpiredError(KeyError):
@@ -46,14 +49,21 @@ def _get_supabase() -> Client:
     if _supabase_client is not None:
         return _supabase_client
 
-    url = _require_env("SUPABASE_URL")
-    service_role_key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
-    try:
-        _supabase_client = create_client(url, service_role_key)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to initialize Supabase snapshot storage: {exc}"
-        ) from exc
+    with _supabase_client_lock:
+        if _supabase_client is not None:
+            return _supabase_client
+        url = _require_env("SUPABASE_URL")
+        service_role_key = _require_env("SUPABASE_SERVICE_ROLE_KEY")
+        try:
+            # Imported on first use: the SDK takes ~1.5 s to import, which would otherwise be
+            # paid on every cold start, even by requests that never touch snapshots.
+            from supabase import create_client
+
+            _supabase_client = create_client(url, service_role_key)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to initialize Supabase snapshot storage: {exc}"
+            ) from exc
     return _supabase_client
 
 

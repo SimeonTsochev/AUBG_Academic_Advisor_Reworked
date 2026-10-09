@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from functools import lru_cache
+from contextvars import ContextVar
+from functools import lru_cache, wraps
 from typing import Any, Dict, List, Set, Tuple
 import datetime
 import logging
@@ -8,6 +9,8 @@ import math
 import re
 import statistics
 import uuid
+
+import excel_course_catalog
 
 from excel_catalog import (
     PROGRAM_TAG_ALIASES,
@@ -122,6 +125,7 @@ BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVES = {"BUS 4090", "BUS 4091", "BUS 4092"}
 BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVE_CAP = 3
 
 
+@lru_cache(maxsize=8192)
 def _normalize_course_code(code: str) -> str:
     code = code.strip().upper()
     m = re.match(r"^([A-Z]{3})\s?(\d{3,4})$", code)
@@ -763,6 +767,9 @@ def _extract_required_from_program_choice_blocks(
     return fixed_required, choice_groups
 
 
+WILDCARD_COURSE_RE = re.compile(r"\b([A-Z]{2,4})\s*([0-9])\[(\d)-(\d)\]NN\b", re.IGNORECASE)
+
+
 def _expand_wildcard_allowed_courses(catalog_courses: Set[str], rule_text: str) -> Set[str]:
     if not isinstance(rule_text, str) or not rule_text.strip():
         return set()
@@ -771,11 +778,19 @@ def _expand_wildcard_allowed_courses(catalog_courses: Set[str], rule_text: str) 
     # Examples:
     #   ENG 3[4-9]NN -> ENG 3400-3999
     #   BUS 4[4-9]NN -> BUS 4400-4999
-    wildcard_pattern = re.compile(r"\b([A-Z]{2,4})\s*([0-9])\[(\d)-(\d)\]NN\b", re.IGNORECASE)
-    matches = wildcard_pattern.findall(rule_text.upper())
+    matches = WILDCARD_COURSE_RE.findall(rule_text.upper())
     if not matches:
         return expanded
+    # Keyed on the course set's contents: callers pass different (sometimes temporary) sets.
+    return set(_expand_wildcard_matches(frozenset(catalog_courses), tuple(matches)))
 
+
+@lru_cache(maxsize=256)
+def _expand_wildcard_matches(
+    catalog_courses: frozenset[str],
+    matches: Tuple[Tuple[str, str, str, str], ...],
+) -> frozenset[str]:
+    expanded: Set[str] = set()
     for subject, thousand, low, high in matches:
         low_digit = int(low)
         high_digit = int(high)
@@ -795,7 +810,7 @@ def _expand_wildcard_allowed_courses(catalog_courses: Set[str], rule_text: str) 
             second_digit = int(number[1])
             if low_digit <= second_digit <= high_digit:
                 expanded.add(code)
-    return expanded
+    return frozenset(expanded)
 
 
 def _normalize_space(text: str) -> str:
@@ -1112,7 +1127,9 @@ def _apply_latest_attempt_credit_rule(
         term["credits"] = sum(_planned_course_credits(catalog, c) for c in normalized_courses)
 
 def _catalog_courses(catalog: Dict) -> Set[str]:
-    return {code for code in catalog.get("courses", {}).keys() if isinstance(code, str)}
+    return set(_plan_memo("catalog_courses", catalog, None, lambda: frozenset(
+        code for code in catalog.get("courses", {}).keys() if isinstance(code, str)
+    )))
 
 
 def _excel_catalog_by_code(catalog: Dict) -> Dict[str, Dict[str, Any]]:
@@ -1123,7 +1140,91 @@ def _excel_catalog_by_code(catalog: Dict) -> Dict[str, Dict[str, Any]]:
     return by_code
 
 
+# Per-call memo for pure catalog lookups that generate_plan repeats thousands of times. Scoped to
+# one generate_plan call (not module-global), so it can never serve data from another catalog state.
+_PLAN_MEMO: ContextVar[Dict[Tuple[str, int, Any], Tuple[Any, Any]] | None] = ContextVar("_PLAN_MEMO", default=None)
+
+
+# Catalogs promised never to be mutated (the shipped one, see catalog_cache). Lookups that depend only
+# on such a catalog and the Excel course index are cached across requests, not just within one plan.
+_READ_ONLY_CATALOGS: Dict[int, Dict] = {}
+_CATALOG_ONLY_MEMO_KINDS = frozenset({"pool", "gened", "credits", "catalog_courses"})
+_read_only_memo: Dict[str, Any] = {"excel_index": None, "memo": {}}
+
+
+def mark_catalog_read_only(catalog: Dict) -> None:
+    """Enable cross-request caching for `catalog`. Only for a catalog nothing will ever modify."""
+    _READ_ONLY_CATALOGS[id(catalog)] = catalog
+
+
+def _read_only_catalog_memo() -> Dict:
+    # The engine falls back to the module-global Excel index, which is replaced (never edited in
+    # place) whenever it is reloaded or reset, so a new index object starts a fresh cache.
+    index = excel_course_catalog.courses_by_code
+    state = _read_only_memo
+    if state["excel_index"] is not index:
+        state = {"excel_index": index, "memo": {}}
+        globals()["_read_only_memo"] = state
+    return state["memo"]
+
+
+def _plan_memo(kind: str, anchor: object, arg: Any, compute):
+    """compute(), memoized for the current generate_plan call under (kind, anchor identity, arg).
+
+    Outside generate_plan it just computes. The entry keeps a reference to `anchor` so its id cannot
+    be reused by another object while cached. Cached values must be immutable; callers copy them.
+    Catalog-only lookups on a read-only catalog are cached across calls instead.
+    """
+    if kind in _CATALOG_ONLY_MEMO_KINDS and _READ_ONLY_CATALOGS.get(id(anchor)) is anchor:
+        memo = _read_only_catalog_memo()
+    else:
+        memo = _PLAN_MEMO.get()
+    if memo is None:
+        return compute()
+    key = (kind, id(anchor), arg)
+    entry = memo.get(key)
+    if entry is None:
+        entry = memo[key] = (anchor, compute())
+    return entry[1]
+
+
+def _with_plan_memo(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if _PLAN_MEMO.get() is not None:
+            return func(*args, **kwargs)
+        token = _PLAN_MEMO.set({})
+        try:
+            return func(*args, **kwargs)
+        finally:
+            _PLAN_MEMO.reset(token)
+
+    return wrapper
+
+
+def _recommended_electives(excel_catalog: Dict, majors: List[str], minors: List[str]) -> List[Dict[str, Any]]:
+    """get_recommended_electives, computed once per plan; callers get their own copies."""
+    entries = _plan_memo(
+        "recommended",
+        excel_catalog,
+        (tuple(majors), tuple(minors)),
+        lambda: tuple(get_recommended_electives(
+            excel_catalog=excel_catalog,
+            selected_majors=majors,
+            selected_minors=minors,
+        )),
+    )
+    return [
+        {key: list(value) if isinstance(value, list) else value for key, value in entry.items()}
+        for entry in entries
+    ]
+
+
 def _planning_course_pool(catalog: Dict) -> Set[str]:
+    return set(_plan_memo("pool", catalog, None, lambda: frozenset(_compute_planning_course_pool(catalog))))
+
+
+def _compute_planning_course_pool(catalog: Dict) -> Set[str]:
     courses = set(_catalog_courses(catalog))
     # Opt into Excel-only GenEd courses only when a paired Excel catalog is present.
     # This prevents synthetic unit-test catalogs from being polluted by global Excel state.
@@ -1257,6 +1358,10 @@ def _policy_course_credits(catalog: Dict, code: str) -> int | None:
 
 
 def _course_credits(catalog: Dict, code: str) -> int:
+    return _plan_memo("credits", catalog, code, lambda: _compute_course_credits(catalog, code))
+
+
+def _compute_course_credits(catalog: Dict, code: str) -> int:
     # Hand-maintained policy corrections win over the Excel and PDF data, and may set 0 credits.
     policy_credits = _policy_course_credits(catalog, code)
     if policy_credits is not None:
@@ -1277,6 +1382,10 @@ def _course_credits(catalog: Dict, code: str) -> int:
 
 
 def _course_gened_categories(catalog: Dict, code: str) -> List[str]:
+    return list(_plan_memo("gened", catalog, code, lambda: tuple(_compute_course_gened_categories(catalog, code))))
+
+
+def _compute_course_gened_categories(catalog: Dict, code: str) -> List[str]:
     # A 0-credit lab (PHY 1011) inherits its lecture's GenEd tag in Excel, but cannot fill a GenEd slot.
     if _course_credits(catalog, code) == 0:
         return []
@@ -2439,6 +2548,16 @@ def build_requirement_slots(
 
 
 def compute_course_satisfies(catalog: Dict, course_code: str, slots: Dict) -> Set[str]:
+    # Slot structures are not modified after build_requirement_slots / filtering creates them.
+    return set(_plan_memo(
+        "satisfies",
+        slots,
+        (id(catalog), course_code),
+        lambda: frozenset(_compute_course_satisfies(catalog, course_code, slots)),
+    ))
+
+
+def _compute_course_satisfies(catalog: Dict, course_code: str, slots: Dict) -> Set[str]:
     out: Set[str] = set()
     code = _normalize_course_code(course_code)
     course_gened = set(_course_gened_categories(catalog, code))
@@ -5011,11 +5130,7 @@ def compute_elective_recommendations(
                 entry["_explanation_override"] = explanation
 
     if excel_catalog:
-        candidates = get_recommended_electives(
-            excel_catalog=excel_catalog,
-            selected_majors=majors,
-            selected_minors=minors,
-        )
+        candidates = _recommended_electives(excel_catalog, majors, minors)
         candidates = _limit_business_administration_non_bus_elective_candidates(candidates, majors)
     else:
         candidates = []
@@ -5245,6 +5360,7 @@ def _excel_course_summary(catalog: Dict, code: str, tags: List[str]) -> Dict:
     }
 
 
+@_with_plan_memo
 def generate_plan(
     catalog: Dict,
     majors: List[str],
@@ -5441,11 +5557,7 @@ def generate_plan(
     excel_elective_tags: Dict[str, List[str]] = {}
     excel_catalog = catalog.get("excel_catalog") or {}
     if excel_catalog:
-        elective_entries = get_recommended_electives(
-            excel_catalog=excel_catalog,
-            selected_majors=majors,
-            selected_minors=minors,
-        )
+        elective_entries = _recommended_electives(excel_catalog, majors, minors)
         elective_entries = _limit_business_administration_non_bus_elective_candidates(elective_entries, majors)
         excel_elective_tags = get_selected_program_elective_tags(
             excel_catalog=excel_catalog,

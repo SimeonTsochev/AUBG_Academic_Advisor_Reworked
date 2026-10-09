@@ -122,13 +122,23 @@ def _startup_preload_catalog_cache() -> None:
     )
 
 
+def _check_snapshot_db() -> None:
+    try:
+        init_db()
+    except RuntimeError:
+        logging.exception("Program snapshot database check failed; snapshot endpoints will return errors.")
+        return
+    logging.info("Program snapshot database initialized.")
+
+
 @app.on_event("startup")
 def _startup_init_snapshot_db() -> None:
     if not snapshot_storage_enabled():
         logging.warning("Program snapshot storage disabled: Supabase environment variables are not configured.")
         return
-    init_db()
-    logging.info("Program snapshot database initialized.")
+    # In the background: the Supabase import and round trip should not delay the first plan
+    # request on a cold start, and a Supabase outage should not take planning down with it.
+    threading.Thread(target=_check_snapshot_db, name="snapshot-db-check", daemon=True).start()
 
 
 def _load_default_catalog() -> Dict:
@@ -396,32 +406,33 @@ def catalog_integrity(catalog_id: str):
 
 # Plain `def` (not `async def`): planning is CPU-bound, and FastAPI runs sync endpoints in a
 # threadpool instead of blocking the event loop for every other request.
-@app.post("/plan/generate", response_model=GeneratePlanResponse)
-def plan_generate(req: GeneratePlanRequest):
+def _plan_response_payload(req: GeneratePlanRequest) -> Dict[str, Any]:
+    """The /plan/generate response as a dict, memoized so the PDF export reuses the plan on screen."""
     catalog = _ensure_catalog(req.catalog_id)
     request_key = _plan_request_key(req)
     cached = _cached_plan(request_key)
     if cached is not None:
-        return GeneratePlanResponse(**cached)
+        return cached
     try:
         plan = _generate_plan_for_request(catalog, req)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    response_payload = GeneratePlanResponse(
+    payload = GeneratePlanResponse(
         catalog_id=req.catalog_id,
         catalog_year=catalog.get("catalog_year"),
         **plan,
-    )
-    _store_plan(request_key, response_payload.model_dump())
-    return response_payload
+    ).model_dump()
+    _store_plan(request_key, payload)
+    return payload
+
+
+@app.post("/plan/generate", response_model=GeneratePlanResponse)
+def plan_generate(req: GeneratePlanRequest):
+    return GeneratePlanResponse(**_plan_response_payload(req))
 
 @app.post("/plan/download.pdf")
 def plan_download_pdf(req: GeneratePlanRequest):
-    catalog = _ensure_catalog(req.catalog_id)
-    try:
-        plan = _generate_plan_for_request(catalog, req)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    plan = _plan_response_payload(req)
     pdf_bytes = plan_to_pdf_bytes({
         "majors": req.majors,
         "minors": req.minors,

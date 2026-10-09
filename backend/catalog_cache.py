@@ -19,6 +19,7 @@ from catalog_artifacts import (
     normalize_policy_overrides,
     read_json_artifact,
 )
+from degree_engine import mark_catalog_read_only
 from excel_course_catalog import load_course_catalog_from_data
 
 
@@ -108,6 +109,8 @@ def getCatalogCache() -> CatalogCache:
 
         catalog_year = str(default_catalog.get("catalog_year") or pdf_requirements.get("catalog_year") or "")
         default_catalog["catalog_year"] = catalog_year
+        # Nothing mutates the shipped catalog after this point (fix data in policy_overrides.json).
+        mark_catalog_read_only(default_catalog)
         default_catalog_id = str(
             uuid.uuid5(
                 uuid.NAMESPACE_DNS,

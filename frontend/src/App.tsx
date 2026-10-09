@@ -1,7 +1,5 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { AcademicSetupScreen } from './components/AcademicSetupScreen';
-import { MainAdvisorScreen } from './components/MainAdvisorScreen';
 import { HowItWorksModal } from './components/HowItWorksModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import {
@@ -17,6 +15,13 @@ import { normalizeFailedCourses } from './utils/retakes';
 import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from './constants/academic';
 
 type Screen = 'welcome' | 'setup' | 'advisor';
+
+// The setup and advisor screens are most of the app's code; load them as separate chunks so the
+// welcome screen renders first, and prefetch them while it is shown.
+const importSetupScreen = () => import('./components/AcademicSetupScreen');
+const importAdvisorScreen = () => import('./components/MainAdvisorScreen');
+const AcademicSetupScreen = lazy(() => importSetupScreen().then((m) => ({ default: m.AcademicSetupScreen })));
+const MainAdvisorScreen = lazy(() => importAdvisorScreen().then((m) => ({ default: m.MainAdvisorScreen })));
 
 interface AcademicSelection {
   majors: string[];       // supports multiple majors
@@ -282,6 +287,18 @@ export default function App() {
   const [disclaimerAccepted, setDisclaimerAccepted] = useState<boolean>(() => readDisclaimerAccepted());
 
   const [catalog, setCatalog] = useState<UploadCatalogResponse | null>(null);
+  // One shared catalog request: prefetched on load (which also wakes a cold backend), reused by
+  // Start and by shared-link restore, and retried if it failed.
+  const catalogRequestRef = useRef<Promise<UploadCatalogResponse> | null>(null);
+  const requestCatalog = () => {
+    if (!catalogRequestRef.current) {
+      catalogRequestRef.current = loadDefaultCatalog().catch((e) => {
+        catalogRequestRef.current = null;
+        throw e;
+      });
+    }
+    return catalogRequestRef.current;
+  };
   const [restoredSnapshot, setRestoredSnapshot] = useState<ProgramSnapshotPayload | null>(null);
   const [restoredSnapshotToken, setRestoredSnapshotToken] = useState<string | null>(null);
   const [pendingSelection, setPendingSelection] = useState<AcademicSelection | null>(null);
@@ -308,6 +325,22 @@ export default function App() {
   });
 
   useEffect(() => {
+    void importSetupScreen().catch(() => undefined);
+    void importAdvisorScreen().catch(() => undefined);
+    if (/^\/p\//.test(window.location.pathname)) return;
+    let cancelled = false;
+    requestCatalog().then(
+      (resp) => {
+        if (!cancelled) setCatalog((prev) => prev ?? resp);
+      },
+      () => undefined, // Start shows the error and retries.
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const match = window.location.pathname.match(/^\/p\/([A-Za-z0-9_-]+)$/);
     if (!match) return;
 
@@ -320,7 +353,7 @@ export default function App() {
       let loadedCatalog: UploadCatalogResponse | null = null;
 
       try {
-        loadedCatalog = await loadDefaultCatalog();
+        loadedCatalog = await requestCatalog();
         if (cancelled) return;
         const snapshot = await getProgramSnapshot(token);
         if (cancelled) return;
@@ -391,7 +424,7 @@ export default function App() {
     }
     setIsCatalogLoading(true);
     try {
-      const resp = await loadDefaultCatalog();
+      const resp = await requestCatalog();
       setCatalog(resp);
       setCurrentScreen('setup');
     } catch (e: any) {
@@ -440,6 +473,7 @@ export default function App() {
         />
       )}
 
+      <Suspense fallback={null}>
       {currentScreen === 'setup' && catalog && (
         <AcademicSetupScreen
           catalogId={catalog.catalog_id}
@@ -462,6 +496,7 @@ export default function App() {
           onBack={() => setCurrentScreen('setup')}
         />
       )}
+      </Suspense>
 
       {pendingSelection && !disclaimerAccepted && (
         <DisclaimerModal

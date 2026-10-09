@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Set
 import logging
@@ -243,14 +244,18 @@ def _program_tag_prefixes(programs: List[str]) -> Set[str]:
     return prefixes
 
 
+# Pure, called for every tag of every course on each plan, so memoized.
+@lru_cache(maxsize=8192)
+def _normalize_tag(tag: str) -> str:
+    return re.sub(r"\s+", " ", tag).strip().lower()
+
+
 def _tag_starts_with_prefix(tag: str, prefix: str) -> bool:
-    t = re.sub(r"\s+", " ", tag).strip().lower()
-    p = re.sub(r"\s+", " ", prefix).strip().lower()
-    return t.startswith(p + " ")
+    return _normalize_tag(tag).startswith(_normalize_tag(prefix) + " ")
 
 
 def _tag_has_words(tag: str, *needles: str) -> bool:
-    t = re.sub(r"\s+", " ", tag).strip().lower()
+    t = _normalize_tag(tag)
     return all(n.lower() in t for n in needles)
 
 
