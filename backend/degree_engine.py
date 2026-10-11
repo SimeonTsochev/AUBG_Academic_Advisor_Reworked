@@ -123,7 +123,6 @@ FINE_ARTS_GROUP_C = {"FAR 1005", "FAR 1021", "FAR 1022", "FAR 2003", "FAR 4003",
 FINE_ARTS_GROUP_C_CREDITS_REQUIRED = 6
 FINE_ARTS_ELECTIVE_CREDITS_REQUIRED = 6
 
-BUSINESS_ADMIN_ELECTIVE_CREDITS_REQUIRED = 9
 BUSINESS_ADMIN_NON_BUS_ELECTIVES = {
     "EUR 3003",
     "EUR 3020",
@@ -133,9 +132,6 @@ BUSINESS_ADMIN_NON_BUS_ELECTIVES = {
     "SUS 3001",
     "SUS 4500",
 }
-BUSINESS_ADMIN_NON_BUS_ELECTIVE_CAP = 3
-BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVES = {"BUS 4090", "BUS 4091", "BUS 4092"}
-BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVE_CAP = 3
 
 
 @lru_cache(maxsize=8192)
@@ -184,90 +180,6 @@ def _course_number(code: str) -> int | None:
     if not m:
         return None
     return int(m.group(1))
-
-
-def _is_business_administration_bus_ent_upper_level(code: str) -> bool:
-    normalized = _normalize_course_code(code)
-    parts = normalized.split()
-    if len(parts) != 2:
-        return False
-    if parts[0] not in {"BUS", "ENT"}:
-        return False
-    number = _course_number(normalized)
-    return number is not None and 3000 <= int(number) <= 4999
-
-
-def _business_administration_required_courses(catalog: Dict) -> Set[str]:
-    """The major's own required courses. Concentration courses are not among them: they count
-    toward the major's elective credits (AY 2026-27 catalog p.83, Business Administration)."""
-    majors = catalog.get("majors", {}) or {}
-    required_courses: Set[str] = set()
-    if not isinstance(majors, dict):
-        return required_courses
-    for major_name, major_data in majors.items():
-        if not isinstance(major_name, str) or not _is_business_administration_major(major_name):
-            continue
-        if not isinstance(major_data, dict):
-            continue
-        required = major_data.get("required_courses") or []
-        if not isinstance(required, list):
-            continue
-        required_courses = {
-            _normalize_course_code(code)
-            for code in required
-            if isinstance(code, str) and _normalize_course_code(code)
-        }
-        break
-    return required_courses
-
-
-def _business_administration_elective_credit_breakdown(
-    catalog: Dict,
-    taken_courses: Set[str],
-    business_concentration: str | None = None,
-) -> Dict[str, int]:
-    taken = {
-        _normalize_course_code(code)
-        for code in (taken_courses or set())
-        if isinstance(code, str) and _normalize_course_code(code)
-    }
-    required_courses = _business_administration_required_courses(catalog)
-
-    non_bus_earned = sum(
-        _course_credits(catalog, code)
-        for code in taken
-        if code in BUSINESS_ADMIN_NON_BUS_ELECTIVES
-    )
-    thesis_project_earned = sum(
-        _course_credits(catalog, code)
-        for code in taken
-        if code in BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVES
-    )
-
-    bus_ent_upper_level_earned = 0
-    for code in taken:
-        if code in required_courses:
-            continue
-        if code in BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVES:
-            continue
-        if _is_business_administration_bus_ent_upper_level(code):
-            bus_ent_upper_level_earned += _course_credits(catalog, code)
-
-    non_bus_counted = min(BUSINESS_ADMIN_NON_BUS_ELECTIVE_CAP, int(non_bus_earned))
-    thesis_project_counted = min(BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVE_CAP, int(thesis_project_earned))
-    counted_total = min(
-        BUSINESS_ADMIN_ELECTIVE_CREDITS_REQUIRED,
-        int(non_bus_counted + thesis_project_counted + bus_ent_upper_level_earned),
-    )
-    remaining = max(0, BUSINESS_ADMIN_ELECTIVE_CREDITS_REQUIRED - counted_total)
-    return {
-        "required": BUSINESS_ADMIN_ELECTIVE_CREDITS_REQUIRED,
-        "counted_total": counted_total,
-        "remaining": int(remaining),
-        "non_bus_counted": int(non_bus_counted),
-        "thesis_project_counted": int(thesis_project_counted),
-        "bus_ent_upper_level_counted": int(bus_ent_upper_level_earned),
-    }
 
 
 def _tag_prefix(tag: object) -> str:
@@ -4883,9 +4795,9 @@ def _category_credit_progress(
     slot_assignment: Dict[str, str],
     completed_courses: Set[str],
     waived_courses: Set[str] | None = None,
-    selected_majors: List[str] | None = None,
-    business_concentration: str | None = None,
 ) -> Dict[str, Dict]:
+    """Progress rows from the requirement slots. Each program's electives are added from
+    elective_progress (plan_audit._category_progress)."""
     majors: Dict[str, Dict[str, int]] = {}
     minors: Dict[str, Dict[str, int]] = {}
     gen_ed = {"required": 0, "completed": 0}
@@ -4925,33 +4837,6 @@ def _category_credit_progress(
         bucket["required"] += credits
         if assigned and assigned in completed_courses and (not waived_courses or assigned not in waived_courses):
             bucket["completed"] += credits
-
-    completed_non_waived = {
-        code for code in completed_courses
-        if (not waived_courses) or (code not in waived_courses)
-    }
-    selected_major_names = {
-        name for name in (selected_majors or [])
-        if isinstance(name, str) and name
-    }
-    slot_major_names = {
-        slot.get("program")
-        for slot in slots.get("slots", [])
-        if slot.get("owner") == "program"
-        and slot.get("program_type") == "major"
-        and isinstance(slot.get("program"), str)
-    }
-    for major_name in sorted(set(selected_major_names) | set(slot_major_names)):
-        if not _is_business_administration_major(major_name):
-            continue
-        progress = _business_administration_elective_credit_breakdown(
-            catalog,
-            completed_non_waived,
-            business_concentration,
-        )
-        bucket = majors.setdefault(major_name, {"required": 0, "completed": 0})
-        bucket["required"] += int(progress.get("required") or 0)
-        bucket["completed"] += int(progress.get("counted_total") or 0)
 
     minors_required = sum(v["required"] for v in minors.values())
     minors_completed = sum(v["completed"] for v in minors.values())

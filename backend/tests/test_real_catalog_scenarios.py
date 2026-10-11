@@ -325,6 +325,14 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         self.assertEqual(result["summary"]["projected_credits"] - planned, 3)
         self.assertIsNone(_term_of(result, "BUS 4482"))
 
+    def test_progress_rows_count_completed_electives_after_the_caps(self):
+        # "No more than one 4000-level EUR course" (pp.108-109): two completed ones earn 3 elective credits.
+        program = "Political Science and International Relations"
+        result = _plan(self.catalog, [program], [], {"EUR 4400", "EUR 4401"})
+        electives = next(e for e in result["elective_progress"] if e["program"] == program)
+        self.assertEqual(electives["credits_done"], 3)
+        self.assertEqual(result["category_progress"]["majors"][program]["completed"], 3)
+
     def test_zero_credit_policy_overrides_are_honored(self):
         self.assertEqual(_course_credits(self.catalog, "AUB 1000"), 0)
         self.assertEqual(_course_credits(self.catalog, "MAT 1001"), 0)

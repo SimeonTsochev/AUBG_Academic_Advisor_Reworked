@@ -141,15 +141,19 @@ def compute_elective_progress(
     program_options: Dict[str, List[str]] | None = None,
     extra_elective_credits: Dict[Tuple[str, str], int] | None = None,
     waived: Set[str] | None = None,
+    done: Set[str] | None = None,
 ) -> List[Dict]:
     """One entry per (program, "major"/"minor") that has an elective requirement.
 
     `extra_elective_credits`: credits a program's electives grow by, e.g. when a placement test
     waives a required course and the student takes another elective instead (catalog p.86).
     `waived`: placement-waived courses; they satisfy elective rules but earn no credits.
+    `done`: courses already earned (`completed` by default); `credits_done` is what they count
+    toward the electives after the caps, without transfer credits.
     """
     catalog_courses = _catalog_courses(catalog)
     taken = completed | planned
+    done_courses = completed if done is None else done
     progress: List[Dict] = []
     for program, program_type in programs:
         program_data = (catalog.get(f"{program_type}s") or {}).get(program) or {}
@@ -191,20 +195,25 @@ def compute_elective_progress(
             and CAP_RE.search(_elective_block_rule_text(block))
         ]
         counted_courses = sorted(code for code in taken if counts(code) and _course_credits(catalog, code) > 0)
-        rule_statuses: List[Dict] = []
-        if rules:
-            course_credit, rule_statuses = evaluate(
-                catalog, rules, counted_courses, completed, waived=waived or set(), extra_credits=extra
-            )
-            course_credits_counted = sum(course_credit.values())
-        else:
-            course_credits_counted = _counted_credits_with_caps(
+
+        def course_credits(courses: List[str]) -> Tuple[int, List[Dict]]:
+            """Credits `courses` contribute after the caps, and the status of the program's rules."""
+            if rules:
+                course_credit, statuses = evaluate(
+                    catalog, rules, courses, completed, waived=waived or set(), extra_credits=extra
+                )
+                return sum(course_credit.values()), statuses
+            capped = _counted_credits_with_caps(
                 catalog=catalog,
-                taken=set(counted_courses),
+                taken=set(courses),
                 cap_blocks=cap_blocks,
                 required_exclusions=set(),
                 allowed_predicate=lambda code: True,
             )
+            return capped, []
+
+        course_credits_counted, rule_statuses = course_credits(counted_courses)
+        credits_done, _ = course_credits([code for code in counted_courses if code in done_courses])
         transfer_cap = int(program_data.get("max_transfer_elective_credits") or MAX_TRANSFER_MAJOR_CREDITS)
         transferred = min(int(manual_major_elective_credits.get(program, 0) or 0), transfer_cap)
         credits_counted = course_credits_counted + (transferred if program_type == "major" else 0)
@@ -221,6 +230,7 @@ def compute_elective_progress(
             "credits_required": credits_required,
             "courses_required": courses_required if credits_required is None else None,
             "credits_counted": credits_counted,
+            "credits_done": credits_done,
             "remaining": remaining,
             "unit": "credits" if credits_required is not None else "courses",
             "rule_text": rule_text,

@@ -52,7 +52,35 @@ def build_bus_jmc_catalog(with_excel: bool = False) -> dict:
                         "allowed_courses": [],
                         "rule_text": "Business Administration major electives: 9 credits required.",
                         "is_total": True,
-                    }
+                    },
+                    # The caps as catalog_parser emits them (test_business_admin_electives_are_structured_in_parser).
+                    {
+                        "id": "business-administration-elective-2",
+                        "label": "Non-BUS allowed electives",
+                        "credits_required": 3,
+                        "courses_required": None,
+                        "allowed_courses": sorted(BUS_NON_BUS),
+                        "rule_text": "At most 3 credits may come from these non-BUS electives.",
+                        "is_total": False,
+                    },
+                    {
+                        "id": "business-administration-elective-3",
+                        "label": "Project/Thesis elective cap",
+                        "credits_required": 3,
+                        "courses_required": None,
+                        "allowed_courses": ["BUS 4090", "BUS 4091", "BUS 4092"],
+                        "rule_text": "At most 3 credits may come from BUS 4090 or BUS 4091/BUS 4092 toward electives.",
+                        "is_total": False,
+                    },
+                    {
+                        "id": "business-administration-elective-4",
+                        "label": "BUS/ENT upper-level electives",
+                        "credits_required": None,
+                        "courses_required": None,
+                        "allowed_courses": [],
+                        "rule_text": "Remaining elective credits must be BUS/ENT 3000-4000 level courses.",
+                        "is_total": False,
+                    },
                 ],
             },
             "Journalism and Mass Communication": {

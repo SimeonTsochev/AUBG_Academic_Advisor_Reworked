@@ -16,7 +16,6 @@ from degree_engine import (
     _category_credit_progress,
     _completed_credit_total,
     _course_credits,
-    _is_business_administration_major,
 )
 from elective_progress import compute_elective_progress
 from graduation_checks import graduation_checks
@@ -65,6 +64,7 @@ def _elective_progress(state: PlanState) -> List[Dict]:
         program_options=state.program_options,
         extra_elective_credits=_placement_elective_credits(state),
         waived=state.placement_waived,
+        done=state.done,
     )
 
 
@@ -82,27 +82,15 @@ def _placement_elective_credits(state: PlanState) -> Dict[Tuple[str, str], int]:
 def _category_progress(state: PlanState, elective_progress: List[Dict]) -> Dict[str, Dict]:
     """Progress rows: each program's required slots and its electives, GenEd, foundation and
     collateral options. Progress counts what is done, not this semester's courses."""
-    done = state.done
-    progress = _category_credit_progress(
-        state.catalog,
-        state.slots,
-        state.slot_assignment,
-        done,
-        state.waived,
-        selected_majors=state.majors,
-        business_concentration=state.business_concentration,
-    )
+    progress = _category_credit_progress(state.catalog, state.slots, state.slot_assignment, state.done, state.waived)
     _apply_manual_credit_progress(progress, state.manual_credit_breakdown)
-    # Each program's row covers its electives too (Business has its own breakdown above).
+    # Each program's row covers its electives too.
     for entry in elective_progress:
-        if entry["program_type"] == "major" and _is_business_administration_major(entry["program"]):
-            continue
         group = progress.setdefault("majors" if entry["program_type"] == "major" else "minors", {})
         bucket = group.setdefault(entry["program"], {"required": 0, "completed": 0})
         required = int(entry.get("credits_required") or 0) or 3 * int(entry.get("courses_required") or 0)
-        done_credits = sum(int(c.get("credits") or 0) for c in entry.get("courses") or [] if c.get("code") in done)
         bucket["required"] += required
-        bucket["completed"] = min(bucket["required"], bucket["completed"] + min(required, done_credits))
+        bucket["completed"] = min(bucket["required"], bucket["completed"] + min(required, entry["credits_done"]))
     return progress
 
 
