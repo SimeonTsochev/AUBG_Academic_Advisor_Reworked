@@ -11,6 +11,8 @@ class UploadCatalogResponse(BaseModel):
     course_meta: Dict[str, Dict] = Field(default_factory=dict)
     gen_ed: Dict[str, Dict] = Field(default_factory=dict)
     excel_only_codes: List[str] = Field(default_factory=list)
+    # Per major: {"diploma": "dual" | "single"} (catalog p.72).
+    program_info: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
 class TranscriptImportMatchCandidate(BaseModel):
@@ -221,6 +223,42 @@ class PlanWarning(BaseModel):
     min: Optional[int] = None
     unmet: List[str] = Field(default_factory=list)
 
+class WicCheck(BaseModel):
+    required: int
+    counted: int
+    courses: List[str] = Field(default_factory=list)
+
+
+class DualDiplomaCheck(BaseModel):
+    ok: bool
+    majors: Dict[str, Optional[str]] = Field(default_factory=dict)
+
+
+class ResidencyCheck(BaseModel):
+    aubg_credits: int
+    required: int
+
+
+class RetakeCheck(BaseModel):
+    count: int
+    limit: int
+
+
+class SharedCourses(BaseModel):
+    programs: List[str]
+    courses: List[str]
+    limit: int
+
+
+class GraduationChecks(BaseModel):
+    """Catalog graduation rules outside the requirement slots (graduation_checks.py)."""
+    wic: WicCheck
+    dual_diploma: DualDiplomaCheck
+    residency: ResidencyCheck
+    retakes: RetakeCheck
+    double_counting: List[SharedCourses] = Field(default_factory=list)
+
+
 class GeneratePlanResponse(BaseModel):
     catalog_id: str
     catalog_year: Optional[str] = None
@@ -246,6 +284,7 @@ class GeneratePlanResponse(BaseModel):
     warnings: List[PlanWarning] = Field(default_factory=list)
     is_valid: bool = True
     validation_errors: List[str] = Field(default_factory=list)
+    graduation_checks: Optional[GraduationChecks] = None
 
 
 class CreateSnapshotRequest(BaseModel):

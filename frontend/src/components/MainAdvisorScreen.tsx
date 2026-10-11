@@ -4722,6 +4722,11 @@ export function MainAdvisorScreen({
   ]);
 
   const wicRequirementStatus = useMemo(() => {
+    // The backend also reads WIC flags that exist only in the Excel catalog.
+    const checked = plan?.graduation_checks?.wic;
+    if (checked) {
+      return { required: checked.required, completed: checked.counted, need: Math.max(0, checked.required - checked.counted) };
+    }
     const uniqueWicCodes = new Set<string>();
     for (const course of courseObjects) {
       const code = typeof course.code === 'string' ? course.code.trim() : '';
@@ -4735,7 +4740,7 @@ export function MainAdvisorScreen({
     const completed = uniqueWicCodes.size;
     const need = Math.max(0, required - completed);
     return { required, completed, need };
-  }, [courseObjects, catalog.course_meta]);
+  }, [courseObjects, catalog.course_meta, plan?.graduation_checks?.wic]);
 
   const totalCredits = useMemo(() => {
     const unique = new Set([...effectiveCompleted, ...effectiveInProgress]);

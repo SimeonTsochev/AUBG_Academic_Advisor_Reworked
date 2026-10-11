@@ -491,6 +491,7 @@ export default function App() {
           catalogYear={catalog.catalog_year ?? undefined}
           majors={catalog.majors}
           minors={catalog.minors}
+          programInfo={catalog.program_info}
           courses={catalog.courses}
           courseMeta={catalog.course_meta}
           onComplete={handleSetupComplete}

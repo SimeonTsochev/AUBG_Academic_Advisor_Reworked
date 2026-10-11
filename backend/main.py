@@ -392,6 +392,11 @@ def load_default_catalog():
         course_meta=_catalog_course_meta_for_response(catalog),
         gen_ed=catalog.get("gen_ed", {}),
         excel_only_codes=excel_only_codes,
+        program_info={
+            name: {"diploma": data["diploma"]}
+            for name, data in (catalog.get("majors") or {}).items()
+            if isinstance(data, dict) and data.get("diploma")
+        },
     )
 
 

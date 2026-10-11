@@ -8,6 +8,8 @@ export interface UploadCatalogResponse {
   majors: string[];
   minors: string[];
   excel_only_codes?: string[];
+  /** Per major; "dual" majors lead to a US and a Bulgarian diploma (catalog p.72). */
+  program_info?: Record<string, { diploma?: "dual" | "single" }>;
   courses: Record<string, string>; // code -> title (best-effort)
   course_meta?: Record<string, {
     title?: string | null;
@@ -394,6 +396,15 @@ export interface PlanWarning {
   [key: string]: unknown;
 }
 
+/** Catalog graduation rules outside the requirement slots (backend graduation_checks.py). */
+export interface GraduationChecks {
+  wic: { required: number; counted: number; courses: string[] };
+  dual_diploma: { ok: boolean; majors: Record<string, "dual" | "single" | null> };
+  residency: { aubg_credits: number; required: number };
+  retakes: { count: number; limit: number };
+  double_counting: { programs: string[]; courses: string[]; limit: number }[];
+}
+
 export interface GeneratePlanResponse {
   catalog_id: string;
   catalog_year?: string | null;
@@ -473,6 +484,7 @@ export interface GeneratePlanResponse {
   warnings?: PlanWarning[];
   is_valid?: boolean;
   validation_errors?: string[];
+  graduation_checks?: GraduationChecks | null;
   gened_discovery?: {
     case_studies_textual_analysis?: {
       code: string;

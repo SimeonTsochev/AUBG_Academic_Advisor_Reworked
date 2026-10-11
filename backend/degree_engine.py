@@ -5730,6 +5730,28 @@ def generate_plan(
             f"Could not fit {', '.join(unscheduled_courses)} into a {MAX_PLAN_TERMS}-semester plan; "
             "raise the credit load per semester or review the prerequisites."
         )
+
+    from graduation_checks import graduation_checks  # imports this module's helpers
+
+    plan_courses = requested_completed | {
+        _current_course_code(catalog, code) for code in (in_progress_courses or set()) if isinstance(code, str)
+    } | {
+        course["code"]
+        for term in semester_plan
+        for course in term.get("courses", []) or []
+        if isinstance(course.get("code"), str) and not _is_free_elective(course["code"])
+    }
+    graduation_errors, graduation_details = graduation_checks(
+        catalog,
+        majors=majors,
+        slots=slots,
+        courses=plan_courses,
+        aubg_credits=_projected_degree_credits(
+            catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset
+        ) - total_manual_credits,
+        retakes=normalized_retakes,
+    )
+    validation_errors.extend(graduation_errors)
     is_valid = True
     validation_errors_out: List[str] = []
     if validation_errors:
@@ -5840,6 +5862,7 @@ def generate_plan(
         "warnings": warnings,
         "is_valid": is_valid,
         "validation_errors": validation_errors_out,
+        "graduation_checks": graduation_details,
     }
 
 def _apply_plan_overrides(

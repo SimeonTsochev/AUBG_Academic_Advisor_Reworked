@@ -236,6 +236,10 @@ def _apply_program_policy(programs: Dict[str, Any], overrides: Dict[str, Any]) -
             )
             target["elective_requirements"] = existing_blocks
 
+        # Program facts the PDF parser does not extract: "dual" or "single" diploma (catalog p.72).
+        if override.get("diploma") in ("dual", "single"):
+            target["diploma"] = override["diploma"]
+
 
 def apply_policy_overrides(
     pdf_requirements: Dict[str, Any],

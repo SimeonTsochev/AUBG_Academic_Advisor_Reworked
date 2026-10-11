@@ -73,6 +73,8 @@ interface AcademicSetupScreenProps {
   catalogYear?: string;
   majors: string[];
   minors: string[];
+  /** Per major; "dual" majors lead to a US and a Bulgarian diploma (catalog p.72). */
+  programInfo?: Record<string, { diploma?: "dual" | "single" }>;
   courses: Record<string, string>; // code -> title
   courseMeta?: Record<string, {
     credits?: number;
@@ -110,6 +112,7 @@ export function AcademicSetupScreen({
   catalogYear,
   majors,
   minors,
+  programInfo = {},
   courses,
   courseMeta,
   onComplete,
@@ -191,6 +194,9 @@ export function AcademicSetupScreen({
 
   const economicsMinorSelected = selectedMinors.includes("Economics");
   const businessMajorSelected = selectedMajors.includes("Business Administration");
+  // Every student needs at least one dual-diploma major to graduate (catalog p.72).
+  const onlySingleDiplomaMajors =
+    selectedMajors.length > 0 && selectedMajors.every((m) => programInfo[m]?.diploma === 'single');
   const marketingImcConflict =
     businessMajorSelected
     && businessConcentration === 'Marketing'
@@ -892,10 +898,27 @@ export function AcademicSetupScreen({
                       disabled={!canToggleMajor(m)}
                       onChange={() => handleToggleMajor(m)}
                     />
-                    <span>{m}</span>
+                    <span className="flex flex-col">
+                      <span>{m}</span>
+                      {programInfo[m]?.diploma && (
+                        <span className="text-xs muted">
+                          {programInfo[m]?.diploma === 'dual' ? 'US + Bulgarian diploma' : 'US diploma only'}
+                        </span>
+                      )}
+                    </span>
                   </label>
                 ))}
               </div>
+              {onlySingleDiplomaMajors && (
+                <div className="alert alert-info mt-3" role="status">
+                  <Info aria-hidden="true" />
+                  <p>
+                    {selectedMajors.length === 1
+                      ? `${selectedMajors[0]} gives a US diploma only. AUBG requires at least one dual-diploma major to graduate, so add one as a second major.`
+                      : 'Both majors give a US diploma only. AUBG requires at least one dual-diploma major to graduate, so swap one for a dual-diploma major.'}
+                  </p>
+                </div>
+              )}
             </div>
 
             {businessMajorSelected && (
