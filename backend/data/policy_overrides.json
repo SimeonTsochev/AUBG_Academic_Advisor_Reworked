@@ -8,6 +8,121 @@
     "COS 4060": "COS 3060"
   },
   "course_renumbering_source": "AY 2026-27 catalog p.86 and p.143: Algorithms is COS 3060 (required in the Computer Science major); earlier catalogs numbered it COS 4060. A completed COS 4060 counts as COS 3060.",
+  "course_groups": {
+    "French courses": [
+      "MLL 1015",
+      "MLL 1016",
+      "MLL 2015",
+      "MLL 2016",
+      "MLL 2017",
+      "MLL 3001",
+      "MLL 4015",
+      "MLL 4091"
+    ],
+    "German courses": [
+      "MLL 1025",
+      "MLL 1026",
+      "MLL 2025",
+      "MLL 2026",
+      "MLL 2027",
+      "MLL 3002",
+      "MLL 4025",
+      "MLL 4092"
+    ],
+    "Spanish courses": [
+      "MLL 1055",
+      "MLL 1056",
+      "MLL 2055",
+      "MLL 2056",
+      "MLL 2057",
+      "MLL 3003",
+      "MLL 4055",
+      "MLL 4094"
+    ],
+    "Bulgarian courses": [
+      "MLL 1035",
+      "MLL 1036",
+      "MLL 2035",
+      "MLL 2037",
+      "MLL 4093"
+    ],
+    "German, French and Spanish courses at the 1000/2000 level": [
+      "MLL 1015",
+      "MLL 1016",
+      "MLL 2015",
+      "MLL 2016",
+      "MLL 2017",
+      "MLL 1025",
+      "MLL 1026",
+      "MLL 2025",
+      "MLL 2026",
+      "MLL 2027",
+      "MLL 1055",
+      "MLL 1056",
+      "MLL 2055",
+      "MLL 2056",
+      "MLL 2057"
+    ],
+    "MLC additional electives": [
+      "BUS 2001",
+      "BUS 2060",
+      "BUS 3040",
+      "ENG 2010",
+      "ENG 2032",
+      "EUR 1011",
+      "EUR 2012",
+      "EUR 2013",
+      "POS 2013",
+      "JMC 1041",
+      "JMC 1050",
+      "PHI 1001",
+      "POS 1002"
+    ],
+    "PSY cross-listed courses": [
+      "PSY 2075",
+      "PSY 2076",
+      "PSY 3040",
+      "PSY 3061",
+      "PSY 3412",
+      "PSY 3413",
+      "PSY 3414",
+      "PSY 3483",
+      "PSY 4407",
+      "BUS 3040",
+      "BUS 3061",
+      "HTY 2002",
+      "JMC 2075",
+      "MLL 2075"
+    ],
+    "HTY survey group A": [
+      "HTY 2002",
+      "HTY 2012",
+      "HTY 2013",
+      "HTY 2014",
+      "HTY 2041",
+      "HTY 2042",
+      "HTY 2043"
+    ],
+    "HTY survey group B": [
+      "HTY 1008",
+      "HTY 2021",
+      "HTY 2022",
+      "HTY 2023",
+      "HTY 2024",
+      "HTY 2025"
+    ],
+    "HTY 3000/4000-level courses": [
+      "HTY 3001",
+      "HTY 3011",
+      "HTY 3013",
+      "HTY 3014",
+      "HTY 3015",
+      "HTY 4001",
+      "HTY 4091",
+      "HTY 4092"
+    ]
+  },
+  "course_groups_source": "Course lists that several programs or rules repeat. A course list in a program's rules may include {\"group\": name}, which expands to the group's courses when the policy loads. Sources: the MLL language courses (catalog pp.102-105, 123-126), the courses cross-listed with PSY (p.110), the History and Civilizations groups (pp.93-94).",
   "business_concentration_manual_matches": {
     "Tourism and Hospitality": {
       "tourism_special_topics": [
@@ -980,43 +1095,21 @@
                 "MLL 2075",
                 "MLL 4025",
                 "MLL 4092",
-                "BUS 2001",
-                "BUS 2060",
-                "BUS 3040",
-                "ENG 2010",
-                "ENG 2032",
-                "EUR 1011",
-                "EUR 2012",
-                "EUR 2013",
-                "POS 2013",
-                "JMC 1041",
-                "JMC 1050",
-                "PHI 1001",
-                "POS 1002",
+                {
+                  "group": "MLC additional electives"
+                },
                 "MLL 3036",
                 "JMC 3036",
                 "PHI 3004",
-                "MLL 1015",
-                "MLL 1016",
-                "MLL 2015",
-                "MLL 2016",
-                "MLL 2017",
-                "MLL 3001",
-                "MLL 4015",
-                "MLL 4091",
-                "MLL 1055",
-                "MLL 1056",
-                "MLL 2055",
-                "MLL 2056",
-                "MLL 2057",
-                "MLL 3003",
-                "MLL 4055",
-                "MLL 4094",
-                "MLL 1035",
-                "MLL 1036",
-                "MLL 2035",
-                "MLL 2037",
-                "MLL 4093"
+                {
+                  "group": "French courses"
+                },
+                {
+                  "group": "Spanish courses"
+                },
+                {
+                  "group": "Bulgarian courses"
+                }
               ]
             },
             "elective_rules": [
@@ -1053,43 +1146,21 @@
                 "credits": 6,
                 "label": "At most 6 credits of additional electives (other languages and the approved list)",
                 "courses_in": [
-                  "BUS 2001",
-                  "BUS 2060",
-                  "BUS 3040",
-                  "ENG 2010",
-                  "ENG 2032",
-                  "EUR 1011",
-                  "EUR 2012",
-                  "EUR 2013",
-                  "POS 2013",
-                  "JMC 1041",
-                  "JMC 1050",
-                  "PHI 1001",
-                  "POS 1002",
+                  {
+                    "group": "MLC additional electives"
+                  },
                   "MLL 3036",
                   "JMC 3036",
                   "PHI 3004",
-                  "MLL 1015",
-                  "MLL 1016",
-                  "MLL 2015",
-                  "MLL 2016",
-                  "MLL 2017",
-                  "MLL 3001",
-                  "MLL 4015",
-                  "MLL 4091",
-                  "MLL 1055",
-                  "MLL 1056",
-                  "MLL 2055",
-                  "MLL 2056",
-                  "MLL 2057",
-                  "MLL 3003",
-                  "MLL 4055",
-                  "MLL 4094",
-                  "MLL 1035",
-                  "MLL 1036",
-                  "MLL 2035",
-                  "MLL 2037",
-                  "MLL 4093"
+                  {
+                    "group": "French courses"
+                  },
+                  {
+                    "group": "Spanish courses"
+                  },
+                  {
+                    "group": "Bulgarian courses"
+                  }
                 ]
               }
             ]
@@ -1116,40 +1187,18 @@
                 "JMC 3036",
                 "MLL 4015",
                 "MLL 4091",
-                "BUS 2001",
-                "BUS 2060",
-                "BUS 3040",
-                "ENG 2010",
-                "ENG 2032",
-                "EUR 1011",
-                "EUR 2012",
-                "EUR 2013",
-                "POS 2013",
-                "JMC 1041",
-                "JMC 1050",
-                "PHI 1001",
-                "POS 1002",
-                "MLL 1025",
-                "MLL 1026",
-                "MLL 2025",
-                "MLL 2026",
-                "MLL 2027",
-                "MLL 3002",
-                "MLL 4025",
-                "MLL 4092",
-                "MLL 1055",
-                "MLL 1056",
-                "MLL 2055",
-                "MLL 2056",
-                "MLL 2057",
-                "MLL 3003",
-                "MLL 4055",
-                "MLL 4094",
-                "MLL 1035",
-                "MLL 1036",
-                "MLL 2035",
-                "MLL 2037",
-                "MLL 4093"
+                {
+                  "group": "MLC additional electives"
+                },
+                {
+                  "group": "German courses"
+                },
+                {
+                  "group": "Spanish courses"
+                },
+                {
+                  "group": "Bulgarian courses"
+                }
               ]
             },
             "elective_rules": [
@@ -1188,40 +1237,18 @@
                 "credits": 6,
                 "label": "At most 6 credits of additional electives (other languages and the approved list)",
                 "courses_in": [
-                  "BUS 2001",
-                  "BUS 2060",
-                  "BUS 3040",
-                  "ENG 2010",
-                  "ENG 2032",
-                  "EUR 1011",
-                  "EUR 2012",
-                  "EUR 2013",
-                  "POS 2013",
-                  "JMC 1041",
-                  "JMC 1050",
-                  "PHI 1001",
-                  "POS 1002",
-                  "MLL 1025",
-                  "MLL 1026",
-                  "MLL 2025",
-                  "MLL 2026",
-                  "MLL 2027",
-                  "MLL 3002",
-                  "MLL 4025",
-                  "MLL 4092",
-                  "MLL 1055",
-                  "MLL 1056",
-                  "MLL 2055",
-                  "MLL 2056",
-                  "MLL 2057",
-                  "MLL 3003",
-                  "MLL 4055",
-                  "MLL 4094",
-                  "MLL 1035",
-                  "MLL 1036",
-                  "MLL 2035",
-                  "MLL 2037",
-                  "MLL 4093"
+                  {
+                    "group": "MLC additional electives"
+                  },
+                  {
+                    "group": "German courses"
+                  },
+                  {
+                    "group": "Spanish courses"
+                  },
+                  {
+                    "group": "Bulgarian courses"
+                  }
                 ]
               }
             ]
@@ -1247,42 +1274,20 @@
                 "MLL 2075",
                 "MLL 4055",
                 "MLL 4094",
-                "BUS 2001",
-                "BUS 2060",
-                "BUS 3040",
-                "ENG 2010",
-                "ENG 2032",
-                "EUR 1011",
-                "EUR 2012",
-                "EUR 2013",
-                "POS 2013",
-                "JMC 1041",
-                "JMC 1050",
-                "PHI 1001",
-                "POS 1002",
+                {
+                  "group": "MLC additional electives"
+                },
                 "MLL 3036",
                 "JMC 3036",
-                "MLL 1015",
-                "MLL 1016",
-                "MLL 2015",
-                "MLL 2016",
-                "MLL 2017",
-                "MLL 3001",
-                "MLL 4015",
-                "MLL 4091",
-                "MLL 1025",
-                "MLL 1026",
-                "MLL 2025",
-                "MLL 2026",
-                "MLL 2027",
-                "MLL 3002",
-                "MLL 4025",
-                "MLL 4092",
-                "MLL 1035",
-                "MLL 1036",
-                "MLL 2035",
-                "MLL 2037",
-                "MLL 4093"
+                {
+                  "group": "French courses"
+                },
+                {
+                  "group": "German courses"
+                },
+                {
+                  "group": "Bulgarian courses"
+                }
               ]
             },
             "elective_rules": [
@@ -1320,42 +1325,20 @@
                 "credits": 6,
                 "label": "At most 6 credits of additional electives (other languages and the approved list)",
                 "courses_in": [
-                  "BUS 2001",
-                  "BUS 2060",
-                  "BUS 3040",
-                  "ENG 2010",
-                  "ENG 2032",
-                  "EUR 1011",
-                  "EUR 2012",
-                  "EUR 2013",
-                  "POS 2013",
-                  "JMC 1041",
-                  "JMC 1050",
-                  "PHI 1001",
-                  "POS 1002",
+                  {
+                    "group": "MLC additional electives"
+                  },
                   "MLL 3036",
                   "JMC 3036",
-                  "MLL 1015",
-                  "MLL 1016",
-                  "MLL 2015",
-                  "MLL 2016",
-                  "MLL 2017",
-                  "MLL 3001",
-                  "MLL 4015",
-                  "MLL 4091",
-                  "MLL 1025",
-                  "MLL 1026",
-                  "MLL 2025",
-                  "MLL 2026",
-                  "MLL 2027",
-                  "MLL 3002",
-                  "MLL 4025",
-                  "MLL 4092",
-                  "MLL 1035",
-                  "MLL 1036",
-                  "MLL 2035",
-                  "MLL 2037",
-                  "MLL 4093"
+                  {
+                    "group": "French courses"
+                  },
+                  {
+                    "group": "German courses"
+                  },
+                  {
+                    "group": "Bulgarian courses"
+                  }
                 ]
               }
             ]
@@ -1381,45 +1364,20 @@
                 "FAR 3009",
                 "HTY 2024",
                 "POS 3001",
-                "BUS 2001",
-                "BUS 2060",
-                "BUS 3040",
-                "ENG 2010",
-                "ENG 2032",
-                "EUR 1011",
-                "EUR 2012",
-                "EUR 2013",
-                "POS 2013",
-                "JMC 1041",
-                "JMC 1050",
-                "PHI 1001",
-                "POS 1002",
+                {
+                  "group": "MLC additional electives"
+                },
                 "MLL 3036",
                 "JMC 3036",
-                "MLL 1015",
-                "MLL 1016",
-                "MLL 2015",
-                "MLL 2016",
-                "MLL 2017",
-                "MLL 3001",
-                "MLL 4015",
-                "MLL 4091",
-                "MLL 1025",
-                "MLL 1026",
-                "MLL 2025",
-                "MLL 2026",
-                "MLL 2027",
-                "MLL 3002",
-                "MLL 4025",
-                "MLL 4092",
-                "MLL 1055",
-                "MLL 1056",
-                "MLL 2055",
-                "MLL 2056",
-                "MLL 2057",
-                "MLL 3003",
-                "MLL 4055",
-                "MLL 4094"
+                {
+                  "group": "French courses"
+                },
+                {
+                  "group": "German courses"
+                },
+                {
+                  "group": "Spanish courses"
+                }
               ]
             },
             "elective_rules": [
@@ -1457,45 +1415,20 @@
                 "credits": 6,
                 "label": "At most 6 credits of additional electives (other languages and the approved list)",
                 "courses_in": [
-                  "BUS 2001",
-                  "BUS 2060",
-                  "BUS 3040",
-                  "ENG 2010",
-                  "ENG 2032",
-                  "EUR 1011",
-                  "EUR 2012",
-                  "EUR 2013",
-                  "POS 2013",
-                  "JMC 1041",
-                  "JMC 1050",
-                  "PHI 1001",
-                  "POS 1002",
+                  {
+                    "group": "MLC additional electives"
+                  },
                   "MLL 3036",
                   "JMC 3036",
-                  "MLL 1015",
-                  "MLL 1016",
-                  "MLL 2015",
-                  "MLL 2016",
-                  "MLL 2017",
-                  "MLL 3001",
-                  "MLL 4015",
-                  "MLL 4091",
-                  "MLL 1025",
-                  "MLL 1026",
-                  "MLL 2025",
-                  "MLL 2026",
-                  "MLL 2027",
-                  "MLL 3002",
-                  "MLL 4025",
-                  "MLL 4092",
-                  "MLL 1055",
-                  "MLL 1056",
-                  "MLL 2055",
-                  "MLL 2056",
-                  "MLL 2057",
-                  "MLL 3003",
-                  "MLL 4055",
-                  "MLL 4094"
+                  {
+                    "group": "French courses"
+                  },
+                  {
+                    "group": "German courses"
+                  },
+                  {
+                    "group": "Spanish courses"
+                  }
                 ]
               }
             ]
@@ -1566,20 +1499,9 @@
             "PSY 4[4-9]NN"
           ],
           "except": [
-            "PSY 2075",
-            "PSY 2076",
-            "PSY 3040",
-            "PSY 3061",
-            "PSY 3412",
-            "PSY 3413",
-            "PSY 3414",
-            "PSY 3483",
-            "PSY 4407",
-            "BUS 3040",
-            "BUS 3061",
-            "HTY 2002",
-            "JMC 2075",
-            "MLL 2075"
+            {
+              "group": "PSY cross-listed courses"
+            }
           ]
         }
       ]
@@ -1919,27 +1841,15 @@
           "HTY 3[4-9]NN"
         ],
         "courses_in": [
-          "HTY 2002",
-          "HTY 2012",
-          "HTY 2013",
-          "HTY 2014",
-          "HTY 2041",
-          "HTY 2042",
-          "HTY 2043",
-          "HTY 1008",
-          "HTY 2021",
-          "HTY 2022",
-          "HTY 2023",
-          "HTY 2024",
-          "HTY 2025",
-          "HTY 3001",
-          "HTY 3011",
-          "HTY 3013",
-          "HTY 3014",
-          "HTY 3015",
-          "HTY 4001",
-          "HTY 4091",
-          "HTY 4092"
+          {
+            "group": "HTY survey group A"
+          },
+          {
+            "group": "HTY survey group B"
+          },
+          {
+            "group": "HTY 3000/4000-level courses"
+          }
         ]
       },
       "elective_rules": [
@@ -1948,19 +1858,12 @@
           "credits": 9,
           "label": "At least 9 credits from the two survey groups (no more than 6 from either)",
           "courses_in": [
-            "HTY 2002",
-            "HTY 2012",
-            "HTY 2013",
-            "HTY 2014",
-            "HTY 2041",
-            "HTY 2042",
-            "HTY 2043",
-            "HTY 1008",
-            "HTY 2021",
-            "HTY 2022",
-            "HTY 2023",
-            "HTY 2024",
-            "HTY 2025"
+            {
+              "group": "HTY survey group A"
+            },
+            {
+              "group": "HTY survey group B"
+            }
           ]
         },
         {
@@ -1968,13 +1871,9 @@
           "credits": 3,
           "label": "At least 3 credits from HTY 2002, 2012, 2013, 2014, 2041, 2042, 2043",
           "courses_in": [
-            "HTY 2002",
-            "HTY 2012",
-            "HTY 2013",
-            "HTY 2014",
-            "HTY 2041",
-            "HTY 2042",
-            "HTY 2043"
+            {
+              "group": "HTY survey group A"
+            }
           ]
         },
         {
@@ -1982,12 +1881,9 @@
           "credits": 3,
           "label": "At least 3 credits from HTY 1008, 2021, 2022, 2023, 2024, 2025",
           "courses_in": [
-            "HTY 1008",
-            "HTY 2021",
-            "HTY 2022",
-            "HTY 2023",
-            "HTY 2024",
-            "HTY 2025"
+            {
+              "group": "HTY survey group B"
+            }
           ]
         },
         {
@@ -1995,14 +1891,9 @@
           "credits": 15,
           "label": "At least 15 credits from the 3000/4000-level list (incl. HTY 3[4-9]NN topics)",
           "courses_in": [
-            "HTY 3001",
-            "HTY 3011",
-            "HTY 3013",
-            "HTY 3014",
-            "HTY 3015",
-            "HTY 4001",
-            "HTY 4091",
-            "HTY 4092"
+            {
+              "group": "HTY 3000/4000-level courses"
+            }
           ],
           "patterns": [
             "HTY 3[4-9]NN"
@@ -2056,21 +1947,9 @@
             "MAT 2001",
             "MAT 2014",
             "MAT 2050",
-            "MLL 1015",
-            "MLL 1016",
-            "MLL 2015",
-            "MLL 2016",
-            "MLL 2017",
-            "MLL 1025",
-            "MLL 1026",
-            "MLL 2025",
-            "MLL 2026",
-            "MLL 2027",
-            "MLL 1055",
-            "MLL 1056",
-            "MLL 2055",
-            "MLL 2056",
-            "MLL 2057"
+            {
+              "group": "German, French and Spanish courses at the 1000/2000 level"
+            }
           ]
         },
         {
@@ -2078,21 +1957,9 @@
           "courses": 1,
           "label": "Only one German, French or Spanish MLL course",
           "courses_in": [
-            "MLL 1015",
-            "MLL 1016",
-            "MLL 2015",
-            "MLL 2016",
-            "MLL 2017",
-            "MLL 1025",
-            "MLL 1026",
-            "MLL 2025",
-            "MLL 2026",
-            "MLL 2027",
-            "MLL 1055",
-            "MLL 1056",
-            "MLL 2055",
-            "MLL 2056",
-            "MLL 2057"
+            {
+              "group": "German, French and Spanish courses at the 1000/2000 level"
+            }
           ]
         }
       ],
@@ -2612,20 +2479,9 @@
             "PSY"
           ],
           "except": [
-            "PSY 2075",
-            "PSY 2076",
-            "PSY 3040",
-            "PSY 3061",
-            "PSY 3412",
-            "PSY 3413",
-            "PSY 3414",
-            "PSY 3483",
-            "PSY 4407",
-            "BUS 3040",
-            "BUS 3061",
-            "HTY 2002",
-            "JMC 2075",
-            "MLL 2075"
+            {
+              "group": "PSY cross-listed courses"
+            }
           ]
         }
       ]
@@ -2839,21 +2695,9 @@
             "MAT 2001",
             "MAT 2014",
             "MAT 2050",
-            "MLL 1015",
-            "MLL 1016",
-            "MLL 2015",
-            "MLL 2016",
-            "MLL 2017",
-            "MLL 1025",
-            "MLL 1026",
-            "MLL 2025",
-            "MLL 2026",
-            "MLL 2027",
-            "MLL 1055",
-            "MLL 1056",
-            "MLL 2055",
-            "MLL 2056",
-            "MLL 2057"
+            {
+              "group": "German, French and Spanish courses at the 1000/2000 level"
+            }
           ]
         },
         {
@@ -2861,21 +2705,9 @@
           "courses": 1,
           "label": "Only one German, French or Spanish MLL course",
           "courses_in": [
-            "MLL 1015",
-            "MLL 1016",
-            "MLL 2015",
-            "MLL 2016",
-            "MLL 2017",
-            "MLL 1025",
-            "MLL 1026",
-            "MLL 2025",
-            "MLL 2026",
-            "MLL 2027",
-            "MLL 1055",
-            "MLL 1056",
-            "MLL 2055",
-            "MLL 2056",
-            "MLL 2057"
+            {
+              "group": "German, French and Spanish courses at the 1000/2000 level"
+            }
           ]
         }
       ],

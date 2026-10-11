@@ -139,6 +139,10 @@ def normalize_policy_overrides(payload: Dict[str, Any] | None) -> Dict[str, Any]
         value = payload.get(key)
         if isinstance(value, dict):
             normalized[key] = deepcopy(value)
+    groups = payload.get("course_groups")
+    if isinstance(groups, dict):
+        for key in ("majors", "minors"):
+            normalized[key] = expand_course_groups(normalized[key], groups)
 
     renumbering = payload.get("course_renumbering")
     if isinstance(renumbering, dict):
@@ -160,6 +164,25 @@ def normalize_policy_overrides(payload: Dict[str, Any] | None) -> Dict[str, Any]
                 normalized["gen_ed"][key] = deepcopy(value)
 
     return normalized
+
+
+def expand_course_groups(value: Any, groups: Dict[str, List[str]]) -> Any:
+    """`value` with every {"group": name} entry of a list replaced by that group's courses: the
+    policy names a course list once (the French courses, the PSY cross-listed courses) and the
+    programs' rules refer to it."""
+    if isinstance(value, dict):
+        return {key: expand_course_groups(item, groups) for key, item in value.items()}
+    if not isinstance(value, list):
+        return value
+    expanded: List[Any] = []
+    for item in value:
+        if isinstance(item, dict) and set(item) == {"group"}:
+            if item["group"] not in groups:
+                raise ValueError(f"policy_overrides.json: unknown course group {item['group']!r}")
+            expanded.extend(groups[item["group"]])
+        else:
+            expanded.append(expand_course_groups(item, groups))
+    return expanded
 
 
 def normalize_mismatch_snapshot(payload: Dict[str, Any] | None) -> Dict[str, Any]:

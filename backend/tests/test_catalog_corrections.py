@@ -1,4 +1,5 @@
 """Corrections in data/policy_overrides.json, checked against the AY 2026-27 catalog PDF."""
+import json
 import os
 import sys
 from unittest.mock import patch
@@ -11,6 +12,7 @@ if BACKEND_DIR not in sys.path:
 from _isolation import IsolatedTestCase  # noqa: E402
 
 import degree_engine  # noqa: E402
+from catalog_artifacts import expand_course_groups  # noqa: E402
 from catalog_cache import getCatalogCache  # noqa: E402
 from degree_engine import (  # noqa: E402
     _course_prereq_expr,
@@ -121,6 +123,18 @@ class CatalogCorrectionTests(IsolatedTestCase):
             choices,
             {(("HTY 2021", "HTY 2022", "HTY 2023", "HTY 2024", "HTY 2025"), 2)},
         )
+
+    def test_course_groups_expand_where_the_rules_name_them(self):
+        groups = {"French": ["MLL 1015", "MLL 1016"]}
+        rule = {"courses_in": ["MLL 1075", {"group": "French"}], "groups": {"A": {"courses_in": [{"group": "French"}]}}}
+        self.assertEqual(
+            expand_course_groups(rule, groups),
+            {"courses_in": ["MLL 1075", "MLL 1015", "MLL 1016"], "groups": {"A": {"courses_in": ["MLL 1015", "MLL 1016"]}}},
+        )
+        with self.assertRaises(ValueError):
+            expand_course_groups([{"group": "Latin"}], groups)
+        # The shipped catalog has no group left unexpanded.
+        self.assertNotIn('"group":', json.dumps(self.catalog.get("majors")) + json.dumps(self.catalog.get("minors")))
 
     def test_modern_languages_major_requires_mll1075(self):
         fixed, _ = self._slots("major", "Modern Languages and Cultures")
