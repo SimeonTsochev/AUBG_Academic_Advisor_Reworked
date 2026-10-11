@@ -139,6 +139,571 @@
         "PSY 1001",
         "PSY 1002"
       ]
+    },
+    "COS 4040": {
+      "prereq_text": "COS 2030 and junior standing",
+      "prereq_codes": [
+        "COS 2030"
+      ],
+      "prereqs": [
+        "COS 2030"
+      ],
+      "prereq_expr": {
+        "and": [
+          "COS 2030"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "COS 2030",
+          "type": "course"
+        }
+      ]
+    },
+    "COS 4060": {
+      "prereq_text": "COS 2021",
+      "prereq_codes": [
+        "COS 2021"
+      ],
+      "prereqs": [
+        "COS 2021"
+      ],
+      "prereq_expr": {
+        "and": [
+          "COS 2021"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "COS 2021",
+          "type": "course"
+        }
+      ]
+    },
+    "FAR 2003": {
+      "prereq_text": "FAR 1003 in the same instrument or voice, or permission of the instructor",
+      "prereq_codes": [
+        "FAR 1003"
+      ],
+      "prereqs": [
+        "FAR 1003"
+      ],
+      "prereq_expr": {
+        "and": [
+          "FAR 1003"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "FAR 1003",
+          "type": "course"
+        }
+      ]
+    },
+    "FAR 4003": {
+      "prereq_text": "Completion of at least two semesters of FAR 2003 in the same instrument/voice or permission of the instructor",
+      "prereq_codes": [
+        "FAR 2003"
+      ],
+      "prereqs": [
+        "FAR 2003"
+      ],
+      "prereq_expr": {
+        "and": [
+          "FAR 2003"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "FAR 2003",
+          "type": "course"
+        }
+      ]
+    },
+    "FLM 4000": {
+      "prereq_text": "Junior standing and permission of supervisor",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "FLM 4001": {
+      "prereq_text": "FLM 3001",
+      "prereq_codes": [
+        "FLM 3001"
+      ],
+      "prereqs": [
+        "FLM 3001"
+      ],
+      "prereq_expr": {
+        "and": [
+          "FLM 3001"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "FLM 3001",
+          "type": "course"
+        }
+      ]
+    },
+    "HTY 2091": {
+      "prereq_text": "ENG 1002",
+      "prereq_codes": [
+        "ENG 1002"
+      ],
+      "prereqs": [
+        "ENG 1002"
+      ],
+      "prereq_expr": {
+        "and": [
+          "ENG 1002"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "ENG 1002",
+          "type": "course"
+        }
+      ]
+    },
+    "HTY 3014": {
+      "prereq_text": "One HTY course or permission of instructor",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "INF 4040": {
+      "prereq_text": "INF 3035 and senior standing",
+      "prereq_codes": [
+        "INF 3035"
+      ],
+      "prereqs": [
+        "INF 3035"
+      ],
+      "prereq_expr": {
+        "and": [
+          "INF 3035"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "INF 3035",
+          "type": "course"
+        }
+      ]
+    },
+    "INF 4081": {
+      "prereq_text": "Junior standing",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "JMC 3021": {
+      "prereq_text": "JMC 1041 and JMC 1050",
+      "prereq_codes": [
+        "JMC 1041",
+        "JMC 1050"
+      ],
+      "prereqs": [
+        "JMC 1041",
+        "JMC 1050"
+      ],
+      "prereq_expr": {
+        "and": [
+          "JMC 1041",
+          "JMC 1050"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "JMC 1041",
+          "type": "course"
+        },
+        {
+          "code": "JMC 1050",
+          "type": "course"
+        }
+      ]
+    },
+    "JMC 3036": {
+      "prereq_text": "Junior standing",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "JMC 3056": {
+      "prereq_text": "Sophomore standing",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "JMC 3063": {
+      "prereq_text": "Declared JMC major, Junior standing, or permission of the instructor",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "JMC 3065": {
+      "prereq_text": "JMC 1041 and JMC 1050",
+      "prereq_codes": [
+        "JMC 1041",
+        "JMC 1050"
+      ],
+      "prereqs": [
+        "JMC 1041",
+        "JMC 1050"
+      ],
+      "prereq_expr": {
+        "and": [
+          "JMC 1041",
+          "JMC 1050"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "JMC 1041",
+          "type": "course"
+        },
+        {
+          "code": "JMC 1050",
+          "type": "course"
+        }
+      ]
+    },
+    "MAT 4051": {
+      "prereq_text": "MAT 2001 or ECO 3010",
+      "prereq_codes": [
+        "MAT 2001",
+        "ECO 3010"
+      ],
+      "prereqs": [
+        "MAT 2001",
+        "ECO 3010"
+      ],
+      "prereq_expr": {
+        "and": [
+          {
+            "or": [
+              "MAT 2001",
+              "ECO 3010"
+            ]
+          }
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "courses": [
+            "MAT 2001",
+            "ECO 3010"
+          ],
+          "type": "or"
+        }
+      ]
+    },
+    "MAT 4061": {
+      "prereq_text": "MAT 1005",
+      "prereq_codes": [
+        "MAT 1005"
+      ],
+      "prereqs": [
+        "MAT 1005"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MAT 1005"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MAT 1005",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 1016": {
+      "prereq_text": "MLL 1015 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 1015"
+      ],
+      "prereqs": [
+        "MLL 1015"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 1015"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 1015",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 1026": {
+      "prereq_text": "MLL 1025 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 1025"
+      ],
+      "prereqs": [
+        "MLL 1025"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 1025"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 1025",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 1036": {
+      "prereq_text": "MLL 1035 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 1035"
+      ],
+      "prereqs": [
+        "MLL 1035"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 1035"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 1035",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 1056": {
+      "prereq_text": "MLL 1055 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 1055"
+      ],
+      "prereqs": [
+        "MLL 1055"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 1055"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 1055",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 2015": {
+      "prereq_text": "MLL 1016 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 1016"
+      ],
+      "prereqs": [
+        "MLL 1016"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 1016"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 1016",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 2016": {
+      "prereq_text": "MLL 2015 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 2015"
+      ],
+      "prereqs": [
+        "MLL 2015"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 2015"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 2015",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 2056": {
+      "prereq_text": "MLL 2055 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 2055"
+      ],
+      "prereqs": [
+        "MLL 2055"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 2055"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 2055",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 2057": {
+      "prereq_text": "MLL 2055 or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 2055"
+      ],
+      "prereqs": [
+        "MLL 2055"
+      ],
+      "prereq_expr": {
+        "and": [
+          "MLL 2055"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "MLL 2055",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 3001": {
+      "prereq_text": "MLL 2016, MLL 2017, or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [
+        "MLL 2016",
+        "MLL 2017"
+      ],
+      "prereqs": [
+        "MLL 2016",
+        "MLL 2017"
+      ],
+      "prereq_expr": {
+        "and": [
+          {
+            "or": [
+              "MLL 2016",
+              "MLL 2017"
+            ]
+          }
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "courses": [
+            "MLL 2016",
+            "MLL 2017"
+          ],
+          "type": "or"
+        }
+      ]
+    },
+    "MLL 3036": {
+      "prereq_text": "JMC 1041 and JMC 1050",
+      "prereq_codes": [
+        "JMC 1041",
+        "JMC 1050"
+      ],
+      "prereqs": [
+        "JMC 1041",
+        "JMC 1050"
+      ],
+      "prereq_expr": {
+        "and": [
+          "JMC 1041",
+          "JMC 1050"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "JMC 1041",
+          "type": "course"
+        },
+        {
+          "code": "JMC 1050",
+          "type": "course"
+        }
+      ]
+    },
+    "MLL 4055": {
+      "prereq_text": "MLL 3003, or MLL 3[4-9]NN in Spanish, or a placement test before registration (with a signed permission from the instructor)",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "MLL 4091": {
+      "prereq_text": "Senior standing, a minimum GPA in the Major of 3.500, and approval by the department",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "MLL 4092": {
+      "prereq_text": "Senior standing, a minimum GPA in the Major of 3.500, and approval by the department",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "MLL 4093": {
+      "prereq_text": "Senior standing, a minimum GPA in the Major of 3.500, and approval by the department",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "MLL 4094": {
+      "prereq_text": "Senior standing, a minimum GPA in the Major of 3.500, and approval by the department",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
+    },
+    "PHI 3004": {
+      "prereq_text": "ENG 1002",
+      "prereq_codes": [
+        "ENG 1002"
+      ],
+      "prereqs": [
+        "ENG 1002"
+      ],
+      "prereq_expr": {
+        "and": [
+          "ENG 1002"
+        ]
+      },
+      "prereq_blocks": [
+        {
+          "code": "ENG 1002",
+          "type": "course"
+        }
+      ]
+    },
+    "PSY 4081": {
+      "prereq_text": "Junior standing, declared major in psychology, and agreement of the supervisor",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
     }
   },
   "courses": {},
@@ -150,7 +715,345 @@
     "categories_remove": {},
     "rules": {}
   },
-  "majors": {},
+  "majors": {
+    "Political Science and International Relations": {
+      "source": "AY 2025-26 catalog p.110: required POS 1001, POS 1002, POS 2013 or EUR 2013, and POS 2002 (4 courses); electives are three courses from the first list plus ten credit hours from the second (32 credit hours in total). The PDF parser attaches the 'or EUR 2013' line to POS 2002 and reads 'three courses' as the elective total.",
+      "required_courses": [
+        "POS 1001",
+        "POS 1002",
+        "POS 2002"
+      ],
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "POS 2013",
+            "EUR 2013"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "id": "pos-major-comparative-politics",
+          "is_total": false,
+          "label": "Program Choice",
+          "rule_text": "POS 2013 Comparative Politics or EUR 2013 Comparative Politics"
+        },
+        {
+          "allowed_courses": [],
+          "courses_required": null,
+          "credits_required": 19,
+          "id": "pos-major-elective-total",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (19 credit hours): three courses out of the first list below and ten credit hours from the second list."
+        },
+        {
+          "allowed_courses": [
+            "EUR 2012",
+            "EUR 3007",
+            "PHI 3004",
+            "POS 3001",
+            "POS 3003",
+            "POS 3004",
+            "POS 3005",
+            "POS 3006",
+            "POS 3007",
+            "POS 3008"
+          ],
+          "courses_required": 3,
+          "credits_required": null,
+          "id": "political-science-and-international-relations-elective-2",
+          "is_total": false,
+          "label": "Three courses out of the following:",
+          "rule_text": "Three courses out of the following: EUR 2012 EU Politics PHI 3004 Modern and Contemporary Political Philosophy (WIC) POS 3001 Bulgarian Government and Politics POS 3003 Conflict and Conflict Resolution POS 3004 Global Political Economy POS 3005 International Law and Organizations POS 3006 Public Policy Analysis POS 3007 Research Methods (also listed as EUR 3007) POS 3008 Political Communication"
+        },
+        {
+          "allowed_courses": [
+            "MLL 3001",
+            "MLL 3002",
+            "MLL 3003",
+            "POS 4081",
+            "POS 4092"
+          ],
+          "courses_required": null,
+          "credits_required": 10,
+          "id": "political-science-and-international-relations-elective-3",
+          "is_total": false,
+          "label": "Ten credit hours from any combination of the courses listed below:",
+          "rule_text": "Ten credit hours from any combination of the courses listed below: POS 4[4-9]NN Topics in Politics POS 4081 Internship or one of the following: MLL 3001 Modern France—Society, Politics, and Culture MLL 3002 Modern Germany—Society, Politics, and Culture MLL 3003 Modern Spain—Society, Politics, and Culture No more than one 4000-level EUR course Example: All ten credit hours could come from taking several Topics in Politics courses that deal with different topics. Or you may instead combine one or more Topics courses with other courses in the above list. Disciplinary Honors in Political Science and International Relations To fulfill the requirements for a degree with honors in Political Science and International Relations students must have a 3.500 or higher GPA in courses counted toward the ma- jor and earn a grade of B+ or above in POS 4092 Senior Thesis. A successfully completed senior thesis substitutes for the Bulgarian State Exam, but POS 4092 does not count as credit hours earned towards a POS major."
+        }
+      ]
+    },
+    "Literature": {
+      "source": "AY 2025-26 catalog p.101: 'Required Courses (18 credit hours): ENG 2010, ENG 3088, plus twelve credit hours out of' six survey courses. The PDF parser made all six surveys required.",
+      "required_courses": [
+        "ENG 2010",
+        "ENG 3088"
+      ],
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "ENG 2031",
+            "ENG 2032",
+            "ENG 2041",
+            "ENG 2042",
+            "ENG 2051",
+            "ENG 2052"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "id": "literature-major-surveys",
+          "is_total": false,
+          "label": "Program Choice",
+          "rule_text": "Four of the six World, American and British Literature survey courses (twelve credit hours)."
+        },
+        {
+          "allowed_courses": [],
+          "courses_required": null,
+          "credits_required": 21,
+          "id": "literature-elective-1",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (21 credit hours)"
+        },
+        {
+          "allowed_courses": [
+            "ENG 2005",
+            "ENG 2006",
+            "ENG 2020",
+            "ENG 2031",
+            "ENG 2032",
+            "ENG 2041",
+            "ENG 2042",
+            "ENG 2051",
+            "ENG 2052",
+            "ENG 2060",
+            "ENG 3011",
+            "FLM 2020",
+            "FLM 2021",
+            "THR 1030",
+            "THR 2011",
+            "THR 2022",
+            "THR 2030"
+          ],
+          "courses_required": null,
+          "credits_required": 4,
+          "id": "literature-elective-2",
+          "is_total": false,
+          "label": "Four credit hours from each of the following topics courses:",
+          "rule_text": "Four credit hours from each of the following topics courses: ENG 3[4-9]NN Topics in American Literature (WIC) ENG 3[4-9]NN Topics in British Literature (WIC) ENG 3[4-9]NN Topics in Literary Theory and Criticism (WIC) Plus nine credit hours out of the following: ENG 2005 Introduction to Creative Writing – Fiction (WIC) ENG 2006 Introduction to Creative Writing – Poetry (WIC) ENG 2020 Text and Image ENG 2031 World Literature – Landmark Texts ENG 2032 World Literature – Literatures in Translation ENG 2041 American Literature – Beginnings to 1865 ENG 2042 American Literature – 1865 to Present ENG 2051 British Literature – Beginnings to 1785 ENG 2052 British Literature – 1785 to Present ENG 2060 Balkan Literature ENG 3011 Public Speaking ENG 3[4-9]NN Genre and Topical Studies* (WIC) ENG 3[4-9]NN Major Authors* ENG 3[4-9]NN Topics in American Literature* (WIC) ENG 3[4-9]NN Topics in British Literature* (WIC) ENG 3[4-9]NN Topics in Creative Writing* (WIC) ENG 3[4-9]NN Topics in Literary Theory and Criticism* (WIC) FLM 2020 Film Criticism FLM 2021 Introduction to Screenwriting (WIC) THR 1030 Beginning Acting THR 2011 Introduction to Theater THR 2022 Applied Theater THR 2030 Intermediate Acting *ENG topics courses may be repeated for credit as long as the precise topics differ."
+        }
+      ]
+    },
+    "Modern Languages and Cultures": {
+      "source": "AY 2025-26 catalog pp.105-108: 36 credits in one language focus: MLL 1075 plus three focus courses (12 credit hours required), 18 or more credit hours of focus electives, and additional electives (6 credit hours maximum). The PDF parser dropped the required courses and kept 18 credit hours as the total. The planner has no language-focus choice, so MLL 1075 is required and the other 33 credit hours are tracked as one total.",
+      "required_courses": [
+        "MLL 1075"
+      ],
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "MLL 2025",
+            "MLL 2026",
+            "MLL 3002",
+            "MLL 2015",
+            "MLL 2016",
+            "MLL 3001",
+            "MLL 2055",
+            "MLL 2056",
+            "MLL 3003",
+            "MLL 1036",
+            "MLL 2035",
+            "MLL 2037"
+          ],
+          "courses_required": null,
+          "credits_required": 33,
+          "id": "modern-languages-and-cultures-focus-total",
+          "is_total": true,
+          "label": "Language focus courses and electives",
+          "rule_text": "33 credit hours in one language focus (German, French, Spanish or Bulgarian): the three required focus courses (9 credit hours), 18 or more credit hours of focus electives, and additional electives (6 credit hours maximum). Required focus courses: German MLL 2025, MLL 2026, MLL 3002; French MLL 2015, MLL 2016, MLL 3001; Spanish MLL 2055, MLL 2056, MLL 3003; Bulgarian MLL 1036, MLL 2035, MLL 2037."
+        },
+        {
+          "allowed_courses": [
+            "MLL 1025",
+            "MLL 1026",
+            "MLL 2027",
+            "MLL 2075",
+            "MLL 4025",
+            "MLL 4092"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "id": "modern-languages-and-cultures-elective-1",
+          "is_total": false,
+          "label": "Electives",
+          "rule_text": "Electives (18 or more credit hours) MLL 1025 Introduction to German Language and Culture I MLL 1026 Introduction to German Language and Culture II MLL 2027 Intermediate German Reading MLL 2075 Intercultural Communication (WIC) MLL 3[4-9]NN Topics in German Language, Literature, and Film MLL 4025 Advanced German MLL 4092 Senior Project in German MLL L[1-2]NN Special Topics in German Language and Culture MLL L098 Independent Study in German Language and Culture"
+        },
+        {
+          "allowed_courses": [
+            "BUS 2001",
+            "BUS 2060",
+            "BUS 3040",
+            "ENG 2010",
+            "ENG 2032",
+            "EUR 1011",
+            "EUR 2012",
+            "EUR 2013",
+            "JMC 1041",
+            "JMC 1050",
+            "JMC 3036",
+            "MLL 1075",
+            "MLL 2015",
+            "MLL 2016",
+            "MLL 3001",
+            "MLL 3036",
+            "PHI 1001",
+            "PHI 3004",
+            "POS 1002",
+            "POS 2013"
+          ],
+          "courses_required": null,
+          "credits_required": 6,
+          "id": "modern-languages-and-cultures-elective-2",
+          "is_total": false,
+          "label": "Additional Electives",
+          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in Spanish, French, and Bulgarian BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] Major Programs 106 PHI 1001 Introduction to Philosophy PHI 3004 Modern and Contemporary Political Philosophy (WIC) POS 1002 Introduction to Global Politics Other courses as approved by the Department Chair and the Dean of Faculty. French-language Focus Required (12 credit hours) MLL 1075 Introduction to Language and Culture Studies MLL 2015 Intermediate French: Perspectives on French and Francophone Cultures MLL 2016 Intermediate French Composition and Conversation through Arts MLL 3001 Modern France – Society, Politics, and Culture"
+        },
+        {
+          "allowed_courses": [
+            "JMC 3036",
+            "MLL 1015",
+            "MLL 1016",
+            "MLL 2017",
+            "MLL 2075",
+            "MLL 3036",
+            "MLL 4015",
+            "MLL 4091"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "id": "modern-languages-and-cultures-elective-3",
+          "is_total": false,
+          "label": "Electives",
+          "rule_text": "Electives (18 or more credit hours) MLL 1015 Introduction to French Language and Culture I MLL 1016 Introduction to French Language and Culture II MLL 2017 Intermediate French Reading MLL 2075 Intercultural Communication (WIC) MLL 3[4-9]NN Topics in French Language, Literature, and Film (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] MLL 4015 Advanced French MLL 4091 Senior Project in French MLL L[1-2]NN Special Topics in French Language and Culture MLL L098 Independent Study in French Language and Culture"
+        },
+        {
+          "allowed_courses": [
+            "BUS 2001",
+            "BUS 2060",
+            "BUS 3040",
+            "ENG 2010",
+            "ENG 2032",
+            "EUR 1011",
+            "EUR 2012",
+            "EUR 2013",
+            "JMC 1041",
+            "JMC 1050",
+            "MLL 1075",
+            "MLL 2055",
+            "MLL 2056",
+            "MLL 3003",
+            "PHI 1001",
+            "POS 1002",
+            "POS 2013"
+          ],
+          "courses_required": null,
+          "credits_required": 6,
+          "id": "modern-languages-and-cultures-elective-4",
+          "is_total": false,
+          "label": "Additional Electives",
+          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in Spanish, German, and Bulgarian BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) PHI 1001 Introduction to Philosophy POS 1002 Introduction to Global Politics Other courses as approved by the Department Chair and the Dean of Faculty. Spanish-language Focus Required (12 credit hours) MLL 1075 Introduction to Language and Culture Studies MLL 2055 Intermediate Spanish: Perspectives on Spanish-Speaking Cultures MLL 2056 Intermediate Spanish Composition and Conversation through Arts MLL 3003 Modern Spain – Society, Politics, and Culture"
+        },
+        {
+          "allowed_courses": [
+            "FAR 3010",
+            "MLL 1055",
+            "MLL 1056",
+            "MLL 2057",
+            "MLL 2075",
+            "MLL 4055",
+            "MLL 4094"
+          ],
+          "courses_required": null,
+          "credits_required": 18,
+          "id": "modern-languages-and-cultures-elective-5",
+          "is_total": false,
+          "label": "Electives",
+          "rule_text": "Electives (18 credit hours or more) FAR 3010 Music in Latin American Culture MLL 1055 Introduction to Spanish Language and Culture I Major Programs 107 MLL 1056 Introduction to Spanish Language and Culture II MLL 2057 Intermediate Spanish Reading MLL 2075 Intercultural Communication (WIC) MLL 3[4-9]NN Topics in Spanish Language and Hispanic Literature and Film MLL 4055 Advanced Spanish MLL 4094 Senior Project in Spanish MLL L[1-2]NN Special Topics in Spanish Language and Culture MLL L098 Independent Study in Spanish Language and Culture"
+        },
+        {
+          "allowed_courses": [
+            "BUS 2001",
+            "BUS 2060",
+            "BUS 3040",
+            "ENG 2010",
+            "ENG 2032",
+            "EUR 1011",
+            "EUR 2012",
+            "EUR 2013",
+            "JMC 1041",
+            "JMC 1050",
+            "JMC 3036",
+            "MLL 1036",
+            "MLL 1075",
+            "MLL 2035",
+            "MLL 2037",
+            "MLL 3036",
+            "PHI 1001",
+            "POS 1002",
+            "POS 2013"
+          ],
+          "courses_required": null,
+          "credits_required": 6,
+          "id": "modern-languages-and-cultures-elective-6",
+          "is_total": false,
+          "label": "Additional Electives",
+          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in French, German, and Bulgarian BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] PHI 1001 Introduction to Philosophy POS 1002 Introduction to Global Politics Bulgarian-language Focus Required (12 credit hours) MLL 1075 Introduction to Language and Culture Studies MLL 1036 Introduction to Bulgarian Language and Culture II MLL 2035 Intermediate Bulgarian: Perspectives on Bulgarian Culture MLL 2037 Intermediate Bulgarian Reading"
+        },
+        {
+          "allowed_courses": [
+            "ENG 2060",
+            "FAR 3009",
+            "HTY 2024",
+            "MLL 1035",
+            "MLL 2075",
+            "MLL 4093",
+            "POS 3001"
+          ],
+          "courses_required": null,
+          "credits_required": 18,
+          "id": "modern-languages-and-cultures-elective-7",
+          "is_total": false,
+          "label": "Electives",
+          "rule_text": "Electives (18 credit hours or more) MLL 1035 Introduction to Bulgarian Language and Culture I MLL 2075 Intercultural Communication (WIC) MLL 4093 Senior Project in Bulgarian MLL L[1-2]NN Special Topics in Bulgarian Language and Culture MLL L098 Independent Study in Bulgarian Language and Culture ENG 2060 Balkan Literature FAR 3009 Bulgarian Folk Music HTY 2024 Bulgarian History: Medieval Empire vs. Modern Nation State POS 3001 Bulgarian Government and Politics"
+        },
+        {
+          "allowed_courses": [
+            "BUS 2001",
+            "BUS 2060",
+            "BUS 3040",
+            "ENG 2010",
+            "ENG 2032",
+            "EUR 1011",
+            "EUR 2012",
+            "EUR 2013",
+            "JMC 1041",
+            "JMC 1050",
+            "JMC 3036",
+            "MLL 1036",
+            "MLL 3036",
+            "PHI 1001",
+            "POS 1002",
+            "POS 2013"
+          ],
+          "courses_required": null,
+          "credits_required": 6,
+          "id": "modern-languages-and-cultures-elective-8",
+          "is_total": false,
+          "label": "Additional Electives",
+          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in Spanish, German, and French BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics Major Programs 108 EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] PHI 1001 Introduction to Philosophy POS 1002 Introduction to Global Politics Other courses as approved by the Department Chair and the Dean of Faculty. MLL 1036/ 2015/ 2025/ 2055 may be waived and replaced with an elective in French/ German/Spanish/Bulgarian. The subject of the courses MLL L[1-2]NN Special Topics in German/French/Spanish/Bulgarian Language and Culture and MLL L098 Independent Study in German/French/Spanish/Bulgarian Language and Culture and their descrip- tions are defined for every particular offering. Students must consult with their language instructor on when such a course will be offered. Special Topics, Topics classes, and Inde- pendent Study courses in the target language may be repeated for credit as long as the precise topic is different. Students are encouraged to complete a study abroad experience in a country where the language of study is spoken. No more than nine AUBG credits that have been completed abroad may be counted for the major."
+        }
+      ]
+    }
+  },
   "minors": {
     "Economics": {
       "source": "AY 2025-26 catalog p.118: required ECO 1001, ECO 1002, and ECO 3001 or ECO 3002; the PDF parser splits the 'or' line into a required ECO 3001 plus a one-course ECO 3002 choice.",
@@ -181,6 +1084,195 @@
           "rule_text": "Elective Courses (9 credit hours) Any other ECO courses."
         }
       ]
+    },
+    "Political Science and International Relations": {
+      "source": "AY 2025-26 catalog p.131: 'Required Courses: ten credit hours out of POS 1001, POS 1002, POS 2013 or EUR 2013, POS 2002', then nine elective credit hours (19 in total). POS 2002 is the only 4-credit course, so ten credit hours means POS 2002 plus two of the others. The PDF parser made POS 1001, POS 1002 and POS 2013 required and paired EUR 2013 with POS 2002.",
+      "required_courses": [
+        "POS 2002"
+      ],
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "POS 1001",
+            "POS 1002",
+            "POS 2013",
+            "EUR 2013"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "id": "pos-minor-core",
+          "is_total": false,
+          "label": "Program Choice",
+          "rule_text": "Two of Introduction to Politics, Introduction to Global Politics and Comparative Politics (POS or EUR listing). With POS 2002 they make the ten required credit hours."
+        },
+        {
+          "allowed_courses": [
+            "POS 3001",
+            "POS 3003",
+            "POS 3004",
+            "POS 3005",
+            "POS 3006",
+            "POS 3007",
+            "POS 3008"
+          ],
+          "courses_required": null,
+          "credits_required": 9,
+          "id": "political-science-and-international-relations-elective-2",
+          "is_total": true,
+          "label": "Nine credit hours out of the following:",
+          "rule_text": "Nine credit hours out of the following: POS 3001 Bulgarian Government and Politics POS 3003 Conflict and Conflict Resolution POS 3004 Global Political Economy POS 3005 International Law and Organizations POS 3006 Public Policy Analysis POS 3007 Research Methods POS 3008 Political Communication POS 4[4-9]NN Topics in Politics* * May be repeated for credit as long as the precise topics differ."
+        }
+      ]
+    },
+    "Mathematics": {
+      "source": "AY 2025-26 catalog p.126: required MAT 1003, MAT 1004, MAT 1005, MAT 2001 or MAT 2013, and MAT 2012. The PDF parser attaches the 'or MAT 2013' line to MAT 2012.",
+      "required_courses": [
+        "MAT 1003",
+        "MAT 1004",
+        "MAT 1005",
+        "MAT 2012"
+      ],
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "MAT 2001",
+            "MAT 2013"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "id": "mathematics-minor-statistics-or-differential-equations",
+          "is_total": false,
+          "label": "Program Choice",
+          "rule_text": "MAT 2001 Mathematical Statistics or MAT 2013 Introduction to Differential Equations"
+        },
+        {
+          "allowed_courses": [],
+          "courses_required": null,
+          "credits_required": 3,
+          "id": "mathematics-elective-2",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (3 credit hours)"
+        },
+        {
+          "allowed_courses": [
+            "MAT 2001",
+            "MAT 2005",
+            "MAT 2013",
+            "MAT 2014",
+            "MAT 2025",
+            "MAT 3013",
+            "MAT 3015",
+            "MAT 3071"
+          ],
+          "courses_required": 1,
+          "credits_required": null,
+          "id": "mathematics-elective-3",
+          "is_total": false,
+          "label": "One course out of the following:",
+          "rule_text": "One course out of the following: MAT 2001 Mathematical Statistics MAT 2005 Introduction to Abstract Algebra MAT 2013 Introduction to Differential Equations MAT 2014 Numerical Analysis MAT 2025 Advanced Linear Algebra MAT 3013 Calculus IV with Differential Geometry MAT 3015 Real Analysis MAT 3071 Topology of Differentiable Manifolds"
+        }
+      ]
+    },
+    "Southeast European Studies": {
+      "source": "AY 2025-26 catalog p.133: 18 credit hours: at least six out of HTY 2021-2025, at least six out of ENG 2060 and HTY 3[4-9]NN Topics in Southeast European History, and two additional courses from those lists; at least six credit hours at the 3000/4000 level. The PDF parser made all six listed courses required.",
+      "required_courses": [],
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "HTY 2021",
+            "HTY 2022",
+            "HTY 2023",
+            "HTY 2024",
+            "HTY 2025"
+          ],
+          "courses_required": null,
+          "credits_required": null,
+          "id": "southeast-european-studies-history",
+          "is_total": false,
+          "label": "Program Choice",
+          "rule_text": "Two of the five Balkan and Ottoman history courses (at least six credit hours)."
+        },
+        {
+          "allowed_courses": [
+            "ENG 2060",
+            "HTY 2021",
+            "HTY 2022",
+            "HTY 2023",
+            "HTY 2024",
+            "HTY 2025"
+          ],
+          "courses_required": null,
+          "credits_required": 12,
+          "id": "southeast-european-studies-elective-total",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (12 credit hours): at least six credit hours out of ENG 2060 Balkan Literature and HTY 3[4-9]NN Topics in Southeast European History, and two additional courses from the lists above. At least six credit hours must be at the 3000- and/or 4000-level."
+        }
+      ]
+    },
+    "Computer Science": {
+      "source": "AY 2025-26 catalog p.116: COS 1020 plus fifteen credit hours of electives with at least one course from each of three groups (18 in total). The PDF parser read 'at least one course' as the elective total, so progress showed 1 course instead of the remaining 6 credit hours.",
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "COS 1050",
+            "COS 2021",
+            "COS 2031",
+            "COS 2035",
+            "COS 3015",
+            "COS 3031",
+            "COS 4040",
+            "COS 4060",
+            "COS 4070",
+            "MAT 2050"
+          ],
+          "courses_required": null,
+          "credits_required": 6,
+          "id": "computer-science-elective-1",
+          "is_total": true,
+          "label": "Electives",
+          "rule_text": "Six more credit hours from the groups below. The catalog asks for fifteen elective credit hours with at least one course from each group; the three group courses are planned as course choices (9 credit hours). Fundamentals: COS 1050 Discrete Structures, COS 2035 Computer Architecture, COS 3031 Operating Systems, MAT 2050 Theory of Automata. Software Development: COS 2021 Fundamental Data Structures, COS 3015 Software Engineering, COS 4060 Algorithms. Advanced Topics: COS 2031 Introduction to UNIX, COS 4040 Computer Networks, COS 4070 Artificial Intelligence and AI Programming."
+        }
+      ]
+    },
+    "Physics": {
+      "source": "AY 2025-26 catalog p.130: 20 credit hours: PHY 1010, PHY 1020, 9 credit hours of core electives and 3 of secondary electives (any other PHY course). The parsed blocks had no total, so elective progress was not tracked.",
+      "elective_requirements": [
+        {
+          "allowed_courses": [],
+          "courses_required": null,
+          "credits_required": 12,
+          "id": "physics-minor-elective-total",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (12 credit hours): 9 credit hours of core electives and 3 credit hours of any other PHY course."
+        },
+        {
+          "allowed_courses": [
+            "PHY 2010",
+            "PHY 2020",
+            "PHY 2030",
+            "PHY 3010"
+          ],
+          "courses_required": null,
+          "credits_required": 9,
+          "id": "physics-elective-1",
+          "is_total": false,
+          "label": "Core Electives",
+          "rule_text": "Core Electives (9 credit hours chosen among the following courses) PHY 2010 Classical Mechanics PHY 2020 Theory of Electromagnetism PHY 2030 Quantum Physics PHY 3010 Thermodynamics and Statistical Mechanics"
+        },
+        {
+          "allowed_courses": [],
+          "courses_required": null,
+          "credits_required": 3,
+          "id": "physics-elective-2",
+          "is_total": false,
+          "label": "Secondary Electives",
+          "rule_text": "Secondary Electives (3 credit hours) Any other PHY course."
+        }
+      ]
     }
-  }
+  },
+  "course_meta_source": "Prerequisites for courses whose description rows the PDF parser missed are copied from the 'Course Descriptions' table of the AY 2025-26 catalog."
 }

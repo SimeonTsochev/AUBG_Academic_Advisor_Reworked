@@ -3400,16 +3400,21 @@ def compute_minor_proximity_smart_details(
 
         elective_taken = {c for c in taken if c in cs_allowed and c not in required_all}
 
+        missing_group_credits = 0
         for label, group_codes in cs_groups.items():
             if not group_codes:
                 continue
             if not (taken & group_codes):
                 remaining_count += 1
                 remaining_items.append(f"CS elective ({label})")
-                total_remaining_credits += min((_course_credits(catalog, c) for c in group_codes), default=3)
+                group_credits = min((_course_credits(catalog, c) for c in group_codes), default=3)
+                total_remaining_credits += group_credits
+                missing_group_credits += group_credits
 
         earned = sum(_course_credits(catalog, c) for c in elective_taken)
-        credits_deficit = max(0, CS_MINOR_ELECTIVE_CREDITS_REQUIRED - earned)
+        # The group courses are part of the 15 elective credits, so the ones still missing
+        # (counted just above) are not owed a second time.
+        credits_deficit = max(0, CS_MINOR_ELECTIVE_CREDITS_REQUIRED - earned - missing_group_credits)
         if credits_deficit > 0:
             est_courses = (credits_deficit + 2) // 3
             remaining_count += int(est_courses)

@@ -67,7 +67,8 @@ class MajorProgramChoiceRegressionTests(IsolatedTestCase):
         self.assertIn("Elective Courses", placeholder_labels)
         self.assertNotIn("Program Choice", placeholder_labels)
 
-    def test_political_science_program_choice_block_stays_a_choice(self):
+    def test_political_science_major_requires_pos2002_and_a_comparative_politics_choice(self):
+        # AY 2025-26 catalog p.110: POS 1001, POS 1002, "POS 2013 ... or EUR 2013 Comparative Politics", POS 2002.
         slots = build_requirement_slots(
             self.catalog,
             majors=["Political Science and International Relations"],
@@ -84,15 +85,14 @@ class MajorProgramChoiceRegressionTests(IsolatedTestCase):
             for slot in program_slots
             if slot.get("type") == "fixed"
         }
-        self.assertNotIn("EUR 2013", fixed_courses)
-        self.assertNotIn("POS 2002", fixed_courses)
+        self.assertEqual(fixed_courses, {"POS 1001", "POS 1002", "POS 2002"})
 
         choice_sets = [
             set(slot.get("courses") or [])
             for slot in program_slots
             if slot.get("type") == "choice"
         ]
-        self.assertIn({"EUR 2013", "POS 2002"}, choice_sets)
+        self.assertEqual(choice_sets, [{"EUR 2013", "POS 2013"}])
 
 
 if __name__ == "__main__":

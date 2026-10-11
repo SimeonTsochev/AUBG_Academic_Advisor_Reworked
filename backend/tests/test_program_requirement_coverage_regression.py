@@ -35,17 +35,24 @@ class ProgramRequirementCoverageRegressionTests(IsolatedTestCase):
             and slot.get("program_type") == program_type
         ]
 
-    def test_literature_major_keeps_required_courses_that_also_appear_in_elective_pools(self):
+    def test_literature_major_requires_two_courses_and_four_of_the_six_surveys(self):
+        # AY 2025-26 catalog p.101: ENG 2010, ENG 3088, "plus twelve credit hours out of" six surveys.
         slots = self._program_slots("Literature", "major")
         fixed_courses = {
             slot.get("course")
             for slot in slots
             if slot.get("type") == "fixed"
         }
-        self.assertTrue(
-            {"ENG 2010", "ENG 2031", "ENG 2032", "ENG 2041", "ENG 2042", "ENG 2051", "ENG 2052", "ENG 3088"}.issubset(
-                fixed_courses
-            )
+        self.assertEqual(fixed_courses, {"ENG 2010", "ENG 3088"})
+
+        choices = {
+            (tuple(sorted(slot.get("courses") or [])), slot.get("count"))
+            for slot in slots
+            if slot.get("type") == "choice"
+        }
+        self.assertEqual(
+            choices,
+            {(("ENG 2031", "ENG 2032", "ENG 2041", "ENG 2042", "ENG 2051", "ENG 2052"), 4)},
         )
 
     def test_information_systems_minor_program_choice_courses_are_scheduled_as_requirements(self):
@@ -86,30 +93,40 @@ class ProgramRequirementCoverageRegressionTests(IsolatedTestCase):
         }
         self.assertIn(("BUS 2060", "ENT 2061"), choice_sets)
 
-    def test_mathematics_minor_keeps_required_mat2001_and_program_choice(self):
+    def test_mathematics_minor_requires_mat2012_and_a_choice_of_mat2001_or_mat2013(self):
+        # AY 2025-26 catalog p.126: "MAT 2001 Mathematical Statistics or MAT 2013 ...", then MAT 2012.
         slots = self._program_slots("Mathematics", "minor")
         fixed_courses = {
             slot.get("course")
             for slot in slots
             if slot.get("type") == "fixed"
         }
-        self.assertIn("MAT 2001", fixed_courses)
+        self.assertEqual(fixed_courses, {"MAT 1003", "MAT 1004", "MAT 1005", "MAT 2012"})
 
         choice_sets = {
             tuple(sorted(slot.get("courses") or []))
             for slot in slots
             if slot.get("type") == "choice"
         }
-        self.assertIn(("MAT 2012", "MAT 2013"), choice_sets)
+        self.assertEqual(choice_sets, {("MAT 2001", "MAT 2013")})
 
-    def test_political_science_minor_keeps_program_choice(self):
+    def test_political_science_minor_requires_pos2002_and_two_of_the_other_core_courses(self):
+        # AY 2025-26 catalog p.131: ten credit hours out of POS 1001, POS 1002, POS 2013 or EUR 2013,
+        # and POS 2002. POS 2002 is the only 4-credit course, so it is needed to reach ten.
         slots = self._program_slots("Political Science and International Relations", "minor")
-        choice_sets = {
-            tuple(sorted(slot.get("courses") or []))
+        fixed_courses = {
+            slot.get("course")
+            for slot in slots
+            if slot.get("type") == "fixed"
+        }
+        self.assertEqual(fixed_courses, {"POS 2002"})
+
+        choices = {
+            (tuple(sorted(slot.get("courses") or [])), slot.get("count"))
             for slot in slots
             if slot.get("type") == "choice"
         }
-        self.assertIn(("EUR 2013", "POS 2002"), choice_sets)
+        self.assertEqual(choices, {(("EUR 2013", "POS 1001", "POS 1002", "POS 2013"), 2)})
 
     def test_creative_writing_minor_program_choice_is_not_only_a_placeholder(self):
         slots = self._program_slots("Creative Writing", "minor")

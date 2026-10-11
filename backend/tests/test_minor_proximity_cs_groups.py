@@ -71,8 +71,10 @@ class ComputerScienceMinorProximityTests(IsolatedTestCase):
             "Computer Science",
             set(),
         )
-        self.assertEqual(remaining_count, 9)
-        self.assertEqual(remaining_credits, 27)
+        # AY 2025-26 catalog p.116: "Total: 18 credit hours" (COS 1020 plus 15 elective credit
+        # hours); the three group courses are part of the 15, not on top of them.
+        self.assertEqual(remaining_count, 6)
+        self.assertEqual(remaining_credits, 18)
         self.assertIn("COS 1020", remaining_items)
         self.assertIn("CS elective (Foundations)", remaining_items)
         self.assertIn("CS elective (Software Development)", remaining_items)
@@ -152,8 +154,10 @@ class ComputerScienceMinorProximityTests(IsolatedTestCase):
             "Computer Science (COS)",
             set(),
         )
-        self.assertEqual(remaining_count, 9)
-        self.assertEqual(remaining_credits, 27)
+        # AY 2025-26 catalog p.116: "Total: 18 credit hours" (COS 1020 plus 15 elective credit
+        # hours); the three group courses are part of the 15, not on top of them.
+        self.assertEqual(remaining_count, 6)
+        self.assertEqual(remaining_credits, 18)
         self.assertIn("COS 1020", remaining_items)
         self.assertIn("CS elective (Foundations)", remaining_items)
         self.assertNotIn("Computer Science (COS) elective (Electives)", remaining_items)

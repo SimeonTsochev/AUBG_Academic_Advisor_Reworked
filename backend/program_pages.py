@@ -19,18 +19,8 @@ PROGRAM_PAGES_ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "frontend
 _SKIP_PROGRAMS = {
     # No published course requirements.
     ("major", "Self-Designed Major"),
-    # The parsed requirements disagree with the catalog (checked against the AY 2025-26 PDF), so a
-    # page would state wrong requirements. Remove an entry once the planner's rules are fixed.
-    # "POS 2013 or EUR 2013" is parsed as "EUR 2013 or POS 2002"; the minor's "ten credit hours out of" is lost.
-    ("major", "Political Science and International Relations"),
-    ("minor", "Political Science and International Relations"),
-    # "MAT 2001 or MAT 2013" is parsed as "MAT 2012 or MAT 2013".
-    ("minor", "Mathematics"),
-    # "Plus twelve credit hours out of the following" (six courses) is parsed as six required courses.
-    ("major", "Literature"),
-    # Both "at least six credit hours out of" lists are parsed as required courses.
-    ("minor", "Southeast European Studies"),
-    # One block per language focus, but the focus names are not in the parsed data.
+    # One set of requirements per language focus, but the planner has no focus choice, so a page
+    # could not say which courses a student needs. Remove once the planner models the focuses.
     ("major", "Modern Languages and Cultures"),
     ("minor", "Modern Languages and Cultures"),
 }
@@ -144,11 +134,16 @@ def build_program_pages_payload(catalog: Dict[str, Any]) -> Dict[str, Any]:
 
     gen_ed = catalog.get("gen_ed") or {}
     rules = gen_ed.get("rules") or {}
+    # The planner also credits courses the Excel catalog tags with a category (e.g. POS 1001).
+    excel_tagged: Dict[str, List[str]] = {}
+    for code, record in sorted(((catalog.get("excel_catalog") or {}).get("by_code") or {}).items()):
+        for tag in record.get("gen_ed_tags") or []:
+            excel_tagged.setdefault(tag, []).append(code)
     categories = [
         {
             "name": name,
             "courses_required": rules.get(name),
-            "courses": _courses(catalog, codes),
+            "courses": _courses(catalog, sorted(set(codes) | set(excel_tagged.get(name, [])))),
         }
         for name, codes in sorted((gen_ed.get("categories") or {}).items())
     ]
