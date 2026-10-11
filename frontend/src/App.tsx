@@ -15,7 +15,6 @@ import {
 import type { FailedCourse, ManualCreditEntry, RetakeEntry } from './types';
 import type { GradeMap } from './utils/grades';
 import { normalizeFailedCourses } from './utils/retakes';
-import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from './constants/academic';
 
 type Screen = 'welcome' | 'setup' | 'advisor';
 
@@ -42,7 +41,6 @@ interface AcademicSelection {
   strictPrereqs?: boolean;
   retakeCourses?: string[];
   retakeEntries?: RetakeEntry[];
-  maxCreditsPerSemester: number;
   startTermSeason: string;
   startTermYear: number;
   waivedMat1000: boolean;
@@ -51,7 +49,6 @@ interface AcademicSelection {
 
 type SetupResult = AcademicSelection & { grades?: GradeMap };
 
-const DEFAULT_MAX_CREDITS = 16;
 const DISCLAIMER_SESSION_KEY = 'disclaimerAccepted';
 
 const readDisclaimerAccepted = (): boolean => {
@@ -280,10 +277,6 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
       typeof raw.start_term_year === 'number' && Number.isFinite(raw.start_term_year)
         ? Math.trunc(raw.start_term_year)
         : currentYear,
-    max_credits_per_semester:
-      typeof raw.max_credits_per_semester === 'number' && Number.isFinite(raw.max_credits_per_semester)
-        ? Math.min(MAX_CREDITS_PER_TERM, Math.max(MIN_CREDITS_PER_TERM, Math.trunc(raw.max_credits_per_semester)))
-        : DEFAULT_MAX_CREDITS,
     waived_mat1000: raw.waived_mat1000 === true,
     waived_eng1000: raw.waived_eng1000 === true,
     strict_prereqs: raw.strict_prereqs === true,
@@ -338,7 +331,6 @@ export default function App() {
     strictPrereqs: false,
     retakeCourses: [],
     retakeEntries: [],
-    maxCreditsPerSemester: DEFAULT_MAX_CREDITS,
     startTermSeason: "Fall",
     startTermYear: new Date().getFullYear(),
     waivedMat1000: false,
@@ -414,7 +406,6 @@ export default function App() {
           strictPrereqs: normalized.strict_prereqs,
           retakeCourses: normalized.retakeCourses,
           retakeEntries: normalized.retakeEntries,
-          maxCreditsPerSemester: normalized.max_credits_per_semester,
           startTermSeason: normalized.start_term_season,
           startTermYear: normalized.start_term_year,
           waivedMat1000: normalized.waived_mat1000,

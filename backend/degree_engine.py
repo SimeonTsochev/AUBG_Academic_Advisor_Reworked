@@ -30,6 +30,10 @@ from excel_course_catalog import (
 )
 
 MIN_CREDITS_PER_TERM = 14
+# Course load (AY 2026-27 catalog p.65-66): plans use the standard maximum of 17; 18-19 credits need a
+# GPA of 3.300 and no first-year standing, more needs the Dean, and no one may take more than 22.
+STANDARD_MAX_CREDITS_PER_TERM = 17
+ABSOLUTE_MAX_CREDITS_PER_TERM = 22
 # Safety bound on plan length; plans longer than STANDARD_PLAN_TERMS get a warning instead.
 MAX_PLAN_TERMS = 12
 STANDARD_PLAN_TERMS = 8
@@ -4874,6 +4878,8 @@ def _category_credit_progress(
     minors: Dict[str, Dict[str, int]] = {}
     gen_ed = {"required": 0, "completed": 0}
     foundation = {"required": 0, "completed": 0}
+    # Requirements a major sets outside its own credits, e.g. the European Studies language (p.90).
+    options: Dict[str, Dict[str, Any]] = {}
 
     for slot in slots.get("slots", []):
         assigned = slot_assignment.get(slot["id"])
@@ -4884,6 +4890,13 @@ def _category_credit_progress(
             bucket = gen_ed
         elif slot.get("owner") == "foundation":
             bucket = foundation
+        elif slot.get("collateral") and slot.get("option_label"):
+            bucket = options.setdefault(f"{slot.get('program')}: {slot['option_label']}", {
+                "program": slot.get("program"),
+                "label": slot["option_label"],
+                "required": 0,
+                "completed": 0,
+            })
         elif slot.get("owner") == "program":
             program = slot.get("program")
             program_type = slot.get("program_type")
@@ -4940,6 +4953,7 @@ def _category_credit_progress(
         "gen_ed": gen_ed,
         "foundation": foundation,
         "minors_gened": minors_gened,
+        "options": options,
     }
 
 
@@ -5439,7 +5453,7 @@ def generate_plan(
     manual_credits: List[Dict[str, Any]] | None = None,
     retake_courses: Set[str] | List[str] | None = None,
     preferred_courses: Set[str] | List[str] | None = None,
-    max_credits_per_semester: int = 16,
+    max_credits_per_semester: int = STANDARD_MAX_CREDITS_PER_TERM,
     start_term_season: str | None = None,
     start_term_year: int | None = None,
     waived_mat1000: bool = False,
@@ -5767,7 +5781,7 @@ def generate_plan(
         completed_courses=completed_courses,
         start_term=(base_season, base_year),
         min_credits=min_credits,
-        max_credits=max_credits,
+        max_credits=ABSOLUTE_MAX_CREDITS_PER_TERM if degree_total_credits else max_credits,
         strict_prereqs=strict_prereqs,
         slots=planning_slots,
         occupied_credits_by_term=occupied_credits_by_term,
@@ -5850,12 +5864,14 @@ def generate_plan(
         + sum(v.get("required", 0) for v in category_progress.get("minors", {}).values())
         + int(category_progress.get("gen_ed", {}).get("required", 0) or 0)
         + int(category_progress.get("foundation", {}).get("required", 0) or 0)
+        + sum(v.get("required", 0) for v in category_progress.get("options", {}).values())
     )
     total_completed_credits = (
         sum(v.get("completed", 0) for v in category_progress.get("majors", {}).values())
         + sum(v.get("completed", 0) for v in category_progress.get("minors", {}).values())
         + int(category_progress.get("gen_ed", {}).get("completed", 0) or 0)
         + int(category_progress.get("foundation", {}).get("completed", 0) or 0)
+        + sum(v.get("completed", 0) for v in category_progress.get("options", {}).values())
     )
     _apply_manual_credit_progress(category_progress, manual_credit_breakdown)
     total_completed_credits += total_manual_credits

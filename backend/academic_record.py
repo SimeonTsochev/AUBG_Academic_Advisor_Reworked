@@ -7,7 +7,14 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Set, Tuple
 
-from degree_engine import _course_credits, _current_course_code, _term_label_index, select_courses_for_slots
+from degree_engine import (
+    ABSOLUTE_MAX_CREDITS_PER_TERM,
+    STANDARD_MAX_CREDITS_PER_TERM,
+    _course_credits,
+    _current_course_code,
+    _term_label_index,
+    select_courses_for_slots,
+)
 
 GRADE_POINTS = {
     "A": 4.0, "A-": 3.67,
@@ -22,9 +29,10 @@ GOOD_STANDING_GPA = 2.0
 MAJOR_GPA_MINIMUM = 2.5
 LIST_GPA = 3.8
 HONORS = (("Summa Cum Laude", 3.9), ("Magna Cum Laude", 3.75), ("Cum Laude", 3.5))
-STANDARD_MAX_LOAD = 17
+STANDARD_MAX_LOAD = STANDARD_MAX_CREDITS_PER_TERM
 OVERLOAD_GPA = 3.3
 OVERLOAD_MAX_LOAD = 19
+ABSOLUTE_MAX_LOAD = ABSOLUTE_MAX_CREDITS_PER_TERM
 FIRST_YEAR_CREDITS = 27  # sophomore standing (p.47)
 
 
@@ -89,34 +97,53 @@ def _load_errors(
     if not catalog.get("degree_total_credits"):
         return []
     first_year: List[str] = []
+    no_gpa: List[str] = []
     low_gpa: List[str] = []
-    above_max: List[str] = []
+    deans_permission: List[str] = []
+    too_many: List[str] = []
     for term in semester_plan:
         label = term.get("term") or ""
         load = int(term.get("credits") or 0) + int(occupied.get(label, 0) or 0)
-        if load > STANDARD_MAX_LOAD and earned < FIRST_YEAR_CREDITS:
+        if load <= STANDARD_MAX_LOAD:
+            pass
+        elif load > ABSOLUTE_MAX_LOAD:
+            too_many.append(label)
+        elif earned < FIRST_YEAR_CREDITS:
             first_year.append(label)
         elif load > OVERLOAD_MAX_LOAD:
-            above_max.append(label)
-        elif load > STANDARD_MAX_LOAD and gpa is not None and gpa < OVERLOAD_GPA:
+            deans_permission.append(label)
+        elif gpa is None:
+            no_gpa.append(label)
+        elif gpa < OVERLOAD_GPA:
             low_gpa.append(label)
         earned += load
-    lower = f"Lower the max credits per semester to {STANDARD_MAX_LOAD}."
+    # The planner itself never goes above the standard maximum; these come from the student's edits.
+    move = "Move a course to another semester."
     errors = []
+    if too_many:
+        errors.append(
+            f"{_terms_phrase(too_many)} more than {ABSOLUTE_MAX_LOAD} credits; no student may enroll in more "
+            f"(catalog p.66). {move}"
+        )
     if first_year:
         errors.append(
             f"{_terms_phrase(first_year)} more than {STANDARD_MAX_LOAD} credits; first-year students cannot "
-            f"take an overload (catalog p.65). {lower}"
+            f"take an overload (catalog p.65). {move}"
+        )
+    if deans_permission:
+        errors.append(
+            f"{_terms_phrase(deans_permission)} more than {OVERLOAD_MAX_LOAD} credits, which needs the Dean of "
+            f"Faculty's permission (catalog p.66)."
+        )
+    if no_gpa:
+        errors.append(
+            f"{_terms_phrase(no_gpa)} more than {STANDARD_MAX_LOAD} credits; that needs a cumulative GPA of at "
+            f"least {OVERLOAD_GPA:.3f} (catalog p.66). Import your transcript so the planner can check yours."
         )
     if low_gpa:
         errors.append(
             f"{_terms_phrase(low_gpa)} more than {STANDARD_MAX_LOAD} credits; that needs a cumulative GPA of "
-            f"at least {OVERLOAD_GPA:.3f} (yours is {gpa:.3f}, catalog p.66). {lower}"
-        )
-    if above_max:
-        errors.append(
-            f"{_terms_phrase(above_max)} more than {OVERLOAD_MAX_LOAD} credits, which needs the Dean of "
-            f"Faculty's permission (catalog p.66)."
+            f"at least {OVERLOAD_GPA:.3f} (yours is {gpa:.3f}, catalog p.66). {move}"
         )
     return errors
 

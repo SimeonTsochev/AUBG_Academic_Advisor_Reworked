@@ -142,12 +142,7 @@ class RealCatalogScenarioTests(IsolatedTestCase):
     def test_generated_plans_pass_the_engines_own_validation(self):
         for s in self.scenarios:
             with self.subTest(s.label):
-                errors = list(s.result["validation_errors"])
-                if not s.result["graduation_checks"]["dual_diploma"]["ok"]:
-                    # A single-diploma major alone cannot graduate (catalog p.72); nothing else may fail.
-                    self.assertTrue(any("dual-diploma" in e for e in errors), errors)
-                    errors = [e for e in errors if "dual-diploma" not in e]
-                self.assertEqual(errors, [])
+                self.assertEqual(s.result["validation_errors"], [])
 
     def test_plans_cover_every_requirement(self):
         for s in self.scenarios:

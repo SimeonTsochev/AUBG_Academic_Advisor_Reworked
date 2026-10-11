@@ -36,10 +36,12 @@ class GraduationCheckTests(IsolatedTestCase):
                 **kwargs,
             )
 
-    def test_two_single_diploma_majors_cannot_graduate(self):
+    def test_single_diploma_majors_are_a_note_not_an_error(self):
+        # Every student needs a dual-diploma major (p.72), but a student planning Psychology may not
+        # have added the second major yet, so the frontend shows a note instead of an error.
         plan = self._plan(["Psychology", "Journalism and Mass Communication"])
         self.assertFalse(plan["graduation_checks"]["dual_diploma"]["ok"])
-        self.assertTrue(any("at least one dual-diploma major" in e for e in plan["validation_errors"]))
+        self.assertFalse(any("dual-diploma" in e for e in plan["validation_errors"]))
 
     def test_a_dual_diploma_major_satisfies_the_rule(self):
         plan = self._plan(["Psychology", "Economics"])

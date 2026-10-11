@@ -12,7 +12,7 @@ import {
 } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { extractTranscriptLinesFromImage, extractTranscriptLinesFromPdf } from '../utils/transcriptOcr';
-import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from '../constants/academic';
+import { STANDARD_MAX_CREDITS } from '../constants/academic';
 import { majorsMissingRequiredOption, normalizeProgramOptions, toggleProgramOption } from '../utils/programOptions';
 import { gradesFromTranscript, type GradeMap } from '../utils/grades';
 import type { FailedCourse, ManualCreditEntry } from '../types';
@@ -102,7 +102,6 @@ interface AcademicSetupScreenProps {
     inProgressOverrides?: Record<string, string>;
     completedOverrides?: Record<string, string>;
     lastRolloverTermApplied?: string;
-    maxCreditsPerSemester: number;
     startTermSeason: string;
     startTermYear: number;
     waivedMat1000: boolean;
@@ -134,8 +133,6 @@ export function AcademicSetupScreen({
   const [businessConcentration, setBusinessConcentration] = useState<string>('General');
   const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(null);
   const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>({});
-  const [maxCreditsPerSemester, setMaxCreditsPerSemester] = useState(17);
-  const [maxCreditsInput, setMaxCreditsInput] = useState('17');
   const [waivedMat1000, setWaivedMat1000] = useState(false);
   const [waivedEng1000, setWaivedEng1000] = useState(false);
   const [completedCourses, setCompletedCourses] = useState<string[]>([]);
@@ -264,26 +261,6 @@ export function AcademicSetupScreen({
     setSelectedMinors((prev) => [...prev, minor]);
   };
 
-  const commitCreditsInput = (rawInput: string) => {
-    const trimmed = rawInput.trim();
-    if (!trimmed) {
-      setMaxCreditsInput(String(maxCreditsPerSemester));
-      return;
-    }
-    const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed)) {
-      setMaxCreditsInput(String(maxCreditsPerSemester));
-      return;
-    }
-    const clamped = Math.max(MIN_CREDITS_PER_TERM, Math.min(MAX_CREDITS_PER_TERM, parsed));
-    setMaxCreditsPerSemester(clamped);
-    setMaxCreditsInput(String(clamped));
-  };
-
-  useEffect(() => {
-    setMaxCreditsInput(String(maxCreditsPerSemester));
-  }, [maxCreditsPerSemester]);
-
   const termIndex = (season: string, year: number) => year * 2 + (season === "Fall" ? 1 : 0);
   const termsCompleted = useMemo(() => {
     if (!selectedStartTerm || !currentTerm) return 1;
@@ -303,7 +280,7 @@ export function AcademicSetupScreen({
   };
 
   const { completedForPlan: manualCompletedForPlan, inProgressCourses: manualInProgressCourses } = useMemo(() => {
-    const threshold = maxCreditsPerSemester * termsCompleted;
+    const threshold = STANDARD_MAX_CREDITS * termsCompleted;
     let running = 0;
     const completed: string[] = [];
     const inProgress: string[] = [];
@@ -317,7 +294,7 @@ export function AcademicSetupScreen({
       }
     }
     return { completedForPlan: completed, inProgressCourses: inProgress };
-  }, [completedCourses, maxCreditsPerSemester, termsCompleted, courseMeta, courseLookupByCode]);
+  }, [completedCourses, termsCompleted, courseMeta, courseLookupByCode]);
 
   const { completedForPlan, inProgressCourses } = useMemo(() => {
     const importedCompletedSet = new Set(importedCompletedCourses.map(normalizeCourseCode));
@@ -616,7 +593,6 @@ export function AcademicSetupScreen({
         Object.entries(importedCompletedTerms).filter(([code]) => completedForPlan.includes(code))
       ),
       lastRolloverTermApplied: currentTermLabel ?? undefined,
-      maxCreditsPerSemester,
       startTermSeason: selectedStartTerm?.season ?? "Fall",
       startTermYear: selectedStartTerm?.year ?? new Date().getFullYear(),
       waivedMat1000,
@@ -1085,36 +1061,6 @@ export function AcademicSetupScreen({
                 Marketing concentration cannot be combined with IMC minor. Choose a different BUS concentration or remove the Integrated Marketing Communications minor.
               </div>
             )}
-
-            {/* Max credits */}
-            <div className="card card-pad setup-card">
-              <h2 className="section-title">Semester Load</h2>
-              <label className="text-sm muted" htmlFor="max-credits">
-                Max credits per semester
-              </label>
-              <div className="mt-2 flex items-center gap-3">
-                <input
-                  id="max-credits"
-                  type="number"
-                  min={MIN_CREDITS_PER_TERM}
-                  max={MAX_CREDITS_PER_TERM}
-                  value={maxCreditsInput}
-                  onChange={(e) => setMaxCreditsInput(e.target.value)}
-                  onBlur={() => commitCreditsInput(maxCreditsInput)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      commitCreditsInput(maxCreditsInput);
-                    }
-                  }}
-                  className="input setup-number"
-                />
-                <span className="text-sm muted">15 is standard and 17 the usual maximum.</span>
-              </div>
-              <p className="text-xs muted mt-3">
-                18-19 credits needs a cumulative GPA of 3.300 or more and is not allowed in your first year;
-                more than 19 needs the Dean of Faculty's permission (catalog pp.65-66).
-              </p>
-            </div>
 
             {/* Continue */}
             <div className="flex justify-end">

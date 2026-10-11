@@ -39,17 +39,12 @@ def wic_check(catalog: Dict, courses: Iterable[str]) -> Tuple[List[str], Dict]:
 
 
 def dual_diploma_check(catalog: Dict, majors: List[str]) -> Tuple[List[str], Dict]:
+    """Every student needs a dual-diploma major (p.72). Only a note, never an error: a student
+    planning a single-diploma major often has not added the second major yet."""
     diplomas = {m: (catalog.get("majors", {}).get(m) or {}).get("diploma") for m in majors}
     known = {m: d for m, d in diplomas.items() if d in ("dual", "single")}
     ok = not known or len(known) < len(diplomas) or any(d == "dual" for d in known.values())
-    errors = []
-    if not ok:
-        names = sorted(known)
-        verb = "is a single-diploma major" if len(names) == 1 else "are single-diploma majors"
-        errors.append(
-            f"{_join(names)} {verb}; graduating requires at least one dual-diploma major (catalog p.72)."
-        )
-    return errors, {"ok": ok, "majors": diplomas}
+    return [], {"ok": ok, "majors": diplomas}
 
 
 def residency_check(catalog: Dict, aubg_credits: int) -> Tuple[List[str], Dict]:

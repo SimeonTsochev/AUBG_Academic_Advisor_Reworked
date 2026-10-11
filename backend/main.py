@@ -11,7 +11,7 @@ import threading
 
 from catalog_cache import getCatalogCache
 from business_concentrations import classify_business_course
-from degree_engine import _current_start_term, generate_plan
+from degree_engine import STANDARD_MAX_CREDITS_PER_TERM, _current_start_term, generate_plan
 from pdf_export import plan_to_pdf_bytes
 from models import (
     UploadCatalogResponse,
@@ -94,7 +94,7 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
         manual_credits=[entry.model_dump() for entry in req.manual_credits],
         retake_courses=set(req.retake_courses or []),
         preferred_courses=set(req.preferred_courses),
-        max_credits_per_semester=req.max_credits_per_semester,
+        max_credits_per_semester=STANDARD_MAX_CREDITS_PER_TERM,
         start_term_season=req.start_term_season,
         start_term_year=req.start_term_year,
         waived_mat1000=req.waived_mat1000,

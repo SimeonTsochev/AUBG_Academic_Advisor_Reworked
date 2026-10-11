@@ -43,9 +43,14 @@ class PlanApiTests(IsolatedTestCase):
         self.assertGreaterEqual(payload["summary"]["projected_credits"], 120)
 
     def test_rejects_out_of_range_inputs(self):
-        self.assertEqual(self._generate(max_credits_per_semester=25).status_code, 422)
-        self.assertEqual(self._generate(max_credits_per_semester=10).status_code, 422)
         self.assertEqual(self._generate(start_term_season="Summer").status_code, 422)
+
+    def test_plans_follow_the_catalog_course_load_whatever_the_client_asks(self):
+        # Older clients still send a max load; the catalog's 17-credit standard maximum applies (p.65).
+        for asked in (25, 20, 10):
+            response = self._generate(max_credits_per_semester=asked)
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(all(term["credits"] <= 17 for term in response.json()["semester_plan"]))
 
     def test_identical_requests_are_served_from_the_cache(self):
         first = self._generate()

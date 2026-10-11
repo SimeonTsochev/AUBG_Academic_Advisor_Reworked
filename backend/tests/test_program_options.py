@@ -70,6 +70,12 @@ class ProgramOptionTests(IsolatedTestCase):
         )
         self.assertEqual(required + self._elective(plan, "European Studies")["credits_required"], 28)
 
+    def test_language_progress_is_its_own_row_not_the_majors_credits(self):
+        progress = self._plan("European Studies", ["French"])["category_progress"]
+        self.assertEqual(progress["majors"]["European Studies"]["required"], 9)
+        language = progress["options"]["European Studies: French language proficiency (B1)"]
+        self.assertEqual((language["program"], language["required"]), ("European Studies", 12))
+
     def test_a_b1_certificate_waives_the_language_courses(self):
         plan = self._plan("European Studies", ["Waived (B1 certificate)"])
         self.assertFalse(any("B1 proficiency" in e for e in plan["validation_errors"]))

@@ -107,6 +107,16 @@ class AcademicRecordTests(IsolatedTestCase):
         errors, _ = self._record([grade("STA 1005", "A")], semester_plan=[{"term": "Fall 2026", "credits": 20}], earned=40)
         self.assertTrue(any("Dean of Faculty" in e for e in errors))
 
+    def test_an_overload_without_grades_asks_for_the_transcript(self):
+        errors, _ = self._record([], semester_plan=[{"term": "Fall 2027", "credits": 18}], earned=40)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Import your transcript", errors[0])
+
+    def test_nobody_takes_more_than_22_credits(self):
+        errors, _ = self._record([grade("STA 1005", "A")], semester_plan=[{"term": "Fall 2027", "credits": 23}], earned=40)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("more than 22 credits", errors[0])
+
     def test_overloads_are_one_error_per_rule_and_first_year_comes_first(self):
         terms = [{"term": t, "credits": 20} for t in ("Fall 2026", "Spring 2027", "Fall 2027")]
         errors, _ = self._record([grade("STA 1005", "C")], semester_plan=terms, earned=10)

@@ -306,7 +306,8 @@ export interface ProgramSnapshotPayload {
   removedCourses: string[];
   start_term_season: string;
   start_term_year: number;
-  max_credits_per_semester: number;
+  /** Older snapshots only: plans follow the catalog's course load now. */
+  max_credits_per_semester?: number;
   waived_mat1000: boolean;
   waived_eng1000: boolean;
   strict_prereqs: boolean;
@@ -344,7 +345,6 @@ export interface GeneratePlanRequest {
   in_progress_courses?: string[];
   in_progress_terms?: Record<string, string>;
   current_term_label?: string | null;
-  max_credits_per_semester: number;
   start_term_season?: string | null;
   start_term_year?: number | null;
   waived_mat1000?: boolean;
@@ -522,6 +522,8 @@ export interface GeneratePlanResponse {
     minors?: Record<string, { required: number; completed: number }>;
     gen_ed?: { required: number; completed: number };
     foundation?: { required: number; completed: number };
+    /** Requirements a major sets outside its own credits, e.g. "European Studies: French language proficiency (B1)". */
+    options?: Record<string, { program: string; label: string; required: number; completed: number }>;
     free_elective?: { required: number; completed: number };
     minors_gened?: { required: number; completed: number };
   };

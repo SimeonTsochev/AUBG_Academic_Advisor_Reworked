@@ -6,6 +6,7 @@ import { PrereqConfirmDialog } from './PrereqConfirmDialog';
 import { AdvisorHeader } from './advisor/AdvisorHeader';
 import { PlanAlerts } from './advisor/PlanAlerts';
 import { ProgramOptionPrompt } from './advisor/ProgramOptionPrompt';
+import { DiplomaNote } from './advisor/DiplomaNote';
 import { majorsMissingRequiredOption, normalizeProgramOptions } from '../utils/programOptions';
 import { loadGrades, saveGrades, toGradeEntries, type GradeMap } from '../utils/grades';
 import { RequirementsTab } from './advisor/RequirementsTab';
@@ -40,7 +41,7 @@ import { ordinal, semesterOfStudy, standingRequirement } from '../utils/standing
 import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
 import { describeFailedAttempt, resolveActiveAttempts } from '../utils/retakes';
 import { summarizeElectiveRequirements } from '../utils/electiveProgress';
-import { MIN_CREDITS_PER_TERM } from '../constants/academic';
+import { MIN_CREDITS_PER_TERM, STANDARD_MAX_CREDITS } from '../constants/academic';
 
 const SNAPSHOT_STORAGE_DISABLED_SESSION_KEY = 'programSnapshotStorageDisabled';
 
@@ -68,7 +69,6 @@ interface MainAdvisorScreenProps {
     strictPrereqs?: boolean;
     retakeCourses?: string[];
     retakeEntries?: RetakeEntry[];
-    maxCreditsPerSemester: number;
     startTermSeason: string;
     startTermYear: number;
     waivedMat1000: boolean;
@@ -123,7 +123,6 @@ function buildSnapshotPayload(params: {
     removedCourses: [...params.removedCourses],
     start_term_season: params.startTermSeason,
     start_term_year: params.startTermYear,
-    max_credits_per_semester: params.selection.maxCreditsPerSemester,
     waived_mat1000: params.selection.waivedMat1000,
     waived_eng1000: params.selection.waivedEng1000,
     strict_prereqs: params.selection.strictPrereqs ?? false,
@@ -246,6 +245,9 @@ export function MainAdvisorScreen({
   const [activeTab, setActiveTab] = useState<AdvisorTab>('plan');
   const planAlertsRef = useRef<HTMLDivElement | null>(null);
   const [plan, setPlan] = useState<GeneratePlanResponse | null>(null);
+  // Plans follow the catalog's standard maximum (17); the student may add courses up to their own
+  // limit, 19 with a GPA of 3.300 or more (catalog pp.65-66).
+  const allowedMaxCredits = plan?.academic_record?.max_load ?? STANDARD_MAX_CREDITS;
   const [overrides, setOverrides] = useState<PlanOverrides>(() => clonePlanOverrides(initialSnapshot?.overrides));
   // Chosen major options. Editable here so a plan saved without the European Studies language can add it
   // without redoing setup (which would start a new plan).
@@ -1625,7 +1627,7 @@ export function MainAdvisorScreen({
       });
       return { effectiveCompleted: completed, effectiveInProgress: inProgressCourses };
     }
-    const threshold = selection.maxCreditsPerSemester * termsCompleted;
+    const threshold = STANDARD_MAX_CREDITS * termsCompleted;
     let running = 0;
     const completed: string[] = [];
     const inProgress: string[] = [];
@@ -1647,7 +1649,7 @@ export function MainAdvisorScreen({
       }
     });
     return { effectiveCompleted: completed, effectiveInProgress: inProgress };
-  }, [completedCourses, inProgressCourses, selection.maxCreditsPerSemester, termsCompleted, catalog.course_meta, selection.waivedMat1000, selection.waivedEng1000]);
+  }, [completedCourses, inProgressCourses, termsCompleted, catalog.course_meta, selection.waivedMat1000, selection.waivedEng1000]);
 
   const inProgressCredits = useMemo(() => {
     return effectiveInProgress.reduce((sum, code) => {
@@ -1727,7 +1729,7 @@ export function MainAdvisorScreen({
   }, [completedCourses, inProgressCourses, catalog.course_meta, selection.waivedMat1000, selection.waivedEng1000]);
 
   const impliedStart = useMemo(() => {
-    const creditsPerTerm = Math.max(1, selection.maxCreditsPerSemester);
+    const creditsPerTerm = Math.max(1, STANDARD_MAX_CREDITS);
     const completedTerms = Math.floor(creditsDone / creditsPerTerm);
     const implied = shiftTerm(selection.startTermSeason, selection.startTermYear, -completedTerms);
     return {
@@ -1735,7 +1737,7 @@ export function MainAdvisorScreen({
       completedTerms,
       creditsPerTerm
     };
-  }, [creditsDone, selection.startTermSeason, selection.startTermYear, selection.maxCreditsPerSemester]);
+  }, [creditsDone, selection.startTermSeason, selection.startTermYear]);
 
   const impliedStartKey = `${impliedStart.season}-${impliedStart.year}-${impliedStart.completedTerms}`;
 
@@ -1982,7 +1984,7 @@ export function MainAdvisorScreen({
 
       const occupiedCredits = occupiedInProgressByTerm.get(label) ?? 0;
       const availableMin = Math.max(0, minCreditsPerTerm - occupiedCredits);
-      const availableMax = Math.max(0, selection.maxCreditsPerSemester - occupiedCredits);
+      const availableMax = Math.max(0, STANDARD_MAX_CREDITS - occupiedCredits);
 
       if (termCredits >= availableMin) {
         entry.credits = termCredits;
@@ -2342,7 +2344,6 @@ export function MainAdvisorScreen({
     in_progress_courses: effectiveInProgress,
     in_progress_terms: inProgressOverrides,
     current_term_label: currentTermLabel,
-    max_credits_per_semester: selection.maxCreditsPerSemester,
     start_term_season: effectiveStartForPlanning.season,
     start_term_year: effectiveStartForPlanning.year,
     waived_mat1000: selection.waivedMat1000,
@@ -2457,7 +2458,7 @@ export function MainAdvisorScreen({
 
   useEffect(() => {
     if (!plan?.semester_plan?.length) return;
-    const maxCredits = selection.maxCreditsPerSemester;
+    const maxCredits = STANDARD_MAX_CREDITS;
     if (!maxCredits) return;
 
     const removedInstanceIds = new Set<string>(removedCourses);
@@ -2554,7 +2555,6 @@ export function MainAdvisorScreen({
     }
   }, [
     plan?.semester_plan,
-    selection.maxCreditsPerSemester,
     catalog.course_meta,
     overrides.add,
     overrides.remove,
@@ -2733,7 +2733,7 @@ export function MainAdvisorScreen({
 
     for (const term of allPlanTerms) {
       let courses = plannedCoursesByTerm.get(term) ?? [];
-      const maxCredits = selection.maxCreditsPerSemester;
+      const maxCredits = STANDARD_MAX_CREDITS;
       const inProgressCodes = new Set(courses.filter((c) => inProgressSet.has(c.code)).map((c) => c.code));
       const extraInProgressCredits = Array.from(inProgressSet).reduce((sum, code) => {
         if (courses.some((c) => c.code === code)) return sum;
@@ -2930,7 +2930,6 @@ export function MainAdvisorScreen({
     startTermYear,
     currentTermLabel,
     manualCredits,
-    selection.maxCreditsPerSemester,
     inProgressCredits,
     failedCourseByCode
   ]);
@@ -3687,7 +3686,7 @@ export function MainAdvisorScreen({
 
       for (const candidate of candidates) {
         const candidateCredits = candidate.credits ?? getCourseCredits(candidate.code);
-        if (afterCredits + candidateCredits > selection.maxCreditsPerSemester) continue;
+        if (afterCredits + candidateCredits > STANDARD_MAX_CREDITS) continue;
         const prereqs = getCoursePrereqs(candidate.code);
         if (prereqs.includes(code)) continue;
         if (!isFreeLike(candidate)) {
@@ -3968,7 +3967,7 @@ export function MainAdvisorScreen({
         ?? getCourseCredits(record.addedCourseCode)
     );
     const nextCredits = (termCreditsMap[term] ?? 0) - oldCredits + getCourseCredits(code);
-    if (nextCredits > selection.maxCreditsPerSemester) {
+    if (nextCredits > allowedMaxCredits) {
       return;
     }
     const status = getPrereqStatusForTerm(code, term);
@@ -4120,13 +4119,13 @@ export function MainAdvisorScreen({
           };
         }
         const termCredits = termEntry.courses.reduce((sum, c) => sum + (c.credits ?? 3), 0);
-        if (termCredits + courseCredits > selection.maxCreditsPerSemester) {
+        if (termCredits + courseCredits > allowedMaxCredits) {
           return {
             plan: workingPlan,
             term: null,
             appendedTerm: false,
             restored: false,
-            blockedReason: `${preferredTargetTerm} would exceed your max credits`
+            blockedReason: `${preferredTargetTerm} would go over your ${allowedMaxCredits}-credit limit`
           };
         }
         termEntry.courses = [
@@ -4152,7 +4151,7 @@ export function MainAdvisorScreen({
         let credits = courses.reduce((sum, c) => sum + (c.credits ?? 3), 0);
         const removed: string[] = [];
         for (let i = freeCourses.length - 1; i >= 0; i -= 1) {
-          if (credits + courseCredits <= selection.maxCreditsPerSemester) {
+          if (credits + courseCredits <= STANDARD_MAX_CREDITS) {
             break;
           }
           const free = freeCourses[i];
@@ -4165,7 +4164,7 @@ export function MainAdvisorScreen({
           credits = nextCredits;
         }
 
-        if (credits + courseCredits <= selection.maxCreditsPerSemester) {
+        if (credits + courseCredits <= STANDARD_MAX_CREDITS) {
           return removed;
         }
         return null;
@@ -4178,7 +4177,7 @@ export function MainAdvisorScreen({
           const termCredits = term.courses.reduce((sum, c) => sum + (c.credits ?? 3), 0);
           const prereqMet = prereqSatisfiedInSet(completedSoFar);
           if (i >= minIdx && prereqMet) {
-            if (termCredits + courseCredits <= selection.maxCreditsPerSemester) {
+            if (termCredits + courseCredits <= STANDARD_MAX_CREDITS) {
               return { term: term.term, removedFree: [] as string[] };
             }
             const removedFree = computeFreeElectiveRemoval(term.courses, allowBelowMin);
@@ -4236,13 +4235,13 @@ export function MainAdvisorScreen({
           ? termEntry.courses.filter((c) => !removedFreeCourses.includes(c.instance_id ?? c.code))
           : termEntry.courses;
         const termCredits = filteredCourses.reduce((sum, c) => sum + (c.credits ?? 3), 0);
-        if (termCredits + courseCredits > selection.maxCreditsPerSemester) {
+        if (termCredits + courseCredits > allowedMaxCredits) {
           return {
             plan: workingPlan,
             term: null,
             appendedTerm: false,
             restored: false,
-            blockedReason: `${targetTerm} would exceed your max credits`
+            blockedReason: `${targetTerm} would go over your ${allowedMaxCredits}-credit limit`
           };
         }
       }
@@ -4359,7 +4358,7 @@ export function MainAdvisorScreen({
         }
         const credits = courseCredits(courseCode);
         const currentCredits = termCredits.get(termName) ?? 0;
-        if (currentCredits + credits > selection.maxCreditsPerSemester) return false;
+        if (currentCredits + credits > allowedMaxCredits) return false;
         const plannedCourse = buildPlannedCourse(
           courseCode,
           courseCode === code ? primaryGenEdCategory : null
@@ -4655,6 +4654,16 @@ export function MainAdvisorScreen({
         completed: data.completed ?? 0,
         total: Math.max(data.required ?? 0, 1)
       });
+      // Requirements outside the major's own credits, e.g. the European Studies language (catalog p.90).
+      Object.values(plan?.category_progress?.options ?? {})
+        .filter((option) => option.program === major)
+        .forEach((option) => {
+          items.push({
+            category: `${major}: ${option.label}`,
+            completed: option.completed ?? 0,
+            total: Math.max(option.required ?? 0, 1)
+          });
+        });
     });
 
     const minorProgress = plan?.category_progress?.minors ?? {};
@@ -5237,7 +5246,7 @@ export function MainAdvisorScreen({
             {activeTab === 'plan' && (
               <div className="tab-panel stack-4" role="tabpanel" id="panel-plan" aria-labelledby="tab-plan">
                 {!dismissedImpliedStart &&
-                  creditsDone > selection.maxCreditsPerSemester &&
+                  creditsDone > STANDARD_MAX_CREDITS &&
                   impliedStart.completedTerms >= 1 &&
                   (impliedStart.season !== startTermSeason || impliedStart.year !== startTermYear) && (
                     <div className="alert alert-info advisor-inset">
@@ -5352,6 +5361,16 @@ export function MainAdvisorScreen({
                 )}
                 {plan && (
                   <>
+                    {plan?.graduation_checks?.dual_diploma && !plan.graduation_checks.dual_diploma.ok && (
+                      <div className="advisor-inset">
+                        <DiplomaNote
+                          majors={selection.majors}
+                          dualDiplomaMajors={Object.entries(catalog.program_info ?? {})
+                            .filter(([, info]) => info.diploma === 'dual')
+                            .map(([name]) => name)}
+                        />
+                      </div>
+                    )}
                     {majorsNeedingOption.length > 0 && (
                       <div className="advisor-inset">
                         <ProgramOptionPrompt
@@ -5885,7 +5904,7 @@ export function MainAdvisorScreen({
                           const courseCredits = getCourseCredits(pendingAddCourse.code);
                           const termCredits = termCreditsMap[term] ?? 0;
                           const adjustedCredits = termCredits - placeholderCredits + courseCredits;
-                          const willExceed = adjustedCredits > selection.maxCreditsPerSemester;
+                          const willExceed = adjustedCredits > allowedMaxCredits;
                           const availability = getCourseAvailabilityInfo(
                             { semester_availability: getCourseSemesterAvailability(pendingAddCourse.code) },
                             {
@@ -6249,7 +6268,7 @@ export function MainAdvisorScreen({
                           const courseCredits = getCourseCredits(prereqCode);
                           const termCredits = termCreditsMap[term] ?? 0;
                           const adjustedCredits = termCredits - placeholderCredits + courseCredits;
-                          const willExceed = adjustedCredits > selection.maxCreditsPerSemester;
+                          const willExceed = adjustedCredits > allowedMaxCredits;
                           const isSelected = pendingPrereqTerm === term;
                           return (
                             <button
@@ -6446,7 +6465,7 @@ export function MainAdvisorScreen({
                             ? termCredits - ((targetCourse && targetTerm === replacementTerm) ? targetCredits : 0)
                             : termCredits;
                           const willExceed = !isCurrent && replacementTerm
-                            ? effectiveCredits + courseCredits > selection.maxCreditsPerSemester
+                            ? effectiveCredits + courseCredits > allowedMaxCredits
                             : false;
                           const disabled = !replacementTerm || willExceed;
                           return (
