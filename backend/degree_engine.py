@@ -883,6 +883,13 @@ def _coerce_gened_labels(raw: object) -> List[str]:
 def _is_free_elective(code: str) -> bool:
     return code.startswith("FREE_ELECTIVE") or code.startswith("FREE ELECTIVE")
 
+def _enforces_academic_policies(catalog: Dict) -> bool:
+    """Whether the catalog's academic policies apply: the 60-credit residency, the course-load rules
+    and independent-study eligibility (pp.61, 65-66). policy_overrides.json turns them on for the
+    real catalog; the synthetic test catalogs model only requirements and leave them off."""
+    return bool(catalog.get("enforce_academic_policies"))
+
+
 def _current_course_code(catalog: Dict, code: str) -> str:
     """A transcript code under its current number: a course the catalog renumbered (e.g. Algorithms,
     COS 4060 before AY 2026-27 and COS 3060 since) satisfies whatever asks for the new code."""
@@ -5800,7 +5807,7 @@ def generate_plan(
         completed_courses=completed_courses,
         start_term=(base_season, base_year),
         min_credits=min(MIN_CREDITS_PER_TERM, max_credits),
-        max_credits=ABSOLUTE_MAX_CREDITS_PER_TERM if degree_total_credits else max_credits,
+        max_credits=ABSOLUTE_MAX_CREDITS_PER_TERM if _enforces_academic_policies(catalog) else max_credits,
         strict_prereqs=strict_prereqs,
         slots=planning_slots,
         occupied_credits_by_term=occupied_credits_by_term,

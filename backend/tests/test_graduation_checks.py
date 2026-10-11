@@ -72,6 +72,12 @@ class GraduationCheckTests(IsolatedTestCase):
         self.assertEqual(len(residency_check(self.catalog, 59)[0]), 1)
         self.assertEqual(residency_check(self.catalog, 60)[0], [])
 
+    def test_academic_policies_apply_only_where_the_catalog_turns_them_on(self):
+        # The real catalog enables them in policy_overrides.json; a catalog that states the degree
+        # total but not the flag (a synthetic one) gets no residency error.
+        self.assertTrue(self.catalog.get("enforce_academic_policies"))
+        self.assertEqual(residency_check({"degree_total_credits": 120}, 0)[0], [])
+
     def test_transfer_credits_do_not_count_as_residence(self):
         transfer = [
             {"code": "OTH 0001", "instance_id": f"gened-{i}", "term": "Spring 2026", "credits": 6,

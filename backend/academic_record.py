@@ -14,6 +14,7 @@ from degree_engine import (
     _completed_credit_total,
     _course_credits,
     _current_course_code,
+    _enforces_academic_policies,
     _term_label_index,
     select_courses_for_slots,
 )
@@ -99,8 +100,7 @@ def _load_errors(
     catalog: Dict, semester_plan: List[Dict], occupied: Dict[str, int], earned: int, gpa: float | None
 ) -> List[str]:
     """One error per broken course-load rule (pp.65-66), naming the terms that break it."""
-    # Like residency, the load rules only apply to a catalog that states the degree's size.
-    if not catalog.get("degree_total_credits"):
+    if not _enforces_academic_policies(catalog):
         return []
     first_year: List[str] = []
     no_gpa: List[str] = []
@@ -233,7 +233,7 @@ def _independent_study_errors(
     """Independent study needs thirty earned credits and a cumulative GPA of 3.100 (p.61)."""
     from graduation_checks import is_independent_study
 
-    if not catalog.get("degree_total_credits"):
+    if not _enforces_academic_policies(catalog):
         return []
     too_early: List[str] = []
     studies: List[str] = []

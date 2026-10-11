@@ -17,6 +17,7 @@ from degree_engine import (
     _course_is_wic,
     _course_name,
     _course_number,
+    _enforces_academic_policies,
     select_courses_for_slots,
 )
 
@@ -70,8 +71,7 @@ def dual_diploma_check(catalog: Dict, majors: List[str]) -> Tuple[List[str], Dic
 
 def residency_check(catalog: Dict, aubg_credits: int) -> Tuple[List[str], Dict]:
     errors = []
-    # Like the degree total, residency only applies to a catalog that states the degree's size.
-    if catalog.get("degree_total_credits") and aubg_credits < RESIDENCY_CREDITS:
+    if _enforces_academic_policies(catalog) and aubg_credits < RESIDENCY_CREDITS:
         errors.append(
             f"Only {aubg_credits} credits are earned or planned at AUBG; graduation needs at least "
             f"{RESIDENCY_CREDITS} in residence (catalog p.61)."

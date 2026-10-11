@@ -2,6 +2,8 @@
   "catalog_year": null,
   "degree_total_credits": 120,
   "degree_total_credits_source": "AY 2026-27 catalog p.72: 'A minimum of 120 credit hours is required to earn a Bachelor of Arts degree at AUBG.'",
+  "enforce_academic_policies": true,
+  "enforce_academic_policies_source": "AY 2026-27 catalog pp.61, 65-66: the 60-credit residency, the course-load limits (17, 19 with a 3.300 GPA outside the first year, 22 at most) and independent-study eligibility apply to every student. Synthetic test catalogs, which model only requirements, leave them off.",
   "course_renumbering": {
     "COS 4060": "COS 3060"
   },

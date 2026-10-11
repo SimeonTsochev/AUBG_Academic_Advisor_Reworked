@@ -28,6 +28,7 @@ MISMATCH_ARTIFACT_PATH = DATA_DIR / "catalog_mismatch.json"
 DEFAULT_POLICY_OVERRIDES: Dict[str, Any] = {
     "catalog_year": None,
     "degree_total_credits": None,
+    "enforce_academic_policies": False,
     "courses": {},
     "course_meta": {},
     "majors": {},
@@ -132,6 +133,7 @@ def normalize_policy_overrides(payload: Dict[str, Any] | None) -> Dict[str, Any]
     total_credits = payload.get("degree_total_credits")
     if isinstance(total_credits, int) and not isinstance(total_credits, bool) and total_credits > 0:
         normalized["degree_total_credits"] = total_credits
+    normalized["enforce_academic_policies"] = payload.get("enforce_academic_policies") is True
 
     for key in ("courses", "course_meta", "majors", "minors", "business_concentration_manual_matches"):
         value = payload.get(key)
@@ -265,6 +267,8 @@ def apply_policy_overrides(
         runtime_catalog["catalog_year"] = policy.get("catalog_year")
     if policy.get("degree_total_credits"):
         runtime_catalog["degree_total_credits"] = policy["degree_total_credits"]
+    if policy.get("enforce_academic_policies"):
+        runtime_catalog["enforce_academic_policies"] = True
     runtime_catalog["course_renumbering"] = dict(policy.get("course_renumbering") or {})
 
     for key in ("courses", "course_meta"):
