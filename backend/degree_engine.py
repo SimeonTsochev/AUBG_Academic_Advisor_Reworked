@@ -5804,16 +5804,6 @@ def generate_plan(
         "academic_record": audit.academic_record,
     }
 
-def _prereq_codes_in(expr: object) -> Set[str]:
-    if isinstance(expr, str):
-        return {_normalize_course_code(expr)}
-    if isinstance(expr, dict):
-        return set().union(*(_prereq_codes_in(item) for value in expr.values() for item in (value or [])))
-    if isinstance(expr, list):
-        return set().union(*(_prereq_codes_in(item) for item in expr)) if expr else set()
-    return set()
-
-
 def _relieve_overloaded_terms(
     catalog: Dict,
     semester_plan: List[Dict],
@@ -5857,8 +5847,9 @@ def _relieve_overloaded_terms(
                 target = semester_plan[target_index]
                 between = [c.get("code") for t in semester_plan[index + 1:target_index + 1] for c in t["courses"]]
                 needs_it = any(
-                    code in _prereq_codes_in(_course_prereq_expr(catalog, other) or {})
+                    code in _prereq_block_course_codes(block)
                     for other in between if isinstance(other, str)
+                    for block in _course_prereq_blocks(catalog, other)
                 )
                 if needs_it:
                     break  # a later course depends on it; moving it further only gets worse
@@ -5979,6 +5970,8 @@ def _apply_plan_overrides(
     adds = overrides.get("add") or []
     removes = overrides.get("remove") or []
     moves = overrides.get("move") or []
+    # The student's own courses: making room in an overloaded semester never moves them.
+    student_codes = {_normalize_course_code(entry.get("code") or "") for entry in adds + moves if isinstance(entry, dict)}
     # Terms that lost a course the student removed elsewhere; refill them even if a free
     # elective was also removed there, or the relocated removal leaves them underloaded.
     relocated_into: Set[str] = set()
@@ -6277,13 +6270,8 @@ def _apply_plan_overrides(
 
     # A saved edit can land on a semester a reshuffled base plan has filled meanwhile: make room by
     # moving the planner's own courses on, never the student's.
-    protected_codes = {
-        _normalize_course_code(entry.get("code") or "")
-        for entry in (overrides.get("add") or []) + (overrides.get("move") or [])
-        if isinstance(entry, dict)
-    }
     override_warnings.extend(_relieve_overloaded_terms(
-        catalog, semester_plan, max_credits, occupied, protected_codes, schedule_term_keys
+        catalog, semester_plan, max_credits, occupied, student_codes, schedule_term_keys
     ))
 
     # Recompute credits and enforce max/min via warnings and FREE ELECTIVE placeholders
