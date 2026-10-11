@@ -7,8 +7,9 @@ import { AdvisorHeader } from './advisor/AdvisorHeader';
 import { PlanAlerts } from './advisor/PlanAlerts';
 import { ProgramOptionPrompt } from './advisor/ProgramOptionPrompt';
 import { DiplomaNote } from './advisor/DiplomaNote';
-import { majorsMissingRequiredOption, normalizeProgramOptions, selectedProgramInfo } from '../utils/programOptions';
-import { loadGrades, saveGrades, toGradeEntries, withGrade, type GradeMap } from '../utils/grades';
+import { useProgramOptions } from '../hooks/useProgramOptions';
+import { usePrivateGrades } from '../hooks/usePrivateGrades';
+import { toGradeEntries, withGrade, type GradeMap } from '../utils/grades';
 import { RequirementsTab } from './advisor/RequirementsTab';
 import { SummaryStrip } from './advisor/SummaryStrip';
 import type { Course, Progress, ElectiveSuggestion, FailedCourse, ManualCreditEntry, RetakeEntry } from '../types';
@@ -252,20 +253,8 @@ export function MainAdvisorScreen({
   // limit, 19 with a GPA of 3.300 or more (catalog pp.65-66).
   const allowedMaxCredits = plan?.academic_record?.max_load ?? STANDARD_MAX_CREDITS;
   const [overrides, setOverrides] = useState<PlanOverrides>(() => clonePlanOverrides(initialSnapshot?.overrides));
-  // Chosen major options. Editable here so a plan saved without the European Studies language can add it
-  // without redoing setup (which would start a new plan).
-  // Options and placement tests of the selected programs: majors read program_info, minors minor_info.
-  const optionInfo = selectedProgramInfo(selection.majors, selection.minors, catalog.program_info, catalog.minor_info);
-  const selectedPrograms = [...selection.majors, ...selection.minors];
-  const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>(
-    () => normalizeProgramOptions(selection.programOptions, selectedPrograms, optionInfo),
-  );
-  const majorsNeedingOption = majorsMissingRequiredOption(selectedPrograms, optionInfo, programOptions);
-  // Transcript grades for GPA. Private: stored in this browser under the share token and sent with
-  // plan requests, but never part of the snapshot payload, so a shared link does not reveal them.
-  const [grades, setGrades] = useState<GradeMap>(() =>
-    initialGrades && Object.keys(initialGrades).length > 0 ? initialGrades : loadGrades(initialSnapshotToken),
-  );
+  const { optionInfo, selectedPrograms, programOptions, programsNeedingOption, chooseOption } =
+    useProgramOptions(selection, catalog.program_info, catalog.minor_info);
 
   const addOverrideAdd = (
     term: string,
@@ -2205,11 +2194,11 @@ export function MainAdvisorScreen({
     initialSnapshotToken ? snapshotRelevantStateHash : null
   );
   const currentSnapshotTokenRef = useRef<string | null>(initialSnapshotToken);
-  const gradesTokenRef = useRef<string | null>(initialSnapshotToken);
   const initialSnapshotSettledRef = useRef(!initialSnapshotToken);
   const snapshotStorageUnavailableRef = useRef(readSnapshotStorageDisabled());
   const tokenCopyResetTimeoutRef = useRef<number | null>(null);
   const [currentSnapshotToken, setCurrentSnapshotToken] = useState<string | null>(initialSnapshotToken);
+  const [grades, setGrades] = usePrivateGrades(initialGrades, initialSnapshotToken, currentSnapshotToken);
   const [isSnapshotTokenLoading, setIsSnapshotTokenLoading] = useState(!initialSnapshotToken);
   const [snapshotTokenError, setSnapshotTokenError] = useState<string | null>(null);
   const [tokenCopyStatus, setTokenCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
@@ -2218,13 +2207,6 @@ export function MainAdvisorScreen({
   useEffect(() => {
     setIsSnapshotHydrated(true);
   }, []);
-
-  // Keep this plan's grades under its newest share token (every saved edit gets a new one).
-  useEffect(() => {
-    if (!currentSnapshotToken) return;
-    saveGrades(currentSnapshotToken, grades, gradesTokenRef.current);
-    gradesTokenRef.current = currentSnapshotToken;
-  }, [currentSnapshotToken, grades]);
 
   useEffect(() => {
     return () => {
@@ -5381,12 +5363,12 @@ export function MainAdvisorScreen({
                         />
                       </div>
                     )}
-                    {majorsNeedingOption.length > 0 && (
+                    {programsNeedingOption.length > 0 && (
                       <div className="advisor-inset">
                         <ProgramOptionPrompt
-                          majors={majorsNeedingOption}
+                          majors={programsNeedingOption}
                           programInfo={optionInfo}
-                          onChoose={(major, choice) => setProgramOptions((prev) => ({ ...prev, [major]: [choice] }))}
+                          onChoose={chooseOption}
                         />
                       </div>
                     )}

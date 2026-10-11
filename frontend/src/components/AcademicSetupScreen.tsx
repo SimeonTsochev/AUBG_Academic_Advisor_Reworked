@@ -27,6 +27,8 @@ import {
   type TranscriptCourseStatus,
   type TranscriptImportReviewEntry,
 } from './TranscriptImportReviewDialog';
+import { PlacementTestsCard } from './setup/PlacementTestsCard';
+import { ProgramOptionCard } from './setup/ProgramOptionCard';
 
 const BUSINESS_CONCENTRATION_OPTIONS = [
   'General',
@@ -230,37 +232,18 @@ export function AcademicSetupScreen({
     && majorsMissingRequiredOption(selectedPrograms, optionInfo, selectedProgramOptions).length === 0
     && !marketingImcConflict;
 
-  const renderOptionCard = (program: string, kind: 'major' | 'minor') => {
-    const options = optionInfo[program]?.options;
-    if (!options) return null;
-    const chosen = selectedProgramOptions[program] ?? [];
-    return (
-      <div key={`${kind}:${program}`} className="card card-pad setup-card">
-        <h2 className="section-title">{program} {kind}: {options.label}</h2>
-        <p className="section-subtitle setup-card-intro">
-          {options.required
-            ? 'Required: choose one.'
-            : options.multiple ? 'Optional: choose any you want to declare.' : 'Optional.'}
-        </p>
-        <div className="grid-auto">
-          {options.choices.map((choice) => (
-            <label key={choice} className="select-tile">
-              <input
-                type={options.multiple ? 'checkbox' : 'radio'}
-                name={`program-option-${kind}-${program}`}
-                checked={chosen.includes(choice)}
-                onChange={() => setProgramOptions((prev) => toggleProgramOption(
-                  normalizeProgramOptions(prev, selectedPrograms, optionInfo), program, choice, options.multiple,
-                ))}
-              />
-              <span>{choice}</span>
-            </label>
-          ))}
-        </div>
-        {options.description && <div className="text-xs mt-3 muted">{options.description}</div>}
-      </div>
-    );
-  };
+  const optionCard = (program: string, kind: 'major' | 'minor') => (
+    <ProgramOptionCard
+      key={`${kind}:${program}`}
+      program={program}
+      kind={kind}
+      options={optionInfo[program]?.options}
+      chosen={selectedProgramOptions[program] ?? []}
+      onToggle={(choice, multiple) => setProgramOptions((prev) => toggleProgramOption(
+        normalizeProgramOptions(prev, selectedPrograms, optionInfo), program, choice, multiple,
+      ))}
+    />
+  );
 
   const availableMinors = useMemo(
     () => minors.filter((m) => !selectedMajors.includes(m)),
@@ -965,7 +948,7 @@ export function AcademicSetupScreen({
               )}
             </div>
 
-            {selectedMajors.map((major) => renderOptionCard(major, 'major'))}
+            {selectedMajors.map((major) => optionCard(major, 'major'))}
 
             {businessMajorSelected && (
               <div className="card card-pad setup-card">
@@ -1073,30 +1056,15 @@ export function AcademicSetupScreen({
               )}
             </div>
 
-            {selectedMinors.map((minor) => renderOptionCard(minor, 'minor'))}
+            {selectedMinors.map((minor) => optionCard(minor, 'minor'))}
 
-            {placementTests.length > 0 && (
-              <div className="card card-pad setup-card">
-                <h2 className="section-title">Placement tests</h2>
-                <p className="section-subtitle setup-card-intro">
-                  Passing a placement test waives the course; you take another elective instead.
-                </p>
-                <div className="grid-auto">
-                  {placementTests.map((test) => (
-                    <label key={test.course} className="select-tile">
-                      <input
-                        type="checkbox"
-                        checked={placementWaivers.includes(test.course)}
-                        onChange={() => setPlacementWaivers((prev) => (
-                          prev.includes(test.course) ? prev.filter((c) => c !== test.course) : [...prev, test.course]
-                        ))}
-                      />
-                      <span>{test.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
+            <PlacementTestsCard
+              tests={placementTests}
+              waived={placementWaivers}
+              onToggle={(course) => setPlacementWaivers((prev) => (
+                prev.includes(course) ? prev.filter((c) => c !== course) : [...prev, course]
+              ))}
+            />
 
             {marketingImcConflict && (
               <div className="alert alert-warning" role="alert">
