@@ -127,8 +127,31 @@ class CatalogCorrectionTests(IsolatedTestCase):
             {"and": [{"or": ["MAT 2001", "ECO 3010"]}]},
         )
         # Standing rules come from the prerequisite text.
-        self.assertEqual(_min_credits_for_course(self.catalog, "INF 4040")[0], 90)
+        self.assertEqual(_min_credits_for_course(self.catalog, "INF 4040")[0], 87)
         self.assertIn("sophomore standing", _min_credits_for_course(self.catalog, "JMC 3056")[1])
+
+    def test_class_standing_uses_the_catalog_thresholds(self):
+        # AY 2026-27 catalog p.47: sophomore 27, junior 57, senior 87 earned credit hours.
+        self.assertEqual(_min_credits_for_course(self.catalog, "JMC 3056")[0], 27)
+        self.assertEqual(_min_credits_for_course(self.catalog, "BUS 4048")[0], 57)
+        self.assertEqual(_min_credits_for_course(self.catalog, "INF 4040")[0], 87)
+
+    def test_algorithms_taken_under_its_old_number_counts(self):
+        # Algorithms was COS 4060 before AY 2026-27; the Computer Science major now requires COS 3060.
+        prereqs = {"COS 1020", "COS 1050", "COS 2021"}
+        with patch.object(degree_engine, "_current_start_term", return_value=("Fall", 2027)):
+            plan = generate_plan(
+                catalog=self.catalog,
+                majors=["Computer Science"],
+                minors=[],
+                completed_courses=prereqs | {"COS 4060"},
+                start_term_season="Fall",
+                start_term_year=2027,
+            )
+        planned = {c["code"] for term in plan["semester_plan"] for c in term["courses"]}
+        self.assertNotIn("COS 3060", planned)
+        self.assertNotIn("COS 4060", planned)
+        self.assertIn("COS 3060", plan["completed_courses"])
 
     def test_planned_courses_follow_their_restored_prerequisites(self):
         plan = self._plan("major", "Information Systems")

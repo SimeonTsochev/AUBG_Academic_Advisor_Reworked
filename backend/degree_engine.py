@@ -39,16 +39,18 @@ CATEGORY_PREREQS = {
     "Case Studies in Textual Analysis": {"Principles of Textual Analysis"},
 }
 
-# Earned credits required by standing rules in prerequisite text (standard 30/60/90 thresholds).
+# Earned credits for each class standing (AY 2026-27 catalog p.47, American classification).
+SOPHOMORE_CREDITS, JUNIOR_CREDITS, SENIOR_CREDITS = 27, 57, 87
 STANDING_CREDITS = (
-    ("sophomore standing", 30),
-    ("junior standing", 60),
-    ("senior standing", 90),
+    ("sophomore standing", SOPHOMORE_CREDITS),
+    ("junior standing", JUNIOR_CREDITS),
+    ("senior standing", SENIOR_CREDITS),
 )
-DECLARED_MAJOR_CREDITS = 30
+# A major can be declared after the first year (catalog p.54), i.e. at sophomore standing.
+DECLARED_MAJOR_CREDITS = SOPHOMORE_CREDITS
 # Upper-level courses wait until the matching standing; for a new full-time student this is
-# the 3rd (3000-level) and 5th (4000-level) semester, the timing the planner always used.
-UPPER_LEVEL_CREDITS = ((4000, 60), (3000, 30))
+# the 3rd (3000-level) and 5th (4000-level) semester.
+UPPER_LEVEL_CREDITS = ((4000, JUNIOR_CREDITS), (3000, SOPHOMORE_CREDITS))
 COMPLETED_CREDITS_RE = re.compile(r"completion of (\d+) credits", re.IGNORECASE)
 COURSE_LEVEL_RE = re.compile(r"^[A-Z]{2,4}\s?(\d{3,4})$")
 
@@ -878,6 +880,14 @@ def _coerce_gened_labels(raw: object) -> List[str]:
 
 def _is_free_elective(code: str) -> bool:
     return code.startswith("FREE_ELECTIVE") or code.startswith("FREE ELECTIVE")
+
+def _current_course_code(catalog: Dict, code: str) -> str:
+    """A transcript code under its current number: a course the catalog renumbered (e.g. Algorithms,
+    COS 4060 before AY 2026-27 and COS 3060 since) satisfies whatever asks for the new code."""
+    normalized = _normalize_course_code(code)
+    renumbering = catalog.get("course_renumbering") or {}
+    return _normalize_course_code(renumbering.get(normalized, normalized))
+
 
 def _make_warning(warning_type: str, course: str | None = None, **fields: object) -> Dict:
     warning: Dict[str, object] = {"type": warning_type, "course": course}
@@ -2205,7 +2215,7 @@ def _compute_in_progress_occupied_credits(
         term_label = _normalize_term_label(raw_term)
         if not term_label:
             continue
-        normalized_terms[_normalize_course_code(raw_code)] = term_label
+        normalized_terms[_current_course_code(catalog, raw_code)] = term_label
 
     fallback_term = _normalize_term_label(current_term_label)
     if not fallback_term:
@@ -5399,12 +5409,12 @@ def generate_plan(
     if not catalog.get("gen_ed", {}).get("rules"):
         raise ValueError("Gen Ed rules are missing from the catalog. Please re-upload a catalog with Gen Ed requirements.")
 
-    requested_completed = {_normalize_course_code(c) for c in completed_courses}
+    requested_completed = {_current_course_code(catalog, c) for c in completed_courses}
     catalog_courses = _catalog_courses(catalog)
     planning_course_pool = _planning_course_pool(catalog)
     completed_courses = requested_completed & planning_course_pool
     normalized_retakes = {
-        _normalize_course_code(code)
+        _current_course_code(catalog, code)
         for code in (retake_courses or set())
         if isinstance(code, str)
     }
@@ -5412,7 +5422,7 @@ def generate_plan(
     normalized_retakes &= completed_courses
 
     normalized_in_progress = {
-        _normalize_course_code(code)
+        _current_course_code(catalog, code)
         for code in (in_progress_courses or set())
         if isinstance(code, str)
     }

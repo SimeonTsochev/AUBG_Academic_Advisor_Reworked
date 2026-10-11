@@ -41,7 +41,7 @@ COMBINATIONS = (
     (["Computer Science", "Mathematics"], ["Physics"]),
     (["Psychology"], ["Economics", "Philosophy"]),
 )
-STANDING_CREDITS = {"sophomore standing": 30, "junior standing": 60, "senior standing": 90}
+STANDING_CREDITS = {"sophomore standing": 27, "junior standing": 57, "senior standing": 87}
 COMPLETED_CREDITS_RE = re.compile(r"completion of (\d+) credits", re.IGNORECASE)
 
 
@@ -277,7 +277,7 @@ class RealCatalogScenarioTests(IsolatedTestCase):
             for course in _real_courses(term):
                 if sum(_course_credits(self.catalog, c) for c in completed) < 95:
                     completed.add(course["code"])
-        self.assertGreaterEqual(sum(_course_credits(self.catalog, c) for c in completed), 90)
+        self.assertGreaterEqual(sum(_course_credits(self.catalog, c) for c in completed), 87)
         result = _plan(self.catalog, ["Computer Science"], [], completed)
         self.assertEqual(_term_of(result, "COS 4091"), result["semester_plan"][0]["term"])
 

@@ -33,6 +33,8 @@ DEFAULT_POLICY_OVERRIDES: Dict[str, Any] = {
     "majors": {},
     "minors": {},
     "business_concentration_manual_matches": {},
+    # Old course code -> current code, for courses the catalog renumbered.
+    "course_renumbering": {},
     "foundation_courses_add": [],
     "foundation_courses_remove": [],
     "gen_ed": {
@@ -135,6 +137,13 @@ def normalize_policy_overrides(payload: Dict[str, Any] | None) -> Dict[str, Any]
         value = payload.get(key)
         if isinstance(value, dict):
             normalized[key] = deepcopy(value)
+
+    renumbering = payload.get("course_renumbering")
+    if isinstance(renumbering, dict):
+        normalized["course_renumbering"] = {
+            old: new for old, new in renumbering.items()
+            if isinstance(old, str) and isinstance(new, str) and old != new
+        }
 
     for key in ("foundation_courses_add", "foundation_courses_remove"):
         value = payload.get(key)
@@ -239,6 +248,7 @@ def apply_policy_overrides(
         runtime_catalog["catalog_year"] = policy.get("catalog_year")
     if policy.get("degree_total_credits"):
         runtime_catalog["degree_total_credits"] = policy["degree_total_credits"]
+    runtime_catalog["course_renumbering"] = dict(policy.get("course_renumbering") or {})
 
     for key in ("courses", "course_meta"):
         target = runtime_catalog.setdefault(key, {})

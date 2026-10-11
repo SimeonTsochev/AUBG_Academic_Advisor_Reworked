@@ -267,8 +267,8 @@ class PlanValidationTests(IsolatedTestCase):
             "prereq_text": "Declared BUS major",
         }
 
-        # 30 credits: the third semester for a new full-time student.
-        self.assertEqual(_min_credits_for_course(catalog, "BUS 2500"), (30, ["declared major"]))
+        # Sophomore standing (27 credits): the third semester for a new full-time student.
+        self.assertEqual(_min_credits_for_course(catalog, "BUS 2500"), (27, ["declared major"]))
 
     def test_choice_group_with_insufficient_courses_is_clamped(self):
         catalog = build_sample_catalog()

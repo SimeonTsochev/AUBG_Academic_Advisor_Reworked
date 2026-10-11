@@ -2,6 +2,10 @@
   "catalog_year": null,
   "degree_total_credits": 120,
   "degree_total_credits_source": "AY 2026-27 catalog p.72: 'A minimum of 120 credit hours is required to earn a Bachelor of Arts degree at AUBG.'",
+  "course_renumbering": {
+    "COS 4060": "COS 3060"
+  },
+  "course_renumbering_source": "AY 2026-27 catalog p.86 and p.143: Algorithms is COS 3060 (required in the Computer Science major); earlier catalogs numbered it COS 4060. A completed COS 4060 counts as COS 3060.",
   "business_concentration_manual_matches": {
     "Tourism and Hospitality": {
       "tourism_special_topics": [
