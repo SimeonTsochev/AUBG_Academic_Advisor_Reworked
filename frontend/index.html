@@ -4,7 +4,56 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Academic Advising App Design</title>
+      <title>AUBG Degree Planner | AUBG Academic Co-Advisor</title>
+      <meta
+        name="description"
+        content="Free degree planner for American University in Bulgaria (AUBG) students. Build a semester-by-semester plan for your majors, minors and concentrations from the AUBG academic catalog, import your transcript, and graduate on time."
+      />
+      <link rel="canonical" href="https://aubg-advisor.com/" />
+      <meta name="theme-color" content="#1e3a5f" />
+
+      <link rel="icon" href="/favicon.ico" sizes="48x48" />
+      <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+      <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+      <link rel="manifest" href="/site.webmanifest" />
+
+      <meta property="og:type" content="website" />
+      <meta property="og:site_name" content="AUBG Academic Co-Advisor" />
+      <meta property="og:url" content="https://aubg-advisor.com/" />
+      <meta property="og:title" content="AUBG Academic Co-Advisor: degree planner for AUBG students" />
+      <meta
+        property="og:description"
+        content="Build a semester-by-semester degree plan for your AUBG majors and minors, see what is left, and graduate on time."
+      />
+      <meta property="og:image" content="https://aubg-advisor.com/og-image.png" />
+      <meta property="og:image:width" content="1200" />
+      <meta property="og:image:height" content="630" />
+      <meta property="og:image:alt" content="AUBG Academic Co-Advisor: build a semester-by-semester degree plan" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="AUBG Academic Co-Advisor: degree planner for AUBG students" />
+      <meta
+        name="twitter:description"
+        content="Build a semester-by-semester degree plan for your AUBG majors and minors, see what is left, and graduate on time."
+      />
+      <meta name="twitter:image" content="https://aubg-advisor.com/og-image.png" />
+
+      <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "AUBG Academic Co-Advisor",
+          "alternateName": "AUBG Degree Planner",
+          "url": "https://aubg-advisor.com/",
+          "description": "Free degree planner for American University in Bulgaria students. Builds a semester-by-semester plan for majors, minors and concentrations from the AUBG academic catalog.",
+          "applicationCategory": "EducationalApplication",
+          "operatingSystem": "Any",
+          "inLanguage": "en",
+          "isAccessibleForFree": true,
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+          "audience": { "@type": "EducationalAudience", "educationalRole": "student" },
+          "image": "https://aubg-advisor.com/og-image.png"
+        }
+      </script>
       <style>
         :root {
           color-scheme: light;
@@ -81,7 +130,26 @@
           <div class="boot-loader__sub">Loading the advising workspace</div>
         </div>
       </div>
-      <div id="root"></div>
+      <!-- Crawler- and no-JS-visible copy; React replaces it on mount. -->
+      <div id="root">
+        <main>
+          <h1>AUBG Academic Co-Advisor</h1>
+          <p>
+            A free degree planner for students of the American University in Bulgaria (AUBG). Build a
+            semester-by-semester degree plan, see what is left for every major and minor, and graduate on time.
+          </p>
+          <ul>
+            <li>Checked against the AUBG academic catalog, including prerequisites, class standing and GenEd rules</li>
+            <li>Double majors, minors and Business concentrations</li>
+            <li>Transcript import with automatic retakes</li>
+          </ul>
+          <p>
+            This is an unofficial tool. Confirm your plan with your academic advisor and register through the official
+            AUBG system.
+          </p>
+          <noscript><p>Enable JavaScript to build your degree plan.</p></noscript>
+        </main>
+      </div>
       <script type="module" src="/src/main.tsx"></script>
     </body>
   </html>
