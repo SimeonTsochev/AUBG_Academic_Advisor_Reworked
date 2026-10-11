@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { NO_PROGRAM_LINK, readProgramLink } from './utils/programLink';
 import { HowItWorksModal } from './components/HowItWorksModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
 import {
@@ -331,7 +332,13 @@ export default function App() {
     let cancelled = false;
     requestCatalog().then(
       (resp) => {
-        if (!cancelled) setCatalog((prev) => prev ?? resp);
+        if (cancelled) return;
+        setCatalog((prev) => prev ?? resp);
+        // A requirement-page link (`/?major=...`) opens the setup screen with that program selected.
+        const linked = readProgramLink(window.location.search, resp.majors, resp.minors);
+        if (linked.majors.length || linked.minors.length) {
+          setCurrentScreen((screen) => (screen === 'welcome' ? 'setup' : screen));
+        }
       },
       () => undefined, // Start shows the error and retries.
     );
@@ -462,6 +469,10 @@ export default function App() {
     openAdvisorWithSelection(nextSelection);
   };
 
+  const linkedPrograms = catalog
+    ? readProgramLink(window.location.search, catalog.majors, catalog.minors)
+    : NO_PROGRAM_LINK;
+
   return (
     <>
       {currentScreen === 'welcome' && (
@@ -484,6 +495,8 @@ export default function App() {
           courseMeta={catalog.course_meta}
           onComplete={handleSetupComplete}
           onBack={() => setCurrentScreen('welcome')}
+          initialMajors={linkedPrograms.majors}
+          initialMinors={linkedPrograms.minors}
         />
       )}
 

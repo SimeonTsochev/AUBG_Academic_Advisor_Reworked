@@ -61,6 +61,13 @@ export function WelcomeScreen({ onStart, onHowItWorks, isLoading, errorMsg }: We
             </li>
           ))}
         </ul>
+
+        <nav className="welcome-links" aria-label="Requirements">
+          <span>Browse the requirements:</span>
+          <a href="/majors">Majors</a>
+          <a href="/minors">Minors</a>
+          <a href="/general-education">General education</a>
+        </nav>
       </main>
     </div>
   );

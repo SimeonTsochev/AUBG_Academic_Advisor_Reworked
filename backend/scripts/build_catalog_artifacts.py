@@ -28,6 +28,11 @@ def main() -> None:
 
     ensure_policy_overrides_file()
 
+    # The public requirement pages are generated from the same data; keep them in step.
+    from build_program_pages_artifact import main as build_program_pages
+
+    build_program_pages()
+
     print(
         "Built compact backend artifacts: "
         f"{EXCEL_ARTIFACT_PATH.name} ({excel_payload.get('course_count', 0)} courses), "

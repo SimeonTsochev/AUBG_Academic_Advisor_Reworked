@@ -61,7 +61,7 @@
             "vitest": "^3.2.7"
       },
       "scripts": {
-            "build": "node ./node_modules/vite/bin/vite.js build",
+            "build": "node ./node_modules/vite/bin/vite.js build && node ./scripts/generate-seo-pages.mjs",
             "dev": "vite",
             "preview": "vite preview",
             "typecheck": "tsc --noEmit",

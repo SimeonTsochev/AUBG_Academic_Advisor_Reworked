@@ -67,13 +67,6 @@ Endpoints: `/catalog/load-default`, `/courses`, `/courses/search`, `/courses/{co
 ### Frontend
 `App.tsx` switches between `welcome` → `setup` (`AcademicSetupScreen`) → `advisor` (`MainAdvisorScreen`), and restores shared plans from `/p/<token>` snapshot links. `MainAdvisorScreen.tsx` is very large and holds most client state: plan overrides, retakes, transcript import, chosen electives (`swappedElectives`, with the "Swap elective" flow), and a debounced autosave that creates program snapshots. Every edit re-calls `/plan/generate` with the accumulated overrides; the backend is the source of truth for plan contents. Pure, unit-tested helpers live in `src/utils/` (override edits in `planOverrides.ts`, availability, reasons, terms, retakes, OCR parsing); put new logic there rather than in the component. `src/components/ui/` is generated shadcn/Radix UI.
 
-### Deployment
-Two Vercel projects deploy from `main`: the frontend (served at `https://aubg-advisor.com`) and the backend (a `*.vercel.app` URL, which `VITE_API_BASE` points at).
-- CORS: `main.py` allows localhost and any `https://*.vercel.app` origin; custom domains must be listed in the backend's `CORS_ORIGINS`. Env vars are read at import, so changing one needs a backend redeploy.
-- Vercel installs the backend with `uv` from `requirements.txt`; unpinned transitive deps (e.g. `multidict` via `supabase`) can break a build when an upstream release is published only partially, and redeploying later fixes it.
-- `vercel.json` exists at the repo root and in `frontend/` with the same content (SPA rewrite, `X-Robots-Tag: noindex` on `/p/*` shared plans); keep them in sync.
-- SEO lives in `frontend/index.html` (meta/Open Graph tags and JSON-LD with absolute `https://aubg-advisor.com` URLs, plus crawler-visible copy inside `#root` that React replaces on mount) and `frontend/public/` (favicons, `og-image.png`, `site.webmanifest`, `sitemap.xml`, `robots.txt`, `llms.txt`). Update those absolute URLs if the domain changes.
-
 ## Testing gotchas
 - Every test class derives from `tests/_isolation.IsolatedTestCase`. `excel_course_catalog` keeps a module-global course index that the engine and transcript import fall back to; each test starts from an empty index (`excel_index = "empty"`, synthetic catalogs) or the shipped one (`excel_index = "real"`) and gets the previous state restored afterwards. Use it for new test classes.
 - `generate_plan` clamps any start term earlier than today's term to the current term (`_current_start_term` uses `date.today()`). Patch `degree_engine._current_start_term` when term labels matter (the scenario tests do).

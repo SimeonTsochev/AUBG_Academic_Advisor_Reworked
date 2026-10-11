@@ -11,6 +11,12 @@ register through the official AUBG system.
 
 - [Academic Advisor](/): pick majors, minors and a Business concentration, import a transcript, then review and edit the generated plan.
 
+## Requirements
+
+- [AUBG majors](/majors): every major with its required courses, electives, credits and prerequisites, one page each (for example `/majors/computer-science`).
+- [AUBG minors](/minors): the same for every minor (for example `/minors/finance`).
+- [General education](/general-education): the GenEd categories, how many courses each needs, and the courses that count.
+
 ## Notes
 
 - Plans follow the AUBG Academic Catalog AY 2025-26 and the Fall 2026 course schedule.

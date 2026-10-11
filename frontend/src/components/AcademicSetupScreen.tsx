@@ -100,6 +100,9 @@ interface AcademicSetupScreenProps {
     waivedEng1000: boolean;
   }) => void;
   onBack: () => void;
+  /** Programs preselected by a requirement-page link (`/?major=...`), already validated. */
+  initialMajors?: string[];
+  initialMinors?: string[];
 }
 
 export function AcademicSetupScreen({
@@ -110,12 +113,14 @@ export function AcademicSetupScreen({
   courses,
   courseMeta,
   onComplete,
-  onBack
+  onBack,
+  initialMajors = [],
+  initialMinors = [],
 }: AcademicSetupScreenProps) {
   const MAX_PROGRAMS_PER_TYPE = 2;
   const [step, setStep] = useState<1 | 2>(1);
-  const [selectedMajors, setSelectedMajors] = useState<string[]>([]);
-  const [selectedMinors, setSelectedMinors] = useState<string[]>([]);
+  const [selectedMajors, setSelectedMajors] = useState<string[]>(initialMajors);
+  const [selectedMinors, setSelectedMinors] = useState<string[]>(initialMinors);
   const [businessConcentration, setBusinessConcentration] = useState<string>('General');
   const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(null);
   const [maxCreditsPerSemester, setMaxCreditsPerSemester] = useState(17);
