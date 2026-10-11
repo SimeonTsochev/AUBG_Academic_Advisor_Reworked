@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "browser-mcp-agent": {
+      "source": "antibrow/anti-detect-browser-skills",
+      "sourceType": "github",
+      "skillPath": "browser-mcp-agent/SKILL.md",
+      "computedHash": "8823412167a8e824b3f2f57a18070c680f0d138b74c755746c66c9f97cf6380c"
+    },
     "codebase-design": {
       "source": "mattpocock/skills",
       "sourceType": "github",

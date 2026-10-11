@@ -1,0 +1,12 @@
+{
+  "enabledMcpjsonServers": ["anti-detect-browser"],
+  "permissions": {
+    "deny": [
+      "mcp__anti-detect-browser__start_live_view",
+      "mcp__anti-detect-browser__stop_live_view",
+      "mcp__anti-detect-browser__list_proxies",
+      "mcp__anti-detect-browser__claim_proxy",
+      "mcp__anti-detect-browser__delete_profile"
+    ]
+  }
+}

@@ -16,3 +16,6 @@ frontend/.tmp-build-check/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Browser QA runs (screenshots)
+qa/runs/

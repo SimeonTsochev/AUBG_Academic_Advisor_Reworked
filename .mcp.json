@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "anti-detect-browser": {
+      "command": "anti-detect-browser",
+      "args": ["--mcp"],
+      "env": { "ANTI_DETECT_BROWSER_KEY": "${ANTI_DETECT_BROWSER_KEY:-}" }
+    }
+  }
+}
