@@ -1,4 +1,4 @@
-"""Graduation rules the requirement slots do not express (AY 2026-27 catalog pp.55, 61, 67, 72).
+"""Graduation rules the requirement slots do not express (AY 2026-27 catalog pp.55, 61-63, 67, 72, 122).
 
 Each check looks at the whole plan (completed, in-progress and planned courses) and returns a
 student-facing error when the plan breaks the rule; `generate_plan` adds the errors to its
@@ -9,7 +9,14 @@ from __future__ import annotations
 from itertools import combinations
 from typing import Dict, Iterable, List, Set, Tuple
 
-from degree_engine import _catalog_courses, _course_is_wic, select_courses_for_slots
+from degree_engine import (
+    _catalog_courses,
+    _course_credits,
+    _course_is_wic,
+    _course_name,
+    _course_number,
+    select_courses_for_slots,
+)
 
 WIC_REQUIRED = 3
 # The foundation writing courses are WICs but do not count toward the three (p.61).
@@ -19,6 +26,18 @@ RETAKE_LIMIT = 3
 # Two majors may share three required courses; any other pair of programs two (p.55).
 SHARED_COURSE_LIMIT_TWO_MAJORS = 3
 SHARED_COURSE_LIMIT = 2
+INTERNSHIP_CREDIT_LIMIT = 3  # academic internships (p.63)
+INDEPENDENT_STUDY_PER_TERM = 2  # p.61
+INDEPENDENT_STUDY_TOTAL = 5
+
+
+def is_internship(catalog: Dict, code: str) -> bool:
+    return "internship" in _course_name(catalog, code).lower() and _course_credits(catalog, code) > 0
+
+
+def is_independent_study(catalog: Dict, code: str) -> bool:
+    number = _course_number(code)
+    return (number is not None and number % 1000 == 98) or "independent study" in _course_name(catalog, code).lower()
 
 
 def _join(names: List[str]) -> str:
@@ -100,20 +119,90 @@ def double_counting_check(catalog: Dict, slots: Dict, courses: Set[str]) -> Tupl
 
 
 def program_options_check(
-    catalog: Dict, majors: List[str], program_options: Dict[str, List[str]] | None
+    catalog: Dict, majors: List[str], minors: List[str], program_options: Dict[str, List[str]] | None
 ) -> Tuple[List[str], Dict]:
-    """A major whose option is required (the European Studies language, p.90) needs a choice."""
+    """A program whose option is required (the European Studies language p.90, an MLC language
+    focus pp.102, 124) needs a choice."""
     errors: List[str] = []
     chosen: Dict[str, List[str]] = {}
-    for major in majors:
-        options = (catalog.get("majors", {}).get(major) or {}).get("options")
-        if not isinstance(options, dict):
-            continue
-        valid = [c for c in (program_options or {}).get(major) or [] if c in (options.get("choices") or {})]
-        chosen[major] = valid
-        if options.get("required") and not valid:
-            errors.append(options.get("missing_message") or f"Choose a {options.get('label')} for the {major} major in setup.")
+    for kind, names in (("major", majors), ("minor", minors)):
+        for name in names:
+            options = (catalog.get(f"{kind}s", {}).get(name) or {}).get("options")
+            if not isinstance(options, dict):
+                continue
+            valid = [c for c in (program_options or {}).get(name) or [] if c in (options.get("choices") or {})]
+            chosen[name] = valid
+            if options.get("required") and not valid:
+                errors.append(
+                    options.get("missing_message")
+                    or f"Choose a {str(options.get('label') or 'option').lower()} for the {name} {kind}."
+                )
     return errors, chosen
+
+
+def internship_check(catalog: Dict, courses: Set[str]) -> Tuple[List[str], Dict]:
+    """At most three academic credits may come from internships (p.63)."""
+    internships = sorted(c for c in courses if is_internship(catalog, c))
+    credits = sum(_course_credits(catalog, c) for c in internships)
+    errors = []
+    if credits > INTERNSHIP_CREDIT_LIMIT:
+        errors.append(
+            f"{credits} credits of internships in the plan ({', '.join(internships)}); at most "
+            f"{INTERNSHIP_CREDIT_LIMIT} academic credits may come from internships (catalog p.63)."
+        )
+    return errors, {"courses": internships, "credits": credits, "limit": INTERNSHIP_CREDIT_LIMIT}
+
+
+def independent_study_check(
+    catalog: Dict, semester_plan: List[Dict], completed: Set[str]
+) -> Tuple[List[str], Dict]:
+    """No more than two independent studies in a semester and five in all (p.61)."""
+    planned_by_term = {
+        term.get("term") or "": [c["code"] for c in term.get("courses") or [] if is_independent_study(catalog, c["code"])]
+        for term in semester_plan
+    }
+    done = sorted(c for c in completed if is_independent_study(catalog, c))
+    total = len(done) + sum(len(codes) for codes in planned_by_term.values())
+    errors = []
+    crowded = [term for term, codes in planned_by_term.items() if len(codes) > INDEPENDENT_STUDY_PER_TERM]
+    if crowded:
+        errors.append(
+            f"{', '.join(crowded)} {'has' if len(crowded) == 1 else 'have'} more than {INDEPENDENT_STUDY_PER_TERM} "
+            "independent studies; a student may take at most two in a semester (catalog p.61)."
+        )
+    if total > INDEPENDENT_STUDY_TOTAL:
+        errors.append(
+            f"{total} independent studies in the plan; at most {INDEPENDENT_STUDY_TOTAL} are allowed in a "
+            "student's career (catalog p.61)."
+        )
+    return errors, {"count": total, "limit": INDEPENDENT_STUDY_TOTAL}
+
+
+def sequence_check(
+    catalog: Dict, majors: List[str], minors: List[str], semester_plan: List[Dict], completed: Set[str]
+) -> Tuple[List[str], List[Dict]]:
+    """Program rules that one course must come first: the Literature minor's ENG 2010 before any
+    3000-level course (p.122). `sequence_rules`: [{before, prefixes, min_level, label}]."""
+    term_of = {c["code"]: i for i, term in enumerate(semester_plan) for c in term.get("courses") or []}
+    errors: List[str] = []
+    details: List[Dict] = []
+    for kind, names in (("majors", majors), ("minors", minors)):
+        for name in names:
+            for rule in (catalog.get(kind, {}).get(name) or {}).get("sequence_rules") or []:
+                first = rule.get("before")
+                if not first or first in completed:
+                    continue
+                prefixes = tuple(f"{p} " for p in rule.get("prefixes") or [])
+                limit = term_of.get(first, len(semester_plan))
+                early = sorted(
+                    code for code, index in term_of.items()
+                    if code != first and index <= limit and (not prefixes or code.startswith(prefixes))
+                    and (_course_number(code) or 0) >= int(rule.get("min_level") or 0)
+                )
+                if early:
+                    errors.append(f"{rule.get('label') or first + ' must come first.'} Planned too early: {', '.join(early)}.")
+                    details.append({"program": name, "before": first, "courses": early})
+    return errors, details
 
 
 def graduation_checks(
@@ -124,6 +213,9 @@ def graduation_checks(
     aubg_credits: int,
     retakes: Set[str],
     program_options: Dict[str, List[str]] | None = None,
+    minors: List[str] | None = None,
+    semester_plan: List[Dict] | None = None,
+    completed: Set[str] | None = None,
 ) -> Tuple[List[str], Dict]:
     """`courses`: every completed, in-progress and planned course code (no placeholders)."""
     errors: List[str] = []
@@ -134,7 +226,10 @@ def graduation_checks(
         ("residency", residency_check(catalog, aubg_credits)),
         ("retakes", retake_check(retakes)),
         ("double_counting", double_counting_check(catalog, slots, courses)),
-        ("program_options", program_options_check(catalog, majors, program_options)),
+        ("program_options", program_options_check(catalog, majors, minors or [], program_options)),
+        ("internships", internship_check(catalog, courses)),
+        ("independent_study", independent_study_check(catalog, semester_plan or [], completed or set())),
+        ("sequence", sequence_check(catalog, majors, minors or [], semester_plan or [], completed or set())),
     ):
         errors.extend(check_errors)
         checks[key] = details

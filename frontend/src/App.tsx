@@ -31,6 +31,7 @@ interface AcademicSelection {
   businessConcentration: string | null;
   economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
   programOptions: ProgramOptionSelection;
+  placementWaivers: string[];
   completedCourses: string[];
   inProgressCourses: string[];
   failedCourses: FailedCourse[];
@@ -263,6 +264,7 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
       : null,
     economicsIntermediateChoice,
     programOptions: toProgramOptions(raw.programOptions),
+    placementWaivers: toStringArray(raw.placementWaivers),
     completedCourses: toStringArray(raw.completedCourses),
     inProgressCourses: toStringArray(raw.inProgressCourses),
     failedCourses: normalizeFailedCourses(raw.failedCourses),
@@ -321,6 +323,7 @@ export default function App() {
     businessConcentration: null,
     economicsIntermediateChoice: null,
     programOptions: {},
+    placementWaivers: [],
     completedCourses: [],
     inProgressCourses: [],
     failedCourses: [],
@@ -396,6 +399,7 @@ export default function App() {
           businessConcentration: normalized.businessConcentration,
           economicsIntermediateChoice: normalized.economicsIntermediateChoice ?? null,
           programOptions: normalized.programOptions ?? {},
+          placementWaivers: normalized.placementWaivers ?? [],
           completedCourses: normalized.completedCourses,
           inProgressCourses: normalized.inProgressCourses,
           failedCourses: normalized.failedCourses ?? [],
@@ -505,6 +509,7 @@ export default function App() {
           majors={catalog.majors}
           minors={catalog.minors}
           programInfo={catalog.program_info}
+          minorInfo={catalog.minor_info}
           courses={catalog.courses}
           courseMeta={catalog.course_meta}
           onComplete={handleSetupComplete}

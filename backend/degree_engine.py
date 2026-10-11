@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from functools import lru_cache, wraps
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, Iterable, List, Set, Tuple
 import datetime
 import logging
 import math
@@ -895,6 +895,50 @@ def _current_course_code(catalog: Dict, code: str) -> str:
     normalized = _normalize_course_code(code)
     renumbering = catalog.get("course_renumbering") or {}
     return _normalize_course_code(renumbering.get(normalized, normalized))
+
+
+def _preferred_option_courses(
+    catalog: Dict, majors: List[str], minors: List[str], program_options: Dict[str, List[str]] | None
+) -> Set[str]:
+    """Courses a chosen option's blocks `prefer` when the planner picks among them: Data Science
+    prefers INF 4080 and MAT 2001 over a fourth COS course, which the IS elective cap would not count."""
+    preferred: Set[str] = set()
+    for kind, names in (("majors", majors), ("minors", minors)):
+        for name in names:
+            choices = ((catalog.get(kind, {}).get(name) or {}).get("options") or {}).get("choices") or {}
+            for choice in (program_options or {}).get(name) or []:
+                for block in (choices.get(choice) or {}).get("blocks") or []:
+                    preferred |= {_normalize_course_code(c) for c in block.get("prefer") or []}
+    return preferred
+
+
+def _offered_placement_waivers(
+    catalog: Dict, majors: List[str], minors: List[str], requested: Iterable[str] | None
+) -> Set[str]:
+    """Requested placement waivers that one of the selected programs offers (catalog pp.86, 95, 105, 126)."""
+    offered = {
+        _normalize_course_code(entry.get("course") or "")
+        for kind, names in (("majors", majors), ("minors", minors))
+        for name in names
+        for entry in ((catalog.get(kind, {}).get(name) or {}).get("placement_waivers") or [])
+        if isinstance(entry, dict)
+    }
+    return {_normalize_course_code(c) for c in requested or [] if isinstance(c, str)} & offered
+
+
+def _placement_elective_credits(
+    catalog: Dict, majors: List[str], minors: List[str], waived: Set[str]
+) -> Dict[Tuple[str, str], int]:
+    """Elective credits a program adds for each course a placement test waived ("students who pass
+    the placement test may choose another course from the list of electives", p.86)."""
+    extra: Dict[Tuple[str, str], int] = {}
+    for kind, names in (("major", majors), ("minor", minors)):
+        for name in names:
+            for entry in (catalog.get(f"{kind}s", {}).get(name) or {}).get("placement_waivers") or []:
+                code = _normalize_course_code((entry or {}).get("course") or "")
+                if code in waived and entry.get("replace_with_elective"):
+                    extra[(name, kind)] = extra.get((name, kind), 0) + _course_credits(catalog, code)
+    return extra
 
 
 def _make_warning(warning_type: str, course: str | None = None, **fields: object) -> Dict:
@@ -2289,7 +2333,8 @@ def build_requirement_slots(
     business_concentration: str | None = None,
     program_options: Dict[str, List[str]] | None = None,
 ) -> Dict:
-    """`program_options`: per major, the chosen options it offers (catalog `majors.<name>.options`),
+    """`program_options`: per program, the chosen options it offers (catalog `majors.<name>.options`
+    or `minors.<name>.options`; a student never has the same program as both major and minor),
     e.g. {"Computer Science": ["Software Development"], "European Studies": ["French"]}."""
     slots: List[Dict] = []
     by_id: Dict[str, Dict] = {}
@@ -2343,15 +2388,17 @@ def build_requirement_slots(
                 **option,
             })
 
-    def add_program_option_slots(major: str, data: Dict, fixed_seen: Set[str]) -> None:
-        """Slots for the options chosen for `major`. Blocks that count as the major's electives are
-        tagged `concentration` (elective progress then counts them as electives); the others are
-        collateral requirements outside the major's credits, such as the European Studies language."""
+    def add_program_option_slots(program: str, program_type: str, data: Dict, fixed_seen: Set[str]) -> None:
+        """Slots for the options chosen for a program. A block's `role` says what its courses are:
+        "elective" (tagged `concentration`, so elective progress counts them as the program's
+        electives), "required" (the program's own required courses once the choice is made, e.g. an
+        MLC language focus) or "collateral" (outside the program's credits, e.g. the European Studies
+        language). Without a role, `counts_as_major_elective` picks elective or collateral."""
         options = data.get("options")
         if not isinstance(options, dict):
             return
         choices = options.get("choices") or {}
-        for choice in (program_options or {}).get(major) or []:
+        for choice in (program_options or {}).get(program) or []:
             entry = choices.get(choice)
             if not isinstance(entry, dict):
                 continue
@@ -2359,17 +2406,26 @@ def build_requirement_slots(
             for index, block in enumerate(entry.get("blocks") or []):
                 courses = [_normalize_course_code(c) for c in block.get("courses") or [] if isinstance(c, str)]
                 count = int(block.get("count") or 0)
-                if block.get("counts_as_major_elective", options.get("counts_as_major_elective")):
+                role = block.get("role") or (
+                    "elective"
+                    if block.get("counts_as_major_elective", options.get("counts_as_major_elective"))
+                    else "collateral"
+                )
+                if role == "elective":
                     tags: Dict[str, Any] = {"concentration": choice}
+                elif role == "required":
+                    tags = {"option_label": option_label}
                 else:
                     tags = {"option_label": option_label, "collateral": True}
                 if count >= len(courses):
                     for course in courses:
                         if course not in fixed_seen:
                             fixed_seen.add(course)
-                            add_fixed_course(course, major, "major", **tags)
+                            add_fixed_course(course, program, program_type, **tags)
                 else:
-                    add_choice_group(courses, count, major, "major", f"{option_label} ({index + 1})", **tags)
+                    add_choice_group(
+                        courses, count, program, program_type, f"{option_label} ({index + 1})", **tags
+                    )
 
     def parse_requirements(program_data: Dict) -> Tuple[List[str], List[Dict]]:
         reqs = program_data.get("required_courses")
@@ -2488,7 +2544,8 @@ def build_requirement_slots(
         for group in choices:
             add_choice_group(group["courses"], group["count"], major, "major", group["label"])
         add_program_option_slots(
-            major, data, {_normalize_course_code(c) for c in fixed + concentration_courses if isinstance(c, str)}
+            major, "major", data,
+            {_normalize_course_code(c) for c in fixed + concentration_courses if isinstance(c, str)},
         )
 
     for minor in minors:
@@ -2572,6 +2629,9 @@ def build_requirement_slots(
             add_fixed_course(course, minor, "minor")
         for group in choices:
             add_choice_group(group["courses"], group["count"], minor, "minor", group["label"])
+        add_program_option_slots(
+            minor, "minor", data, {_normalize_course_code(c) for c in fixed if isinstance(c, str)}
+        )
 
     for course in sorted(set(catalog.get("foundation_courses", []) or [])):
         if course not in catalog_courses:
@@ -2825,7 +2885,8 @@ def _requirement_entry(slot: Dict) -> Dict[str, Any]:
         return {
             "program": program,
             "program_type": program_type,
-            "kind": "option",
+            # Collateral requirements (the European Studies language) are outside the program's credits.
+            "kind": "collateral" if slot.get("collateral") else "option",
             "label": f"{owner_label}: {slot['option_label']}",
         }
     if slot.get("concentration"):
@@ -5470,8 +5531,12 @@ def generate_plan(
     current_term_label: str | None = None,
     program_options: Dict[str, List[str]] | None = None,
     grades: List[Dict[str, Any]] | None = None,
+    placement_waivers: List[str] | None = None,
 ) -> Dict:
-    """`grades`: the student's transcript grades, [{code, grade, term}], for GPA and the load rules."""
+    """`grades`: the student's transcript grades, [{code, grade, term}], for GPA and the load rules.
+    `placement_waivers`: courses a placement test waived (COS 1020, INF 1030, MLL 2025, ...): they
+    satisfy requirements without earning credits, and programs that say so (`placement_waivers`
+    with `replace_with_elective`) need that many more elective credits instead."""
     if not catalog.get("gen_ed", {}).get("rules"):
         raise ValueError("Gen Ed rules are missing from the catalog. Please re-upload a catalog with Gen Ed requirements.")
 
@@ -5509,6 +5574,11 @@ def generate_plan(
     if waived_eng1000 and "ENG 1000" in catalog_courses:
         completed_courses.add("ENG 1000")
         waived_courses.add("ENG 1000")
+    placement_waived = _offered_placement_waivers(catalog, majors, minors, placement_waivers)
+    for code in placement_waived:
+        if code in catalog_courses:
+            completed_courses.add(code)
+            waived_courses.add(code)
 
     manual_credit_breakdown = _manual_credit_breakdown(
         manual_credits=manual_credits,
@@ -5532,6 +5602,7 @@ def generate_plan(
         catalog, majors, minors, business_concentration=business_concentration, program_options=program_options
     )
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
+    preferred_courses = set(preferred_courses or []) | _preferred_option_courses(catalog, majors, minors, program_options)
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
     max_credits = max(14, int(max_credits_per_semester))
     min_credits = min(PLANNING_MIN_CREDITS_PER_TERM, max_credits)
@@ -5825,6 +5896,9 @@ def generate_plan(
             if course.get("is_retake") and isinstance(course.get("code"), str)
         },
         program_options=program_options,
+        minors=minors,
+        semester_plan=semester_plan,
+        completed=requested_completed,
     )
     validation_errors.extend(graduation_errors)
     is_valid = True
@@ -5886,7 +5960,8 @@ def generate_plan(
         catalog,
         programs=[(name, "major") for name in majors] + [(name, "minor") for name in minors],
         slots=slots,
-        completed=set(effective_completed_courses),
+        # Every completed course, including topics courses outside the planning pool (POS 4400).
+        completed=set(effective_completed_courses) | requested_completed,
         planned={
             course["code"]
             for term in semester_plan
@@ -5894,6 +5969,9 @@ def generate_plan(
             if not _is_free_elective(course.get("code") or "")
         },
         manual_major_elective_credits=manual_credit_breakdown.get("major_electives", {}),
+        program_options=program_options,
+        extra_elective_credits=_placement_elective_credits(catalog, majors, minors, placement_waived),
+        waived=placement_waived,
     )
 
     from academic_record import academic_record  # imports this module's helpers
@@ -5908,6 +5986,7 @@ def generate_plan(
         earned_credits=_completed_credit_total(catalog, completed_courses) + credit_offset,
         occupied_credits_by_term=occupied_credits_by_term,
         in_progress_credits=_completed_credit_total(catalog, normalized_in_progress),
+        minors=minors,
     )
     if record_errors:
         is_valid = False
@@ -5959,6 +6038,89 @@ def generate_plan(
         "graduation_checks": graduation_details,
         "academic_record": record,
     }
+
+def _prereq_codes_in(expr: object) -> Set[str]:
+    if isinstance(expr, str):
+        return {_normalize_course_code(expr)}
+    if isinstance(expr, dict):
+        return set().union(*(_prereq_codes_in(item) for value in expr.values() for item in (value or [])))
+    if isinstance(expr, list):
+        return set().union(*(_prereq_codes_in(item) for item in expr)) if expr else set()
+    return set()
+
+
+def _relieve_overloaded_terms(
+    catalog: Dict,
+    semester_plan: List[Dict],
+    max_credits: int,
+    occupied: Dict[str, int],
+    protected_codes: Set[str],
+    schedule_term_keys: Set[str],
+) -> List[Dict]:
+    """Move the planner's own courses out of semesters the student's edits pushed past the limit.
+
+    Edits are saved against an older plan; when a catalog correction reshuffles the base plan, a
+    saved swap can land on a semester the planner has meanwhile filled. The student's own courses
+    (adds, moves, retakes) stay; a planner-placed course moves to the next semester with room, and
+    only if no course between the two needs it as a prerequisite, it has no co-requisite in its
+    semester, it is not a foundation course, and the new semester is not known to lack it; in a full
+    semester it takes the place of a free-elective placeholder. Free-elective placeholders move first.
+    """
+    warnings: List[Dict] = []
+    foundation = {_normalize_course_code(c) for c in catalog.get("foundation_courses") or [] if isinstance(c, str)}
+
+    def load(term: Dict) -> int:
+        return sum(_planned_course_credits(catalog, c) for c in term["courses"]) + int(occupied.get(term["term"], 0) or 0)
+
+    def movable(term: Dict, course: Dict) -> bool:
+        code = course.get("code") or ""
+        if code in protected_codes or course.get("is_retake") or code in foundation:
+            return False
+        term_codes = {c.get("code") for c in term["courses"]}
+        return not (_course_coreqs(catalog, code) & term_codes)
+
+    for index, term in enumerate(semester_plan):
+        candidates = sorted(
+            (c for c in term["courses"] if movable(term, c)),
+            key=lambda c: (not _is_free_elective(c.get("code") or ""), _course_number(c.get("code") or "") or 0),
+        )
+        while load(term) > max_credits and candidates:
+            course = candidates.pop(0)
+            code = course["code"]
+            credits = _planned_course_credits(catalog, course)
+            for target_index in range(index + 1, len(semester_plan)):
+                target = semester_plan[target_index]
+                between = [c.get("code") for t in semester_plan[index + 1:target_index + 1] for c in t["courses"]]
+                needs_it = any(
+                    code in _prereq_codes_in(_course_prereq_expr(catalog, other) or {})
+                    for other in between if isinstance(other, str)
+                )
+                if needs_it:
+                    break  # a later course depends on it; moving it further only gets worse
+                if not _is_free_elective(code) and _offered_terms_if_unavailable(
+                    catalog, code, target["term"], schedule_term_keys
+                ) is not None:
+                    continue
+                # A full semester can still take the course in place of one of its free-elective
+                # placeholders: the plan's total stays what it was before the student's edit.
+                placeholder = None
+                if load(target) + credits > max_credits:
+                    placeholder = next(
+                        (c for c in target["courses"] if _is_free_elective(c.get("code") or "")
+                         and load(target) - _planned_course_credits(catalog, c) + credits <= max_credits),
+                        None,
+                    )
+                    if placeholder is None or _is_free_elective(code):
+                        continue
+                    target["courses"] = [c for c in target["courses"] if c is not placeholder]
+                term["courses"] = [c for c in term["courses"] if c is not course]
+                target["courses"].append(course)
+                warnings.append(_make_warning(
+                    "OVERRIDE_COURSE_RELIEVED", course=code, term=target["term"], **{"from": term["term"]}
+                ))
+                break
+    return warnings
+
 
 def _apply_plan_overrides(
     catalog: Dict,
@@ -6347,6 +6509,17 @@ def _apply_plan_overrides(
         semester_plan=semester_plan,
         completed_courses=completed_courses,
     )
+
+    # A saved edit can land on a semester a reshuffled base plan has filled meanwhile: make room by
+    # moving the planner's own courses on, never the student's.
+    protected_codes = {
+        _normalize_course_code(entry.get("code") or "")
+        for entry in (overrides.get("add") or []) + (overrides.get("move") or [])
+        if isinstance(entry, dict)
+    }
+    override_warnings.extend(_relieve_overloaded_terms(
+        catalog, semester_plan, max_credits, occupied, protected_codes, schedule_term_keys
+    ))
 
     # Recompute credits and enforce max/min via warnings and FREE ELECTIVE placeholders
     used_codes: Set[str] = set()

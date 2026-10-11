@@ -1,6 +1,21 @@
 import { useState } from 'react';
-import { BookOpen, CheckCircle2, ChevronDown } from 'lucide-react';
-import { describeElectiveRemaining, type ElectiveRequirementSummary } from '../../utils/electiveProgress';
+import { BookOpen, CheckCircle2, ChevronDown, CircleAlert, Info } from 'lucide-react';
+import {
+  describeElectiveRemaining,
+  describeElectiveRule,
+  type ElectiveRequirementSummary,
+} from '../../utils/electiveProgress';
+
+function RuleLine({ rule }: { rule: ElectiveRequirementSummary['rules'][number] }) {
+  const { text, tone } = describeElectiveRule(rule);
+  const Icon = tone === 'ok' ? CheckCircle2 : tone === 'missing' ? CircleAlert : Info;
+  return (
+    <li className={`flex items-center gap-2 text-sm ${tone === 'ok' ? 'muted' : ''}`}>
+      <Icon aria-hidden="true" className="requirement-icon" />
+      <span>{text}</span>
+    </li>
+  );
+}
 
 const LISTED_COURSES_SHOWN = 18;
 
@@ -66,6 +81,14 @@ export function ElectiveProgressCards({ requirements }: ElectiveProgressCardsPro
                 </span>
               </button>
 
+              {!isOpen && requirement.rules.some((rule) => describeElectiveRule(rule).tone !== 'ok') && (
+                <ul className="stack-2 elective-card-courses" aria-label="Elective rules still open">
+                  {requirement.rules
+                    .filter((rule) => describeElectiveRule(rule).tone !== 'ok')
+                    .map((rule) => <RuleLine key={rule.label} rule={rule} />)}
+                </ul>
+              )}
+
               {requirement.courses.length > 0 && (
                 <div className="flex flex-wrap gap-2 elective-card-courses">
                   {requirement.courses.map((course) => (
@@ -83,6 +106,14 @@ export function ElectiveProgressCards({ requirements }: ElectiveProgressCardsPro
 
               {isOpen && (
                 <div id={panelId} className="elective-card-details stack-3">
+                  {requirement.rules.length > 0 && (
+                    <div className="stack-2">
+                      <span className="text-xs font-semibold muted">Catalog rules</span>
+                      <ul className="stack-2">
+                        {requirement.rules.map((rule) => <RuleLine key={rule.label} rule={rule} />)}
+                      </ul>
+                    </div>
+                  )}
                   {requirement.allowedCourses.length > 0 && (
                     <div className="stack-2">
                       <span className="text-xs font-semibold muted">Listed courses</span>

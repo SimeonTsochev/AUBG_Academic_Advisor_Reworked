@@ -17,12 +17,8 @@ PROGRAM_PAGES_ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "frontend
 
 # No page is published for these programs.
 _SKIP_PROGRAMS = {
-    # No published course requirements.
+    # No published course requirements: the electives follow the student's approved proposal.
     ("major", "Self-Designed Major"),
-    # One set of requirements per language focus, but the planner has no focus choice, so a page
-    # could not say which courses a student needs. Remove once the planner models the focuses.
-    ("major", "Modern Languages and Cultures"),
-    ("minor", "Modern Languages and Cultures"),
 }
 
 _PAGE_FOOTER_RE = re.compile(r"\s*(?:Major|Minor) Programs \d+\s*$")
@@ -117,8 +113,14 @@ def _program(catalog: Dict[str, Any], kind: str, name: str) -> Dict[str, Any]:
         "required": _courses(catalog, required),
         "choices": choices,
         "electives": electives,
+        "elective_rules": _rule_labels(data.get("elective_rules")),
         "options": _options(catalog, data.get("options")),
     }
+
+
+def _rule_labels(rules: Any) -> List[str]:
+    """The planner's elective sub-rules as the catalog states them ("At most three non-COS courses")."""
+    return [r["label"] for r in rules or [] if isinstance(r, dict) and r.get("label")]
 
 
 def _options(catalog: Dict[str, Any], options: Any) -> Dict[str, Any] | None:
@@ -136,6 +138,7 @@ def _options(catalog: Dict[str, Any], options: Any) -> Dict[str, Any] | None:
                     {"count": int(block.get("count") or 0), "courses": _courses(catalog, block.get("courses") or [])}
                     for block in (entry or {}).get("blocks") or []
                 ],
+                "rules": _rule_labels((entry or {}).get("elective_rules")),
             }
             for choice, entry in options["choices"].items()
         ],

@@ -1,4 +1,4 @@
-"""GPA, honors and course-load rules from the AY 2026-27 catalog (pp.59-60, 65-66).
+"""GPA, honors, course-load and grade rules from the AY 2026-27 catalog (pp.59-61, 65-66, programs).
 
 Grades come from the student's transcript import and are never stored on the server: the
 frontend keeps them in the browser and sends them with each plan request.
@@ -34,6 +34,10 @@ OVERLOAD_GPA = 3.3
 OVERLOAD_MAX_LOAD = 19
 ABSOLUTE_MAX_LOAD = ABSOLUTE_MAX_CREDITS_PER_TERM
 FIRST_YEAR_CREDITS = 27  # sophomore standing (p.47)
+INDEPENDENT_STUDY_CREDITS = 30  # p.61: thirty credit hours and a cumulative GPA of 3.100
+INDEPENDENT_STUDY_GPA = 3.1
+# Grades below a minimum letter ("C or higher", Finance minor p.117).
+GRADE_ORDER = ["F", "X", "U", "D", "D+", "C-", "C", "C+", "B-", "B", "B+", "A-", "A"]
 
 
 def _gpa(entries: Iterable[Tuple[int, float]]) -> Tuple[float | None, int, float]:
@@ -148,6 +152,110 @@ def _load_errors(
     return errors
 
 
+def _program_courses(
+    slots: Dict, assignment: Dict[str, str], elective_progress: List[Dict], graded: Dict, name: str, kind: str
+) -> Set[str]:
+    """Graded courses a program itself requires or counts as its electives (not collateral, p.59)."""
+    courses: Set[str] = {
+        code for slot_id, code in assignment.items()
+        if code in graded
+        and (slot := slots.get("by_id", {}).get(slot_id) or {}).get("program") == name
+        and slot.get("program_type") == kind
+        and not slot.get("collateral")
+    }
+    for entry in elective_progress:
+        if entry.get("program") == name and entry.get("program_type") == kind:
+            courses |= {c["code"] for c in entry.get("courses") or [] if c.get("code") in graded}
+    return courses
+
+
+def _grade_rule_errors(
+    catalog: Dict,
+    programs: List[Tuple[str, str]],
+    graded: Dict,
+    gpa: float | None,
+    planned: Set[str],
+    program_courses,
+    program_gpa: Dict[str, float | None],
+) -> List[str]:
+    """A program's `grade_rules` (policy_overrides.json):
+    declare_gpa: a GPA over listed courses to declare the major (Business Administration p.83);
+    course_needs_program_gpa / course_needs_gpa: a planned course needs a GPA in the major or overall
+    (the JMC Capstone p.98, SDM 3001 p.112); min_grade: every program course at least a letter (Finance p.117)."""
+    errors: List[str] = []
+    for name, kind in programs:
+        for rule in (catalog.get(f"{kind}s", {}).get(name) or {}).get("grade_rules") or []:
+            rule_kind = rule.get("kind")
+            minimum = float(rule.get("min_gpa") or 0)
+            source = rule.get("source") or "catalog"
+            if rule_kind == "declare_gpa":
+                listed = [c for c in rule.get("courses") or []]
+                done = [c for c in listed if c in graded]
+                if not done:
+                    continue
+                points = sum(_course_credits(catalog, c) * GRADE_POINTS[graded[c]["grade"]] for c in done)
+                credits = sum(_course_credits(catalog, c) for c in done)
+                open_credits = sum(_course_credits(catalog, c) for c in listed if c not in graded)
+                best = (points + 4.0 * open_credits) / (credits + open_credits)
+                current = points / credits
+                if (len(done) == len(listed) and current < minimum) or best < minimum:
+                    errors.append(
+                        f"Declaring the {name} major needs a GPA of at least {minimum:.3f} in {', '.join(listed)}; "
+                        f"yours is {current:.3f}{'' if len(done) == len(listed) else ' and cannot reach it'} ({source})."
+                    )
+            elif rule_kind in ("course_needs_program_gpa", "course_needs_gpa"):
+                course = rule.get("course")
+                value = program_gpa.get(name) if rule_kind == "course_needs_program_gpa" else gpa
+                if course in planned and value is not None and value < minimum:
+                    scope = f"a GPA in the {name} {kind}" if rule_kind == "course_needs_program_gpa" else "a cumulative GPA"
+                    errors.append(
+                        f"{course} needs {scope} of at least {minimum:.3f}; yours is {value:.3f} ({source})."
+                    )
+            elif rule_kind == "min_grade":
+                floor = GRADE_ORDER.index(rule.get("grade", "C"))
+                low = sorted(
+                    f"{c} ({graded[c]['grade']})" for c in program_courses(name, kind)
+                    if graded[c]["grade"] in GRADE_ORDER and GRADE_ORDER.index(graded[c]["grade"]) < floor
+                )
+                if low:
+                    errors.append(
+                        f"{name} {kind} courses need a grade of {rule.get('grade', 'C')} or higher; retake "
+                        f"{', '.join(low)} ({source})."
+                    )
+    return errors
+
+
+def _independent_study_errors(
+    catalog: Dict, semester_plan: List[Dict], occupied: Dict[str, int], earned: int, gpa: float | None
+) -> List[str]:
+    """Independent study needs thirty earned credits and a cumulative GPA of 3.100 (p.61)."""
+    from graduation_checks import is_independent_study
+
+    if not catalog.get("degree_total_credits"):
+        return []
+    too_early: List[str] = []
+    studies: List[str] = []
+    for term in semester_plan:
+        label = term.get("term") or ""
+        codes = [c["code"] for c in term.get("courses") or [] if is_independent_study(catalog, c["code"])]
+        studies += codes
+        if codes and earned < INDEPENDENT_STUDY_CREDITS:
+            too_early += [f"{code} in {label}" for code in codes]
+        earned += int(term.get("credits") or 0) + int(occupied.get(label, 0) or 0)
+    errors = []
+    if too_early:
+        errors.append(
+            f"Independent study needs {INDEPENDENT_STUDY_CREDITS} earned credits first: {', '.join(too_early)} "
+            "comes too early (catalog p.61)."
+        )
+    if studies and gpa is not None and gpa < INDEPENDENT_STUDY_GPA:
+        errors.append(
+            f"Independent study ({', '.join(studies)}) needs a cumulative GPA of at least "
+            f"{INDEPENDENT_STUDY_GPA:.3f}; yours is {gpa:.3f} (catalog p.61)."
+        )
+    return errors
+
+
 def academic_record(
     catalog: Dict,
     grades: List[Dict],
@@ -158,6 +266,7 @@ def academic_record(
     earned_credits: int,
     occupied_credits_by_term: Dict[str, int] | None = None,
     in_progress_credits: int = 0,
+    minors: List[str] | None = None,
 ) -> Tuple[List[str], Dict]:
     """Errors and the student's GPA record. `earned_credits`: credits earned before the plan starts."""
     latest = latest_grades(catalog, grades)
@@ -192,21 +301,17 @@ def academic_record(
 
     errors: List[str] = []
     major_records = []
+    planned = {c["code"] for term in semester_plan for c in term.get("courses") or [] if isinstance(c.get("code"), str)}
     if graded:
         assignment = select_courses_for_slots(catalog, slots, set(graded))["slot_assignment"]
+
+        def program_courses(name: str, kind: str) -> Set[str]:
+            return _program_courses(slots, assignment, elective_progress, graded, name, kind)
+
         for major in majors:
             # Courses the major itself requires or counts as its electives; collateral requirements
             # (courses outside the major, such as the European Studies language) are left out (p.59).
-            in_major: Set[str] = {
-                code for slot_id, code in assignment.items()
-                if code in graded
-                and (slot := slots.get("by_id", {}).get(slot_id) or {}).get("program") == major
-                and slot.get("program_type") == "major"
-                and not slot.get("collateral")
-            }
-            for entry in elective_progress:
-                if entry.get("program") == major and entry.get("program_type") == "major":
-                    in_major |= {c["code"] for c in entry.get("courses") or [] if c.get("code") in graded}
+            in_major = program_courses(major, "major")
             major_gpa, major_credits, _ = _gpa(
                 (_course_credits(catalog, c), GRADE_POINTS[graded[c]["grade"]]) for c in sorted(in_major)
             )
@@ -226,6 +331,18 @@ def academic_record(
                 f"Your cumulative GPA is {gpa:.3f}; good standing and graduation need at least "
                 f"{GOOD_STANDING_GPA:.3f} (catalog pp.47, 61)."
             )
+        errors.extend(_grade_rule_errors(
+            catalog,
+            [(m, "major") for m in majors] + [(m, "minor") for m in minors or []],
+            graded,
+            gpa,
+            planned,
+            program_courses,
+            {record["major"]: record["gpa"] for record in major_records},
+        ))
+    errors.extend(_independent_study_errors(
+        catalog, semester_plan, occupied_credits_by_term or {}, earned_credits, gpa
+    ))
 
     max_load = OVERLOAD_MAX_LOAD if gpa is not None and gpa >= OVERLOAD_GPA else STANDARD_MAX_LOAD
     errors.extend(_load_errors(catalog, semester_plan, occupied_credits_by_term or {}, earned_credits, gpa))

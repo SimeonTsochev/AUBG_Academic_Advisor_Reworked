@@ -13,7 +13,13 @@ import {
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { extractTranscriptLinesFromImage, extractTranscriptLinesFromPdf } from '../utils/transcriptOcr';
 import { STANDARD_MAX_CREDITS } from '../constants/academic';
-import { majorsMissingRequiredOption, normalizeProgramOptions, toggleProgramOption } from '../utils/programOptions';
+import {
+  majorsMissingRequiredOption,
+  normalizeProgramOptions,
+  offeredPlacementWaivers,
+  selectedProgramInfo,
+  toggleProgramOption,
+} from '../utils/programOptions';
 import { gradesFromTranscript, type GradeMap } from '../utils/grades';
 import type { FailedCourse, ManualCreditEntry } from '../types';
 import {
@@ -79,6 +85,8 @@ interface AcademicSetupScreenProps {
   minors: string[];
   /** Per major; "dual" majors lead to a US and a Bulgarian diploma (catalog p.72). */
   programInfo?: Record<string, ProgramInfo>;
+  /** The same for minors (options and placement tests). */
+  minorInfo?: Record<string, ProgramInfo>;
   courses: Record<string, string>; // code -> title
   courseMeta?: Record<string, {
     credits?: number;
@@ -93,6 +101,8 @@ interface AcademicSetupScreenProps {
     businessConcentration: string | null;
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     programOptions: ProgramOptionSelection;
+    /** Courses a placement test waived (COS 1020, INF 1030, MLL 2025, ...). */
+    placementWaivers: string[];
     /** Transcript grades for GPA; the advisor keeps them in this browser, never in a snapshot. */
     grades: GradeMap;
     completedCourses: string[];
@@ -119,6 +129,7 @@ export function AcademicSetupScreen({
   majors,
   minors,
   programInfo = {},
+  minorInfo = {},
   courses,
   courseMeta,
   onComplete,
@@ -133,6 +144,7 @@ export function AcademicSetupScreen({
   const [businessConcentration, setBusinessConcentration] = useState<string>('General');
   const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(null);
   const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>({});
+  const [placementWaivers, setPlacementWaivers] = useState<string[]>([]);
   const [waivedMat1000, setWaivedMat1000] = useState(false);
   const [waivedEng1000, setWaivedEng1000] = useState(false);
   const [completedCourses, setCompletedCourses] = useState<string[]>([]);
@@ -207,13 +219,48 @@ export function AcademicSetupScreen({
     businessMajorSelected
     && businessConcentration === 'Marketing'
     && selectedMinors.includes('Integrated Marketing Communications');
-  const majorsWithOptions = selectedMajors.filter((m) => programInfo[m]?.options);
-  const selectedProgramOptions = normalizeProgramOptions(programOptions, selectedMajors, programInfo);
+  // Options (CS/IS concentrations, a language) and placement tests of the selected majors and minors.
+  const selectedPrograms = [...selectedMajors, ...selectedMinors];
+  const optionInfo = selectedProgramInfo(selectedMajors, selectedMinors, programInfo, minorInfo);
+  const selectedProgramOptions = normalizeProgramOptions(programOptions, selectedPrograms, optionInfo);
+  const placementTests = offeredPlacementWaivers(selectedPrograms, optionInfo);
   const canSubmit =
     selectedMajors.length > 0
     && (!economicsMinorSelected || economicsIntermediateChoice !== null)
-    && majorsMissingRequiredOption(selectedMajors, programInfo, selectedProgramOptions).length === 0
+    && majorsMissingRequiredOption(selectedPrograms, optionInfo, selectedProgramOptions).length === 0
     && !marketingImcConflict;
+
+  const renderOptionCard = (program: string, kind: 'major' | 'minor') => {
+    const options = optionInfo[program]?.options;
+    if (!options) return null;
+    const chosen = selectedProgramOptions[program] ?? [];
+    return (
+      <div key={`${kind}:${program}`} className="card card-pad setup-card">
+        <h2 className="section-title">{program} {kind}: {options.label}</h2>
+        <p className="section-subtitle setup-card-intro">
+          {options.required
+            ? 'Required: choose one.'
+            : options.multiple ? 'Optional: choose any you want to declare.' : 'Optional.'}
+        </p>
+        <div className="grid-auto">
+          {options.choices.map((choice) => (
+            <label key={choice} className="select-tile">
+              <input
+                type={options.multiple ? 'checkbox' : 'radio'}
+                name={`program-option-${kind}-${program}`}
+                checked={chosen.includes(choice)}
+                onChange={() => setProgramOptions((prev) => toggleProgramOption(
+                  normalizeProgramOptions(prev, selectedPrograms, optionInfo), program, choice, options.multiple,
+                ))}
+              />
+              <span>{choice}</span>
+            </label>
+          ))}
+        </div>
+        {options.description && <div className="text-xs mt-3 muted">{options.description}</div>}
+      </div>
+    );
+  };
 
   const availableMinors = useMemo(
     () => minors.filter((m) => !selectedMajors.includes(m)),
@@ -575,6 +622,7 @@ export function AcademicSetupScreen({
       businessConcentration: businessMajorSelected ? businessConcentration : null,
       economicsIntermediateChoice,
       programOptions: selectedProgramOptions,
+      placementWaivers: placementWaivers.filter((code) => placementTests.some((test) => test.course === code)),
       // Grades of courses still on the lists (a course removed by hand loses its grade).
       grades: Object.fromEntries(
         Object.entries(importedGrades).filter(
@@ -917,37 +965,7 @@ export function AcademicSetupScreen({
               )}
             </div>
 
-            {majorsWithOptions.map((major) => {
-              const options = programInfo[major]?.options;
-              if (!options) return null;
-              const chosen = selectedProgramOptions[major] ?? [];
-              return (
-                <div key={major} className="card card-pad setup-card">
-                  <h2 className="section-title">{major}: {options.label}</h2>
-                  <p className="section-subtitle setup-card-intro">
-                    {options.required
-                      ? 'Required: choose one.'
-                      : options.multiple ? 'Optional: choose any you want to declare.' : 'Optional.'}
-                  </p>
-                  <div className="grid-auto">
-                    {options.choices.map((choice) => (
-                      <label key={choice} className="select-tile">
-                        <input
-                          type={options.multiple ? 'checkbox' : 'radio'}
-                          name={`program-option-${major}`}
-                          checked={chosen.includes(choice)}
-                          onChange={() => setProgramOptions((prev) => toggleProgramOption(
-                            normalizeProgramOptions(prev, selectedMajors, programInfo), major, choice, options.multiple,
-                          ))}
-                        />
-                        <span>{choice}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {options.description && <div className="text-xs mt-3 muted">{options.description}</div>}
-                </div>
-              );
-            })}
+            {selectedMajors.map((major) => renderOptionCard(major, 'major'))}
 
             {businessMajorSelected && (
               <div className="card card-pad setup-card">
@@ -1054,6 +1072,31 @@ export function AcademicSetupScreen({
                 </div>
               )}
             </div>
+
+            {selectedMinors.map((minor) => renderOptionCard(minor, 'minor'))}
+
+            {placementTests.length > 0 && (
+              <div className="card card-pad setup-card">
+                <h2 className="section-title">Placement tests</h2>
+                <p className="section-subtitle setup-card-intro">
+                  Passing a placement test waives the course; you take another elective instead.
+                </p>
+                <div className="grid-auto">
+                  {placementTests.map((test) => (
+                    <label key={test.course} className="select-tile">
+                      <input
+                        type="checkbox"
+                        checked={placementWaivers.includes(test.course)}
+                        onChange={() => setPlacementWaivers((prev) => (
+                          prev.includes(test.course) ? prev.filter((c) => c !== test.course) : [...prev, test.course]
+                        ))}
+                      />
+                      <span>{test.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {marketingImcConflict && (
               <div className="alert alert-warning" role="alert">

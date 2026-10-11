@@ -66,6 +66,11 @@ class CatalogCorrectionTests(IsolatedTestCase):
         cls.catalog = getCatalogCache().default_catalog
 
     def _plan(self, kind: str, name: str):
+        # A required option (an MLC language focus) is part of the program's credits; pick its first choice.
+        options = (self.catalog[f"{kind}s"][name].get("options") or {})
+        chosen = {}
+        if options.get("required"):
+            chosen[name] = [next(c for c, entry in options["choices"].items() if entry.get("blocks") or entry.get("elective_rules"))]
         with patch.object(degree_engine, "_current_start_term", return_value=("Fall", 2027)):
             return generate_plan(
                 catalog=self.catalog,
@@ -74,6 +79,7 @@ class CatalogCorrectionTests(IsolatedTestCase):
                 completed_courses=set(),
                 start_term_season="Fall",
                 start_term_year=2027,
+                program_options=chosen,
             )
 
     def _slots(self, kind: str, name: str):
@@ -97,6 +103,7 @@ class CatalogCorrectionTests(IsolatedTestCase):
                     for course in term["courses"]
                     if any(
                         req.get("program") == name and req.get("program_type") == kind
+                        and req.get("kind") != "collateral"  # e.g. the European Studies language
                         for req in course.get("requirements") or []
                     )
                 )

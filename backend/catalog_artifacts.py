@@ -242,6 +242,16 @@ def _apply_program_policy(programs: Dict[str, Any], overrides: Dict[str, Any]) -
             target["diploma"] = override["diploma"]
         if isinstance(override.get("options"), dict):
             target["options"] = deepcopy(override["options"])
+        # Elective sub-rules and program facts stated explicitly (see elective_rules.py).
+        for key in ("elective_rules", "placement_waivers", "elective_excluded", "sequence_rules", "grade_rules"):
+            if isinstance(override.get(key), list):
+                target[key] = deepcopy(override[key])
+        if isinstance(override.get("elective_pool"), dict):
+            target["elective_pool"] = deepcopy(override["elective_pool"])
+        if isinstance(override.get("max_transfer_elective_credits"), int):
+            target["max_transfer_elective_credits"] = override["max_transfer_elective_credits"]
+        if isinstance(override.get("elective_pool_only"), bool):
+            target["elective_pool_only"] = override["elective_pool_only"]
 
 
 def apply_policy_overrides(

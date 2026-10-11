@@ -11,9 +11,11 @@ class UploadCatalogResponse(BaseModel):
     course_meta: Dict[str, Dict] = Field(default_factory=dict)
     gen_ed: Dict[str, Dict] = Field(default_factory=dict)
     excel_only_codes: List[str] = Field(default_factory=list)
-    # Per major: {"diploma": "dual" | "single"} (catalog p.72) and the options it offers,
-    # {"label", "description", "required", "multiple", "choices": [names]}.
+    # Per major: {"diploma": "dual" | "single"} (catalog p.72), the options it offers,
+    # {"label", "description", "required", "multiple", "choices": [names]}, and its placement
+    # waivers [{"course", "label"}]. `minor_info` is the same for minors (no diploma).
     program_info: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    minor_info: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
 class TranscriptImportMatchCandidate(BaseModel):
@@ -83,6 +85,8 @@ class GeneratePlanRequest(BaseModel):
     program_options: Dict[str, List[str]] = Field(default_factory=dict)
     completed_courses: List[str] = Field(default_factory=list)
     grades: List[GradeEntry] = Field(default_factory=list)
+    # Courses a placement test waived (COS 1020, INF 1030, MLL 2025, ...), catalog pp.86, 95, 105, 126.
+    placement_waivers: List[str] = Field(default_factory=list)
     manual_credits: List[ManualCredit] = Field(default_factory=list)
     retake_courses: List[str] = Field(default_factory=list)
     # Courses the student picked for a "choose one" requirement (e.g. ECO 3002 for the Economics minor).
@@ -131,7 +135,7 @@ class CourseRequirement(BaseModel):
     """One requirement a planned course fills, e.g. label 'Computer Science major: required course'."""
     program: Optional[str] = None
     program_type: str  # "major" | "minor" | "gened" | "foundation" | "free"
-    kind: str  # "required" | "concentration" | "choice" | "gened" | "elective"
+    kind: str  # "required" | "concentration" | "choice" | "option" | "collateral" | "gened" | "elective"
     label: str
 
 
@@ -204,6 +208,17 @@ class ElectiveProgressCourse(BaseModel):
     credits: int
     completed: bool
 
+class ElectiveRuleStatus(BaseModel):
+    """One elective sub-rule from the catalog (elective_rules.py), e.g. "At most three non-COS courses"."""
+    label: str
+    kind: str  # "at_least" | "at_most" | "at_least_in_one_group"
+    unit: Literal["credits", "courses"]
+    required: int
+    counted: int
+    met: bool
+    over_cap: bool = False
+
+
 class ElectiveProgress(BaseModel):
     """Elective credits (or courses) a program already has; computed by elective_progress.py."""
     program: str
@@ -214,6 +229,7 @@ class ElectiveProgress(BaseModel):
     remaining: int
     unit: Literal["credits", "courses"]
     rule_text: str = ""
+    rules: List[ElectiveRuleStatus] = Field(default_factory=list)
     courses: List[ElectiveProgressCourse] = Field(default_factory=list)
 
 class GenEdDiscoveryCourse(BaseModel):
@@ -270,8 +286,11 @@ class GraduationChecks(BaseModel):
     residency: ResidencyCheck
     retakes: RetakeCheck
     double_counting: List[SharedCourses] = Field(default_factory=list)
-    # Per major offering options: the valid chosen options (e.g. {"European Studies": ["French"]}).
+    # Per program offering options: the valid chosen options (e.g. {"European Studies": ["French"]}).
     program_options: Dict[str, List[str]] = Field(default_factory=dict)
+    internships: Dict[str, Any] = Field(default_factory=dict)
+    independent_study: Dict[str, Any] = Field(default_factory=dict)
+    sequence: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class TermRecord(BaseModel):

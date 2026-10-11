@@ -83,14 +83,18 @@
           "course": "BUS 3061"
         },
         {
+          "type": "required_course",
+          "course": "BUS 3062"
+        },
+        {
           "type": "credits_from_pool",
           "id": "marketing-electives",
           "label": "Marketing electives",
-          "required_credits": 6,
+          "required_credits": 3,
           "selectors": [
             {
               "type": "course",
-              "course": "BUS 3062"
+              "course": "BUS 4061"
             },
             {
               "type": "topic_pattern",
@@ -118,7 +122,8 @@
               "type": "course",
               "course": "JMC 3089"
             }
-          ]
+          ],
+          "note": "AY 2026-27 catalog p.84: BUS 2060, BUS 3061 and BUS 3062 plus three credit hours from this list."
         },
         {
           "type": "subset_credit_cap",

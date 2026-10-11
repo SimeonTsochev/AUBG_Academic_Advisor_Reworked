@@ -1,4 +1,4 @@
-import type { ElectiveProgress } from '../api';
+import type { ElectiveProgress, ElectiveRuleStatus } from '../api';
 import type { ElectivePlaceholder } from '../types';
 
 /** Excel area-of-study tag prefixes per program; mirrors backend excel_catalog.PROGRAM_TAG_ALIASES. */
@@ -34,6 +34,8 @@ export interface ElectiveRequirementSummary {
   isComplete: boolean;
   /** Courses already counting toward this requirement, completed first. */
   courses: ElectiveProgress['courses'];
+  /** The catalog's elective sub-rules ("At least 6 credits from ..."), with what the plan has. */
+  rules: ElectiveRuleStatus[];
   /** Courses the catalog lists by name (rule-based electives such as "any ECO course" are not listed). */
   allowedCourses: string[];
   ruleText: string;
@@ -80,6 +82,7 @@ export function summarizeElectiveRequirements(
         unit: entry.unit,
         isComplete: entry.remaining === 0,
         courses: [...entry.courses].sort((a, b) => Number(b.completed) - Number(a.completed)),
+        rules: (entry.rules ?? []).filter((rule) => rule.label),
         allowedCourses,
         ruleText: entry.rule_text,
         tagPrefixes,
@@ -89,6 +92,21 @@ export function summarizeElectiveRequirements(
     .sort((a, b) =>
       a.programType !== b.programType ? (a.programType === 'major' ? -1 : 1) : a.label.localeCompare(b.label)
     );
+}
+
+/**
+ * One line per elective rule: an unmet minimum says what is still missing, a cap that more courses
+ * exceed says how much counts, and anything else is plain.
+ */
+export function describeElectiveRule(rule: ElectiveRuleStatus): { text: string; tone: 'ok' | 'missing' | 'capped' } {
+  const unit = (n: number) => `${n} ${rule.unit === 'credits' ? 'credit' : 'course'}${n === 1 ? '' : 's'}`;
+  if (rule.kind === 'at_most') {
+    return rule.over_cap
+      ? { text: `${rule.label}: only ${unit(rule.required)} of ${rule.counted} count`, tone: 'capped' }
+      : { text: rule.label, tone: 'ok' };
+  }
+  if (rule.met) return { text: rule.label, tone: 'ok' };
+  return { text: `${rule.label}: ${rule.counted} of ${unit(rule.required)} so far`, tone: 'missing' };
 }
 
 /** "3 credits left", "1 course left" or "Completed". */

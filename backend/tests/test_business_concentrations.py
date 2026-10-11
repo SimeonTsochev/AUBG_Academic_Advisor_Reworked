@@ -81,9 +81,13 @@ class BusinessConcentrationTests(IsolatedTestCase):
             [entry["message"] for entry in audit["messages"]],
         )
         pool = next(pool for pool in audit["elective_pools"] if pool["id"] == "marketing-electives")
+        # Two JMC courses, but only 3 non-BUS credits count; that fills the 3-credit list (catalog p.84).
         self.assertEqual(pool["counted_credits"], 3)
-        self.assertEqual(pool["remaining_credits"], 3)
+        self.assertEqual(pool["remaining_credits"], 0)
         self.assertIn("Max 3 non-BUS credits", pool["notes"])
+        # BUS 3062 Marketing Research is a required Marketing course, not one of the electives.
+        required = {course["code"]: course["status"] for course in audit["required_courses"]}
+        self.assertEqual(required.get("BUS 3062"), "missing")
 
     def test_tourism_manual_matches_are_flagged_for_review(self):
         catalog = _catalog(

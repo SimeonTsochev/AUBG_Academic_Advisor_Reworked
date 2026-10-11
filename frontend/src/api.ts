@@ -11,9 +11,16 @@ export interface ProgramOptions {
   description?: string | null;
 }
 
+/** A course a placement test can waive (catalog pp.86, 95, 105, 126). */
+export interface PlacementWaiver {
+  course: string;
+  label: string;
+}
+
 export interface ProgramInfo {
   diploma?: "dual" | "single";
   options?: ProgramOptions;
+  placement_waivers?: PlacementWaiver[];
 }
 
 /** Per major, the chosen options (e.g. { "European Studies": ["French"] }). */
@@ -27,6 +34,8 @@ export interface UploadCatalogResponse {
   excel_only_codes?: string[];
   /** Per major: diploma type ("dual" = US + Bulgarian, catalog p.72) and the options a student chooses. */
   program_info?: Record<string, ProgramInfo>;
+  /** The same for minors (Modern Languages and Cultures is both, with its own options for each). */
+  minor_info?: Record<string, ProgramInfo>;
   courses: Record<string, string>; // code -> title (best-effort)
   course_meta?: Record<string, {
     title?: string | null;
@@ -112,6 +121,18 @@ export interface TranscriptImportCourse {
 }
 
 /** Elective credits (or courses) a program already has from completed and planned courses. */
+/** One elective sub-rule from the catalog, e.g. "At most three non-COS courses" (backend elective_rules.py). */
+export interface ElectiveRuleStatus {
+  label: string;
+  kind: "at_least" | "at_most" | "at_least_in_one_group" | string;
+  unit: "credits" | "courses";
+  required: number;
+  counted: number;
+  met: boolean;
+  /** at_most only: more than the cap is planned, so the extra does not count. */
+  over_cap?: boolean;
+}
+
 export interface ElectiveProgress {
   program: string;
   program_type: "major" | "minor";
@@ -121,6 +142,7 @@ export interface ElectiveProgress {
   remaining: number;
   unit: "credits" | "courses";
   rule_text: string;
+  rules?: ElectiveRuleStatus[];
   courses: { code: string; credits: number; completed: boolean }[];
 }
 
@@ -295,6 +317,8 @@ export interface ProgramSnapshotPayload {
   businessConcentration?: string | null;
   economicsIntermediateChoice?: "ECO 3001" | "ECO 3002" | null;
   programOptions?: ProgramOptionSelection;
+  /** Courses a placement test waived. */
+  placementWaivers?: string[];
   completedCourses: string[];
   inProgressCourses: string[];
   failedCourses?: FailedCourse[];
@@ -338,6 +362,7 @@ export interface GeneratePlanRequest {
   completed_courses: string[];
   /** Transcript grades for GPA; kept in the browser, never in a snapshot. */
   grades?: GradeEntry[];
+  placement_waivers?: string[];
   manual_credits?: ManualCreditEntry[];
   retake_courses?: string[];
   /** The student's pick for a "choose one" requirement, e.g. ECO 3002 for the Economics minor. */
@@ -448,6 +473,9 @@ export interface GraduationChecks {
   retakes: { count: number; limit: number };
   double_counting: { programs: string[]; courses: string[]; limit: number }[];
   program_options: ProgramOptionSelection;
+  internships?: { courses: string[]; credits: number; limit: number };
+  independent_study?: { count: number; limit: number };
+  sequence?: { program: string; before: string; courses: string[] }[];
 }
 
 export interface GeneratePlanResponse {

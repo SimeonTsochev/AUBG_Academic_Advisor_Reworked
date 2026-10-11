@@ -90,6 +90,7 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
         business_concentration=req.business_concentration,
         program_options=req.program_options,
         grades=[entry.model_dump() for entry in req.grades],
+        placement_waivers=list(req.placement_waivers),
         completed_courses=set(req.completed_courses),
         manual_credits=[entry.model_dump() for entry in req.manual_credits],
         retake_courses=set(req.retake_courses or []),
@@ -107,10 +108,11 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
     )
 
 
-def _program_info(catalog: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """What the setup screen shows per major: diploma type and the options a student chooses."""
+def _program_info(catalog: Dict[str, Any], kind: str = "majors") -> Dict[str, Dict[str, Any]]:
+    """What the setup screen shows per program: diploma type (majors), the options a student chooses
+    and the placement tests that can waive a course."""
     info: Dict[str, Dict[str, Any]] = {}
-    for name, data in (catalog.get("majors") or {}).items():
+    for name, data in (catalog.get(kind) or {}).items():
         if not isinstance(data, dict):
             continue
         entry: Dict[str, Any] = {}
@@ -125,6 +127,9 @@ def _program_info(catalog: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 "choices": list(options["choices"]),
                 "description": options.get("description"),
             }
+        waivers = [w for w in data.get("placement_waivers") or [] if isinstance(w, dict) and w.get("course")]
+        if waivers:
+            entry["placement_waivers"] = [{"course": w["course"], "label": w.get("label") or w["course"]} for w in waivers]
         if entry:
             info[name] = entry
     return info
@@ -418,6 +423,7 @@ def load_default_catalog():
         gen_ed=catalog.get("gen_ed", {}),
         excel_only_codes=excel_only_codes,
         program_info=_program_info(catalog),
+        minor_info=_program_info(catalog, "minors"),
     )
 
 

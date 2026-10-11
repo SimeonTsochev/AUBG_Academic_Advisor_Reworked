@@ -207,12 +207,17 @@ const DIPLOMA = {
   single: 'A single-diploma major (American diploma only): AUBG students also need a dual-diploma major to graduate.',
 };
 
+// The elective sub-rules the planner checks, as the catalog words them.
+function ruleList(rules) {
+  return rules && rules.length ? `<ul class="links">${rules.map((rule) => `<li>${esc(rule)}</li>`).join('')}</ul>` : '';
+}
+
 // CS concentrations, the European Studies language: options the student chooses.
 function optionSection(options) {
   const heading = options.label === 'Concentration' ? 'Concentrations' : options.label;
   const intro = options.description ? `<p>${esc(options.description)}</p>` : '';
   const choices = options.choices
-    .filter((choice) => choice.blocks.length)
+    .filter((choice) => choice.blocks.length || (choice.rules ?? []).length)
     .map(
       (choice) =>
         `<h3>${esc(choice.name)}</h3>${choice.blocks
@@ -224,7 +229,7 @@ function optionSection(options) {
                   : `Choose ${plural(block.count, 'course')} from these ${block.courses.length}`
               }</p>${courseTable(block.courses)}`,
           )
-          .join('')}`,
+          .join('')}${ruleList(choice.rules)}`,
     )
     .join('');
   return `<h2>${esc(heading)}</h2>${intro}${choices}`;
@@ -256,7 +261,12 @@ export function programPage(program, data) {
     );
   }
   if (program.electives.length) {
-    sections.push(`<h2>Electives</h2>${program.electives.map(electiveSection).join('')}`);
+    const rules = program.elective_rules ?? [];
+    sections.push(
+      `<h2>Electives</h2>${program.electives.map(electiveSection).join('')}${
+        rules.length ? `<h3>Rules the planner checks</h3>${ruleList(rules)}` : ''
+      }`,
+    );
   }
   if (program.options) {
     sections.push(optionSection(program.options));

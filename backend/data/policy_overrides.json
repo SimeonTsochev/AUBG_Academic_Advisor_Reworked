@@ -772,7 +772,63 @@
           "rule_text": "Ten credit hours from any combination of the courses listed below: POS 4[4-9]NN Topics in Politics POS 4081 Internship or one of the following: MLL 3001 Modern France—Society, Politics, and Culture MLL 3002 Modern Germany—Society, Politics, and Culture MLL 3003 Modern Spain—Society, Politics, and Culture No more than one 4000-level EUR course Example: All ten credit hours could come from taking several Topics in Politics courses that deal with different topics. Or you may instead combine one or more Topics courses with other courses in the above list. Disciplinary Honors in Political Science and International Relations To fulfill the requirements for a degree with honors in Political Science and International Relations students must have a 3.500 or higher GPA in courses counted toward the ma- jor and earn a grade of B+ or above in POS 4092 Senior Thesis. A successfully completed senior thesis substitutes for the Bulgarian State Exam, but POS 4092 does not count as credit hours earned towards a POS major."
         }
       ],
-      "diploma": "dual"
+      "diploma": "dual",
+      "elective_rules_source": "AY 2026-27 catalog pp.108-109: three courses from the first list; ten credit hours from POS 4[4-9]NN topics, POS 4081 or one of MLL 3001-3003; no more than one 4000-level EUR course; POS 4092 does not count toward the major.",
+      "elective_excluded": [
+        "POS 4092"
+      ],
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "courses": 3,
+          "label": "At least three courses from EUR 2012, PHI 3004, POS 3001, 3003, 3004, 3005, 3006, 3007/EUR 3007, 3008",
+          "courses_in": [
+            "EUR 2012",
+            "PHI 3004",
+            "POS 3001",
+            "POS 3003",
+            "POS 3004",
+            "POS 3005",
+            "POS 3006",
+            "POS 3007",
+            "EUR 3007",
+            "POS 3008"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 10,
+          "label": "At least 10 credits from POS 4[4-9]NN topics, POS 4081, MLL 3001, MLL 3002, MLL 3003",
+          "courses_in": [
+            "POS 4081",
+            "MLL 3001",
+            "MLL 3002",
+            "MLL 3003"
+          ],
+          "patterns": [
+            "POS 4[4-9]NN",
+            "EUR 4[4-9]NN"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "courses": 1,
+          "label": "At most one of MLL 3001, MLL 3002, MLL 3003",
+          "courses_in": [
+            "MLL 3001",
+            "MLL 3002",
+            "MLL 3003"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "courses": 1,
+          "label": "No more than one 4000-level EUR course",
+          "patterns": [
+            "EUR 4NNN"
+          ]
+        }
+      ]
     },
     "Literature": {
       "source": "AY 2026-27 catalog p.99: 'Required Courses (18 credit hours): ENG 2010, ENG 3088, plus twelve credit hours out of' six survey courses. The PDF parser made all six surveys required.",
@@ -834,218 +890,616 @@
           "rule_text": "Four credit hours from each of the following topics courses: ENG 3[4-9]NN Topics in American Literature (WIC) ENG 3[4-9]NN Topics in British Literature (WIC) ENG 3[4-9]NN Topics in Literary Theory and Criticism (WIC) Plus nine credit hours out of the following: ENG 2005 Introduction to Creative Writing – Fiction (WIC) ENG 2006 Introduction to Creative Writing – Poetry (WIC) ENG 2020 Text and Image ENG 2031 World Literature – Landmark Texts ENG 2032 World Literature – Literatures in Translation ENG 2041 American Literature – Beginnings to 1865 ENG 2042 American Literature – 1865 to Present ENG 2051 British Literature – Beginnings to 1785 ENG 2052 British Literature – 1785 to Present ENG 2060 Balkan Literature ENG 3011 Public Speaking ENG 3[4-9]NN Genre and Topical Studies* (WIC) ENG 3[4-9]NN Major Authors* ENG 3[4-9]NN Topics in American Literature* (WIC) ENG 3[4-9]NN Topics in British Literature* (WIC) ENG 3[4-9]NN Topics in Creative Writing* (WIC) ENG 3[4-9]NN Topics in Literary Theory and Criticism* (WIC) FLM 2020 Film Criticism FLM 2021 Introduction to Screenwriting (WIC) THR 1030 Beginning Acting THR 2011 Introduction to Theater THR 2022 Applied Theater THR 2030 Intermediate Acting *ENG topics courses may be repeated for credit as long as the precise topics differ."
         }
       ],
-      "diploma": "single"
+      "diploma": "single",
+      "elective_rules_source": "AY 2026-27 catalog pp.99-100: four credit hours from each of Topics in American Literature, Topics in British Literature and Topics in Literary Theory and Criticism (ENG 3[4-9]NN), plus nine credit hours from the list. The topic area of an ENG 3[4-9]NN course is not in its code, so the planner checks the twelve topics credits, not their areas.",
+      "elective_pool": {
+        "patterns": [
+          "ENG 3[4-9]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 12,
+          "label": "12 credits of ENG 3[4-9]NN topics: one each in American literature, British literature, and literary theory and criticism",
+          "patterns": [
+            "ENG 3[4-9]NN"
+          ]
+        }
+      ]
     },
     "Modern Languages and Cultures": {
-      "source": "AY 2026-27 catalog pp.101-105: 36 credits in one language focus: MLL 1075 plus three focus courses (12 credit hours required), 18 or more credit hours of focus electives, and additional electives (6 credit hours maximum). The PDF parser dropped the required courses and kept 18 credit hours as the total. The planner has no language-focus choice, so MLL 1075 is required and the other 33 credit hours are tracked as one total.",
+      "source": "AY 2026-27 catalog pp.101-105: MLL 1075 plus three courses of the chosen language focus (12 credit hours), 18 or more credit hours of focus electives, and at most 6 additional elective credits (36 in total). MLL 1036/2015/2025/2055 may be waived and replaced with an elective in the focus language; at most nine credits completed abroad count.",
       "required_courses": [
         "MLL 1075"
       ],
       "elective_requirements": [
         {
-          "allowed_courses": [
-            "MLL 2025",
-            "MLL 2026",
-            "MLL 3002",
-            "MLL 2015",
-            "MLL 2016",
-            "MLL 3001",
-            "MLL 2055",
-            "MLL 2056",
-            "MLL 3003",
-            "MLL 1036",
-            "MLL 2035",
-            "MLL 2037"
-          ],
+          "id": "modern-languages-and-cultures-electives",
+          "label": "Elective Courses",
+          "credits_required": 24,
           "courses_required": null,
-          "credits_required": 33,
-          "id": "modern-languages-and-cultures-focus-total",
           "is_total": true,
-          "label": "Language focus courses and electives",
-          "rule_text": "33 credit hours in one language focus (German, French, Spanish or Bulgarian): the three required focus courses (9 credit hours), 18 or more credit hours of focus electives, and additional electives (6 credit hours maximum). Required focus courses: German MLL 2025, MLL 2026, MLL 3002; French MLL 2015, MLL 2016, MLL 3001; Spanish MLL 2055, MLL 2056, MLL 3003; Bulgarian MLL 1036, MLL 2035, MLL 2037."
-        },
-        {
-          "allowed_courses": [
-            "MLL 1025",
-            "MLL 1026",
-            "MLL 2027",
-            "MLL 2075",
-            "MLL 4025",
-            "MLL 4092"
-          ],
-          "courses_required": null,
-          "credits_required": null,
-          "id": "modern-languages-and-cultures-elective-1",
-          "is_total": false,
-          "label": "Electives",
-          "rule_text": "Electives (18 or more credit hours) MLL 1025 Introduction to German Language and Culture I MLL 1026 Introduction to German Language and Culture II MLL 2027 Intermediate German Reading MLL 2075 Intercultural Communication (WIC) MLL 3[4-9]NN Topics in German Language, Literature, and Film MLL 4025 Advanced German MLL 4092 Senior Project in German MLL L[1-2]NN Special Topics in German Language and Culture MLL L098 Independent Study in German Language and Culture"
-        },
-        {
-          "allowed_courses": [
-            "BUS 2001",
-            "BUS 2060",
-            "BUS 3040",
-            "ENG 2010",
-            "ENG 2032",
-            "EUR 1011",
-            "EUR 2012",
-            "EUR 2013",
-            "JMC 1041",
-            "JMC 1050",
-            "JMC 3036",
-            "MLL 1075",
-            "MLL 2015",
-            "MLL 2016",
-            "MLL 3001",
-            "MLL 3036",
-            "PHI 1001",
-            "PHI 3004",
-            "POS 1002",
-            "POS 2013"
-          ],
-          "courses_required": null,
-          "credits_required": 6,
-          "id": "modern-languages-and-cultures-elective-2",
-          "is_total": false,
-          "label": "Additional Electives",
-          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in Spanish, French, and Bulgarian BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] Major Programs 106 PHI 1001 Introduction to Philosophy PHI 3004 Modern and Contemporary Political Philosophy (WIC) POS 1002 Introduction to Global Politics Other courses as approved by the Department Chair and the Dean of Faculty. French-language Focus Required (12 credit hours) MLL 1075 Introduction to Language and Culture Studies MLL 2015 Intermediate French: Perspectives on French and Francophone Cultures MLL 2016 Intermediate French Composition and Conversation through Arts MLL 3001 Modern France – Society, Politics, and Culture"
-        },
-        {
-          "allowed_courses": [
-            "JMC 3036",
-            "MLL 1015",
-            "MLL 1016",
-            "MLL 2017",
-            "MLL 2075",
-            "MLL 3036",
-            "MLL 4015",
-            "MLL 4091"
-          ],
-          "courses_required": null,
-          "credits_required": null,
-          "id": "modern-languages-and-cultures-elective-3",
-          "is_total": false,
-          "label": "Electives",
-          "rule_text": "Electives (18 or more credit hours) MLL 1015 Introduction to French Language and Culture I MLL 1016 Introduction to French Language and Culture II MLL 2017 Intermediate French Reading MLL 2075 Intercultural Communication (WIC) MLL 3[4-9]NN Topics in French Language, Literature, and Film (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] MLL 4015 Advanced French MLL 4091 Senior Project in French MLL L[1-2]NN Special Topics in French Language and Culture MLL L098 Independent Study in French Language and Culture"
-        },
-        {
-          "allowed_courses": [
-            "BUS 2001",
-            "BUS 2060",
-            "BUS 3040",
-            "ENG 2010",
-            "ENG 2032",
-            "EUR 1011",
-            "EUR 2012",
-            "EUR 2013",
-            "JMC 1041",
-            "JMC 1050",
-            "MLL 1075",
-            "MLL 2055",
-            "MLL 2056",
-            "MLL 3003",
-            "PHI 1001",
-            "POS 1002",
-            "POS 2013"
-          ],
-          "courses_required": null,
-          "credits_required": 6,
-          "id": "modern-languages-and-cultures-elective-4",
-          "is_total": false,
-          "label": "Additional Electives",
-          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in Spanish, German, and Bulgarian BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) PHI 1001 Introduction to Philosophy POS 1002 Introduction to Global Politics Other courses as approved by the Department Chair and the Dean of Faculty. Spanish-language Focus Required (12 credit hours) MLL 1075 Introduction to Language and Culture Studies MLL 2055 Intermediate Spanish: Perspectives on Spanish-Speaking Cultures MLL 2056 Intermediate Spanish Composition and Conversation through Arts MLL 3003 Modern Spain – Society, Politics, and Culture"
-        },
-        {
-          "allowed_courses": [
-            "FAR 3010",
-            "MLL 1055",
-            "MLL 1056",
-            "MLL 2057",
-            "MLL 2075",
-            "MLL 4055",
-            "MLL 4094"
-          ],
-          "courses_required": null,
-          "credits_required": 18,
-          "id": "modern-languages-and-cultures-elective-5",
-          "is_total": false,
-          "label": "Electives",
-          "rule_text": "Electives (18 credit hours or more) FAR 3010 Music in Latin American Culture MLL 1055 Introduction to Spanish Language and Culture I Major Programs 107 MLL 1056 Introduction to Spanish Language and Culture II MLL 2057 Intermediate Spanish Reading MLL 2075 Intercultural Communication (WIC) MLL 3[4-9]NN Topics in Spanish Language and Hispanic Literature and Film MLL 4055 Advanced Spanish MLL 4094 Senior Project in Spanish MLL L[1-2]NN Special Topics in Spanish Language and Culture MLL L098 Independent Study in Spanish Language and Culture"
-        },
-        {
-          "allowed_courses": [
-            "BUS 2001",
-            "BUS 2060",
-            "BUS 3040",
-            "ENG 2010",
-            "ENG 2032",
-            "EUR 1011",
-            "EUR 2012",
-            "EUR 2013",
-            "JMC 1041",
-            "JMC 1050",
-            "JMC 3036",
-            "MLL 1036",
-            "MLL 1075",
-            "MLL 2035",
-            "MLL 2037",
-            "MLL 3036",
-            "PHI 1001",
-            "POS 1002",
-            "POS 2013"
-          ],
-          "courses_required": null,
-          "credits_required": 6,
-          "id": "modern-languages-and-cultures-elective-6",
-          "is_total": false,
-          "label": "Additional Electives",
-          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in French, German, and Bulgarian BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] PHI 1001 Introduction to Philosophy POS 1002 Introduction to Global Politics Bulgarian-language Focus Required (12 credit hours) MLL 1075 Introduction to Language and Culture Studies MLL 1036 Introduction to Bulgarian Language and Culture II MLL 2035 Intermediate Bulgarian: Perspectives on Bulgarian Culture MLL 2037 Intermediate Bulgarian Reading"
-        },
-        {
-          "allowed_courses": [
-            "ENG 2060",
-            "FAR 3009",
-            "HTY 2024",
-            "MLL 1035",
-            "MLL 2075",
-            "MLL 4093",
-            "POS 3001"
-          ],
-          "courses_required": null,
-          "credits_required": 18,
-          "id": "modern-languages-and-cultures-elective-7",
-          "is_total": false,
-          "label": "Electives",
-          "rule_text": "Electives (18 credit hours or more) MLL 1035 Introduction to Bulgarian Language and Culture I MLL 2075 Intercultural Communication (WIC) MLL 4093 Senior Project in Bulgarian MLL L[1-2]NN Special Topics in Bulgarian Language and Culture MLL L098 Independent Study in Bulgarian Language and Culture ENG 2060 Balkan Literature FAR 3009 Bulgarian Folk Music HTY 2024 Bulgarian History: Medieval Empire vs. Modern Nation State POS 3001 Bulgarian Government and Politics"
-        },
-        {
-          "allowed_courses": [
-            "BUS 2001",
-            "BUS 2060",
-            "BUS 3040",
-            "ENG 2010",
-            "ENG 2032",
-            "EUR 1011",
-            "EUR 2012",
-            "EUR 2013",
-            "JMC 1041",
-            "JMC 1050",
-            "JMC 3036",
-            "MLL 1036",
-            "MLL 3036",
-            "PHI 1001",
-            "POS 1002",
-            "POS 2013"
-          ],
-          "courses_required": null,
-          "credits_required": 6,
-          "id": "modern-languages-and-cultures-elective-8",
-          "is_total": false,
-          "label": "Additional Electives",
-          "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in Spanish, German, and French BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics Major Programs 108 EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] PHI 1001 Introduction to Philosophy POS 1002 Introduction to Global Politics Other courses as approved by the Department Chair and the Dean of Faculty. MLL 1036/ 2015/ 2025/ 2055 may be waived and replaced with an elective in French/ German/Spanish/Bulgarian. The subject of the courses MLL L[1-2]NN Special Topics in German/French/Spanish/Bulgarian Language and Culture and MLL L098 Independent Study in German/French/Spanish/Bulgarian Language and Culture and their descrip- tions are defined for every particular offering. Students must consult with their language instructor on when such a course will be offered. Special Topics, Topics classes, and Inde- pendent Study courses in the target language may be repeated for credit as long as the precise topic is different. Students are encouraged to complete a study abroad experience in a country where the language of study is spoken. No more than nine AUBG credits that have been completed abroad may be counted for the major."
+          "allowed_courses": [],
+          "rule_text": "Elective Courses (24 credit hours): 18 or more credit hours of focus electives and at most 6 credit hours of additional electives (MLL courses in other languages and the approved list)."
         }
       ],
-      "diploma": "single"
+      "diploma": "single",
+      "elective_pool_only": true,
+      "max_transfer_elective_credits": 9,
+      "placement_waivers": [
+        {
+          "course": "MLL 2025",
+          "label": "German placement test (waives MLL 2025)",
+          "replace_with_elective": true
+        },
+        {
+          "course": "MLL 2015",
+          "label": "French placement test (waives MLL 2015)",
+          "replace_with_elective": true
+        },
+        {
+          "course": "MLL 2055",
+          "label": "Spanish placement test (waives MLL 2055)",
+          "replace_with_elective": true
+        },
+        {
+          "course": "MLL 1036",
+          "label": "Bulgarian placement test (waives MLL 1036)",
+          "replace_with_elective": true
+        }
+      ],
+      "options": {
+        "label": "Language focus",
+        "description": "Choose German, French, Spanish or Bulgarian: three required focus courses, 18 or more credits of focus electives and at most 6 credits of additional electives (catalog pp.102-105).",
+        "required": true,
+        "multiple": false,
+        "requirement_label": "{choice}-language focus",
+        "missing_message": "The Modern Languages and Cultures major needs a language focus: choose German, French, Spanish or Bulgarian (catalog p.102).",
+        "source": "AY 2026-27 catalog pp.102-105.",
+        "choices": {
+          "German": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 2025",
+                  "MLL 2026",
+                  "MLL 3002"
+                ],
+                "count": 3,
+                "role": "required"
+              }
+            ],
+            "elective_pool": {
+              "courses_in": [
+                "MLL 1025",
+                "MLL 1026",
+                "MLL 2027",
+                "MLL 2075",
+                "MLL 4025",
+                "MLL 4092",
+                "BUS 2001",
+                "BUS 2060",
+                "BUS 3040",
+                "ENG 2010",
+                "ENG 2032",
+                "EUR 1011",
+                "EUR 2012",
+                "EUR 2013",
+                "POS 2013",
+                "JMC 1041",
+                "JMC 1050",
+                "PHI 1001",
+                "POS 1002",
+                "MLL 3036",
+                "JMC 3036",
+                "PHI 3004",
+                "MLL 1015",
+                "MLL 1016",
+                "MLL 2015",
+                "MLL 2016",
+                "MLL 2017",
+                "MLL 3001",
+                "MLL 4015",
+                "MLL 4091",
+                "MLL 1055",
+                "MLL 1056",
+                "MLL 2055",
+                "MLL 2056",
+                "MLL 2057",
+                "MLL 3003",
+                "MLL 4055",
+                "MLL 4094",
+                "MLL 1035",
+                "MLL 1036",
+                "MLL 2035",
+                "MLL 2037",
+                "MLL 4093"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 18,
+                "label": "At least 18 credits of German-focus electives (incl. German topics courses)",
+                "plus_waived": true,
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "MLL 1025",
+                      "MLL 1026",
+                      "MLL 2027",
+                      "MLL 2075",
+                      "MLL 4025",
+                      "MLL 4092"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (German Focus) Elective"
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "at_most",
+                "credits": 6,
+                "label": "At most 6 credits of additional electives (other languages and the approved list)",
+                "courses_in": [
+                  "BUS 2001",
+                  "BUS 2060",
+                  "BUS 3040",
+                  "ENG 2010",
+                  "ENG 2032",
+                  "EUR 1011",
+                  "EUR 2012",
+                  "EUR 2013",
+                  "POS 2013",
+                  "JMC 1041",
+                  "JMC 1050",
+                  "PHI 1001",
+                  "POS 1002",
+                  "MLL 3036",
+                  "JMC 3036",
+                  "PHI 3004",
+                  "MLL 1015",
+                  "MLL 1016",
+                  "MLL 2015",
+                  "MLL 2016",
+                  "MLL 2017",
+                  "MLL 3001",
+                  "MLL 4015",
+                  "MLL 4091",
+                  "MLL 1055",
+                  "MLL 1056",
+                  "MLL 2055",
+                  "MLL 2056",
+                  "MLL 2057",
+                  "MLL 3003",
+                  "MLL 4055",
+                  "MLL 4094",
+                  "MLL 1035",
+                  "MLL 1036",
+                  "MLL 2035",
+                  "MLL 2037",
+                  "MLL 4093"
+                ]
+              }
+            ]
+          },
+          "French": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 2015",
+                  "MLL 2016",
+                  "MLL 3001"
+                ],
+                "count": 3,
+                "role": "required"
+              }
+            ],
+            "elective_pool": {
+              "courses_in": [
+                "MLL 1015",
+                "MLL 1016",
+                "MLL 2017",
+                "MLL 2075",
+                "MLL 3036",
+                "JMC 3036",
+                "MLL 4015",
+                "MLL 4091",
+                "BUS 2001",
+                "BUS 2060",
+                "BUS 3040",
+                "ENG 2010",
+                "ENG 2032",
+                "EUR 1011",
+                "EUR 2012",
+                "EUR 2013",
+                "POS 2013",
+                "JMC 1041",
+                "JMC 1050",
+                "PHI 1001",
+                "POS 1002",
+                "MLL 1025",
+                "MLL 1026",
+                "MLL 2025",
+                "MLL 2026",
+                "MLL 2027",
+                "MLL 3002",
+                "MLL 4025",
+                "MLL 4092",
+                "MLL 1055",
+                "MLL 1056",
+                "MLL 2055",
+                "MLL 2056",
+                "MLL 2057",
+                "MLL 3003",
+                "MLL 4055",
+                "MLL 4094",
+                "MLL 1035",
+                "MLL 1036",
+                "MLL 2035",
+                "MLL 2037",
+                "MLL 4093"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 18,
+                "label": "At least 18 credits of French-focus electives (incl. French topics courses)",
+                "plus_waived": true,
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "MLL 1015",
+                      "MLL 1016",
+                      "MLL 2017",
+                      "MLL 2075",
+                      "MLL 3036",
+                      "JMC 3036",
+                      "MLL 4015",
+                      "MLL 4091"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (French Focus) Elective"
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "at_most",
+                "credits": 6,
+                "label": "At most 6 credits of additional electives (other languages and the approved list)",
+                "courses_in": [
+                  "BUS 2001",
+                  "BUS 2060",
+                  "BUS 3040",
+                  "ENG 2010",
+                  "ENG 2032",
+                  "EUR 1011",
+                  "EUR 2012",
+                  "EUR 2013",
+                  "POS 2013",
+                  "JMC 1041",
+                  "JMC 1050",
+                  "PHI 1001",
+                  "POS 1002",
+                  "MLL 1025",
+                  "MLL 1026",
+                  "MLL 2025",
+                  "MLL 2026",
+                  "MLL 2027",
+                  "MLL 3002",
+                  "MLL 4025",
+                  "MLL 4092",
+                  "MLL 1055",
+                  "MLL 1056",
+                  "MLL 2055",
+                  "MLL 2056",
+                  "MLL 2057",
+                  "MLL 3003",
+                  "MLL 4055",
+                  "MLL 4094",
+                  "MLL 1035",
+                  "MLL 1036",
+                  "MLL 2035",
+                  "MLL 2037",
+                  "MLL 4093"
+                ]
+              }
+            ]
+          },
+          "Spanish": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 2055",
+                  "MLL 2056",
+                  "MLL 3003"
+                ],
+                "count": 3,
+                "role": "required"
+              }
+            ],
+            "elective_pool": {
+              "courses_in": [
+                "FAR 3010",
+                "MLL 1055",
+                "MLL 1056",
+                "MLL 2057",
+                "MLL 2075",
+                "MLL 4055",
+                "MLL 4094",
+                "BUS 2001",
+                "BUS 2060",
+                "BUS 3040",
+                "ENG 2010",
+                "ENG 2032",
+                "EUR 1011",
+                "EUR 2012",
+                "EUR 2013",
+                "POS 2013",
+                "JMC 1041",
+                "JMC 1050",
+                "PHI 1001",
+                "POS 1002",
+                "MLL 3036",
+                "JMC 3036",
+                "MLL 1015",
+                "MLL 1016",
+                "MLL 2015",
+                "MLL 2016",
+                "MLL 2017",
+                "MLL 3001",
+                "MLL 4015",
+                "MLL 4091",
+                "MLL 1025",
+                "MLL 1026",
+                "MLL 2025",
+                "MLL 2026",
+                "MLL 2027",
+                "MLL 3002",
+                "MLL 4025",
+                "MLL 4092",
+                "MLL 1035",
+                "MLL 1036",
+                "MLL 2035",
+                "MLL 2037",
+                "MLL 4093"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 18,
+                "label": "At least 18 credits of Spanish-focus electives (incl. Spanish topics courses)",
+                "plus_waived": true,
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "FAR 3010",
+                      "MLL 1055",
+                      "MLL 1056",
+                      "MLL 2057",
+                      "MLL 2075",
+                      "MLL 4055",
+                      "MLL 4094"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (Spanish Focus) Elective"
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "at_most",
+                "credits": 6,
+                "label": "At most 6 credits of additional electives (other languages and the approved list)",
+                "courses_in": [
+                  "BUS 2001",
+                  "BUS 2060",
+                  "BUS 3040",
+                  "ENG 2010",
+                  "ENG 2032",
+                  "EUR 1011",
+                  "EUR 2012",
+                  "EUR 2013",
+                  "POS 2013",
+                  "JMC 1041",
+                  "JMC 1050",
+                  "PHI 1001",
+                  "POS 1002",
+                  "MLL 3036",
+                  "JMC 3036",
+                  "MLL 1015",
+                  "MLL 1016",
+                  "MLL 2015",
+                  "MLL 2016",
+                  "MLL 2017",
+                  "MLL 3001",
+                  "MLL 4015",
+                  "MLL 4091",
+                  "MLL 1025",
+                  "MLL 1026",
+                  "MLL 2025",
+                  "MLL 2026",
+                  "MLL 2027",
+                  "MLL 3002",
+                  "MLL 4025",
+                  "MLL 4092",
+                  "MLL 1035",
+                  "MLL 1036",
+                  "MLL 2035",
+                  "MLL 2037",
+                  "MLL 4093"
+                ]
+              }
+            ]
+          },
+          "Bulgarian": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 1036",
+                  "MLL 2035",
+                  "MLL 2037"
+                ],
+                "count": 3,
+                "role": "required"
+              }
+            ],
+            "elective_pool": {
+              "courses_in": [
+                "MLL 1035",
+                "MLL 2075",
+                "MLL 4093",
+                "ENG 2060",
+                "FAR 3009",
+                "HTY 2024",
+                "POS 3001",
+                "BUS 2001",
+                "BUS 2060",
+                "BUS 3040",
+                "ENG 2010",
+                "ENG 2032",
+                "EUR 1011",
+                "EUR 2012",
+                "EUR 2013",
+                "POS 2013",
+                "JMC 1041",
+                "JMC 1050",
+                "PHI 1001",
+                "POS 1002",
+                "MLL 3036",
+                "JMC 3036",
+                "MLL 1015",
+                "MLL 1016",
+                "MLL 2015",
+                "MLL 2016",
+                "MLL 2017",
+                "MLL 3001",
+                "MLL 4015",
+                "MLL 4091",
+                "MLL 1025",
+                "MLL 1026",
+                "MLL 2025",
+                "MLL 2026",
+                "MLL 2027",
+                "MLL 3002",
+                "MLL 4025",
+                "MLL 4092",
+                "MLL 1055",
+                "MLL 1056",
+                "MLL 2055",
+                "MLL 2056",
+                "MLL 2057",
+                "MLL 3003",
+                "MLL 4055",
+                "MLL 4094"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 18,
+                "label": "At least 18 credits of Bulgarian-focus electives (incl. Bulgarian topics courses)",
+                "plus_waived": true,
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "MLL 1035",
+                      "MLL 2075",
+                      "MLL 4093",
+                      "ENG 2060",
+                      "FAR 3009",
+                      "HTY 2024",
+                      "POS 3001"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (Bulgarian Focus) Elective"
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "at_most",
+                "credits": 6,
+                "label": "At most 6 credits of additional electives (other languages and the approved list)",
+                "courses_in": [
+                  "BUS 2001",
+                  "BUS 2060",
+                  "BUS 3040",
+                  "ENG 2010",
+                  "ENG 2032",
+                  "EUR 1011",
+                  "EUR 2012",
+                  "EUR 2013",
+                  "POS 2013",
+                  "JMC 1041",
+                  "JMC 1050",
+                  "PHI 1001",
+                  "POS 1002",
+                  "MLL 3036",
+                  "JMC 3036",
+                  "MLL 1015",
+                  "MLL 1016",
+                  "MLL 2015",
+                  "MLL 2016",
+                  "MLL 2017",
+                  "MLL 3001",
+                  "MLL 4015",
+                  "MLL 4091",
+                  "MLL 1025",
+                  "MLL 1026",
+                  "MLL 2025",
+                  "MLL 2026",
+                  "MLL 2027",
+                  "MLL 3002",
+                  "MLL 4025",
+                  "MLL 4092",
+                  "MLL 1055",
+                  "MLL 1056",
+                  "MLL 2055",
+                  "MLL 2056",
+                  "MLL 2057",
+                  "MLL 3003",
+                  "MLL 4055",
+                  "MLL 4094"
+                ]
+              }
+            ]
+          }
+        }
+      }
     },
     "Psychology": {
       "source": "AY 2026-27 catalog pp.109-110: the elective list names the PSY cross-listings (PSY 2075, PSY 2076, PSY 3040, PSY 3061). Students who registered under the other listing (MLL/JMC 2075, HTY 2002, BUS 3040, BUS 3061) took the same course, so both codes count.",
@@ -1083,10 +1537,67 @@
           "rule_text": "Elective Courses (15 credit hours) A minimum of 9 credit hours must come from the following courses: PSY 3000 Advanced Research Methods in Psychology (WIC) PSY 3003 Cognitive Psychology PSY 3007 Cultural Psychology PSY 3008 Evolutionary Psychology PSY 3009 Media Psychology (WIC) PSY 3[4-9]NN Topics in Psychology* PSY 4[4-9]NN Advanced Topics in Psychology* The following courses also count as electives in Psychology: PSY 2075 Intercultural Communication (WIC) PSY 2076 The History of Emotions PSY 3001 Capstone Project PSY 3040 Organizational Theory and Behavior PSY 3061 Consumer Behavior PSY 3412 Topics in Literary Theory and Criticism: Literature and Psychology PSY 3413 Topics in Film: Psychoanalysis and Cinema PSY 3414 Topics in Philosophy: Philosophy of Sex and Love (WIC) PSY 3483 Topics in Literary Theory and Criticism: Psychoanalysis and Literature PSY 4001 Research Project PSY 4081 Internship PSY 4407 Topics in Advanced Microeconomics: Applied Behavioral Economics PSY L098 Independent Study in Psychology* PSY L099 GHEA21 Topics in Psychology* * PSY 3[4-9]NN Topics in Psychology, PSY 4[4-9]NN Advanced Topics in Psychology, PSY L098 Independent Study in Psychology, and PSY L099 GHEA21 Topics in Psy- chology may be repeated for credit as long as the precise topic is different. Major Programs 111"
         }
       ],
-      "diploma": "single"
+      "diploma": "single",
+      "elective_rules_source": "AY 2026-27 catalog p.110: at least nine credit hours from PSY 3000, 3003, 3007, 3008, 3009 and the PSY 3[4-9]NN / 4[4-9]NN topics (the cross-listed topics such as PSY 3412 are listed separately).",
+      "elective_pool": {
+        "patterns": [
+          "PSY 3[4-9]NN",
+          "PSY 4[4-9]NN",
+          "PSY L098",
+          "PSY L099"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 9,
+          "label": "At least 9 credits from PSY 3000, 3003, 3007, 3008, 3009 or PSY topics courses",
+          "courses_in": [
+            "PSY 3000",
+            "PSY 3003",
+            "PSY 3007",
+            "PSY 3008",
+            "PSY 3009"
+          ],
+          "patterns": [
+            "PSY 3[4-9]NN",
+            "PSY 4[4-9]NN"
+          ],
+          "except": [
+            "PSY 2075",
+            "PSY 2076",
+            "PSY 3040",
+            "PSY 3061",
+            "PSY 3412",
+            "PSY 3413",
+            "PSY 3414",
+            "PSY 3483",
+            "PSY 4407",
+            "BUS 3040",
+            "BUS 3061",
+            "HTY 2002",
+            "JMC 2075",
+            "MLL 2075"
+          ]
+        }
+      ]
     },
     "Business Administration": {
-      "diploma": "dual"
+      "diploma": "dual",
+      "grade_rules": [
+        {
+          "kind": "declare_gpa",
+          "min_gpa": 2.5,
+          "courses": [
+            "BUS 1001",
+            "BUS 2001",
+            "BUS 2020",
+            "BUS 2021",
+            "BUS 2060"
+          ],
+          "source": "catalog p.83"
+        }
+      ]
     },
     "Computer Science": {
       "diploma": "dual",
@@ -1140,10 +1651,101 @@
             ]
           }
         }
-      }
+      },
+      "elective_rules_source": "AY 2026-27 catalog p.86: no more than six credit hours from each elective group; not more than three non-COS courses; the internship, Senior Project II, special topics and independent study are a further group of electives. p.86: passing the C++ placement test waives COS 1020 for another elective.",
+      "elective_pool": {
+        "courses_in": [
+          "COS 4081",
+          "INF 4081",
+          "COS 4092",
+          "COS 4098",
+          "INF 4098"
+        ],
+        "patterns": [
+          "COS L[1-2]NN",
+          "INF L[1-2]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_most",
+          "credits": 6,
+          "label": "At most 6 credits from the 2000-level group (COS 2031, INF 1030, INF 2080, MAT 2001, MAT 2014, MAT 2050)",
+          "courses_in": [
+            "COS 2031",
+            "INF 1030",
+            "INF 2080",
+            "MAT 2001",
+            "MAT 2014",
+            "MAT 2050"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "credits": 6,
+          "label": "At most 6 credits from the 3000-level group (COS 3031, COS 3040, INF 3035, INF 3070, INF 3075)",
+          "courses_in": [
+            "COS 3031",
+            "COS 3040",
+            "INF 3035",
+            "INF 3070",
+            "INF 3075"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "credits": 6,
+          "label": "At most 6 credits from the 4000-level group (COS 4040, COS 4050, COS 4070, COS 4080, INF 4080)",
+          "courses_in": [
+            "COS 4040",
+            "COS 4050",
+            "COS 4070",
+            "COS 4080",
+            "INF 4080"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "courses": 3,
+          "label": "At most three non-COS courses",
+          "exclude_prefixes": [
+            "COS"
+          ]
+        }
+      ],
+      "placement_waivers": [
+        {
+          "course": "COS 1020",
+          "label": "Passed the C++ placement test (waives COS 1020)",
+          "replace_with_elective": true
+        }
+      ]
     },
     "Economics": {
-      "diploma": "dual"
+      "diploma": "dual",
+      "elective_rules_source": "AY 2026-27 catalog pp.88-89: three courses from ECO 4006, ECO 4008, ECO 4091/92, ECO 4098 and the ECO 4[4-9]NN topics, and any three additional ECO courses.",
+      "elective_pool": {
+        "prefixes": [
+          "ECO"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "courses": 3,
+          "label": "At least three courses from ECO 4006, ECO 4008, ECO 4091/4092, ECO 4098 or ECO 4[4-9]NN topics",
+          "courses_in": [
+            "ECO 4006",
+            "ECO 4008",
+            "ECO 4091",
+            "ECO 4092",
+            "ECO 4098"
+          ],
+          "patterns": [
+            "ECO 4[4-9]NN"
+          ]
+        }
+      ]
     },
     "European Studies": {
       "diploma": "dual",
@@ -1272,28 +1874,407 @@
             "blocks": []
           }
         }
-      }
+      },
+      "elective_rules_source": "AY 2026-27 catalog p.90: ten credit hours from the first list and nine from the second.",
+      "elective_excluded": [
+        "EUR 4092"
+      ],
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 10,
+          "label": "At least 10 credits from EUR 3003, EUR 3007/POS 3007, EUR 3020, EUR 3021, EUR 3022",
+          "courses_in": [
+            "EUR 3003",
+            "EUR 3007",
+            "POS 3007",
+            "EUR 3020",
+            "EUR 3021",
+            "EUR 3022"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 9,
+          "label": "At least 9 credits from EUR 4081, EUR 4[4-9]NN topics, MLL 3001, MLL 3002, MLL 3003",
+          "courses_in": [
+            "EUR 4081",
+            "MLL 3001",
+            "MLL 3002",
+            "MLL 3003"
+          ],
+          "patterns": [
+            "EUR 4[4-9]NN"
+          ]
+        }
+      ]
     },
     "History and Civilizations": {
-      "diploma": "dual"
+      "diploma": "dual",
+      "elective_rules_source": "AY 2026-27 catalog pp.93-94: at least nine credit hours from the two survey groups, not more than six of them from either group (so at least three from each); at least fifteen from the 3000/4000-level list.",
+      "elective_pool": {
+        "patterns": [
+          "HTY 3[4-9]NN"
+        ],
+        "courses_in": [
+          "HTY 2002",
+          "HTY 2012",
+          "HTY 2013",
+          "HTY 2014",
+          "HTY 2041",
+          "HTY 2042",
+          "HTY 2043",
+          "HTY 1008",
+          "HTY 2021",
+          "HTY 2022",
+          "HTY 2023",
+          "HTY 2024",
+          "HTY 2025",
+          "HTY 3001",
+          "HTY 3011",
+          "HTY 3013",
+          "HTY 3014",
+          "HTY 3015",
+          "HTY 4001",
+          "HTY 4091",
+          "HTY 4092"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 9,
+          "label": "At least 9 credits from the two survey groups (no more than 6 from either)",
+          "courses_in": [
+            "HTY 2002",
+            "HTY 2012",
+            "HTY 2013",
+            "HTY 2014",
+            "HTY 2041",
+            "HTY 2042",
+            "HTY 2043",
+            "HTY 1008",
+            "HTY 2021",
+            "HTY 2022",
+            "HTY 2023",
+            "HTY 2024",
+            "HTY 2025"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 3,
+          "label": "At least 3 credits from HTY 2002, 2012, 2013, 2014, 2041, 2042, 2043",
+          "courses_in": [
+            "HTY 2002",
+            "HTY 2012",
+            "HTY 2013",
+            "HTY 2014",
+            "HTY 2041",
+            "HTY 2042",
+            "HTY 2043"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 3,
+          "label": "At least 3 credits from HTY 1008, 2021, 2022, 2023, 2024, 2025",
+          "courses_in": [
+            "HTY 1008",
+            "HTY 2021",
+            "HTY 2022",
+            "HTY 2023",
+            "HTY 2024",
+            "HTY 2025"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 15,
+          "label": "At least 15 credits from the 3000/4000-level list (incl. HTY 3[4-9]NN topics)",
+          "courses_in": [
+            "HTY 3001",
+            "HTY 3011",
+            "HTY 3013",
+            "HTY 3014",
+            "HTY 3015",
+            "HTY 4001",
+            "HTY 4091",
+            "HTY 4092"
+          ],
+          "patterns": [
+            "HTY 3[4-9]NN"
+          ]
+        }
+      ]
     },
     "Information Systems": {
-      "diploma": "dual"
+      "diploma": "dual",
+      "elective_rules_source": "AY 2026-27 catalog p.95: at least six credit hours from INF 1050, INF 3075, INF 4080; no more than six from the COS list; no more than three from the ECO/JMC/MAT/MLL list, with only one MLL course; special topics and independent study are further electives. p.95: the C# placement test waives INF 1030.",
+      "elective_pool": {
+        "patterns": [
+          "INF L[1-2]NN",
+          "COS L[1-2]NN",
+          "INF L098",
+          "COS L098"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits from INF 1050, INF 3075, INF 4080",
+          "courses_in": [
+            "INF 1050",
+            "INF 3075",
+            "INF 4080"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "credits": 6,
+          "label": "At most 6 credits from COS 1050, 2030, 2031, 3015, 3040, 4080",
+          "courses_in": [
+            "COS 1050",
+            "COS 2030",
+            "COS 2031",
+            "COS 3015",
+            "COS 3040",
+            "COS 4080"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "credits": 3,
+          "label": "At most 3 credits from ECO 3000, ECO 3010, JMC 4011, MAT 2001, 2014, 2050 or one MLL language course",
+          "courses_in": [
+            "ECO 3000",
+            "ECO 3010",
+            "JMC 4011",
+            "MAT 2001",
+            "MAT 2014",
+            "MAT 2050",
+            "MLL 1015",
+            "MLL 1016",
+            "MLL 2015",
+            "MLL 2016",
+            "MLL 2017",
+            "MLL 1025",
+            "MLL 1026",
+            "MLL 2025",
+            "MLL 2026",
+            "MLL 2027",
+            "MLL 1055",
+            "MLL 1056",
+            "MLL 2055",
+            "MLL 2056",
+            "MLL 2057"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "courses": 1,
+          "label": "Only one German, French or Spanish MLL course",
+          "courses_in": [
+            "MLL 1015",
+            "MLL 1016",
+            "MLL 2015",
+            "MLL 2016",
+            "MLL 2017",
+            "MLL 1025",
+            "MLL 1026",
+            "MLL 2025",
+            "MLL 2026",
+            "MLL 2027",
+            "MLL 1055",
+            "MLL 1056",
+            "MLL 2055",
+            "MLL 2056",
+            "MLL 2057"
+          ]
+        }
+      ],
+      "placement_waivers": [
+        {
+          "course": "INF 1030",
+          "label": "Passed the C# placement test (waives INF 1030)",
+          "replace_with_elective": true
+        }
+      ],
+      "options": {
+        "label": "Concentration",
+        "description": "A concentration focuses your electives: e-Commerce takes COS 3015, INF 3075 and the INF 4081 internship; Data Science takes four of COS 1020, COS 2030, COS 3040, COS 4080, INF 4080, INF 4081, MAT 2001 (catalog p.96).",
+        "required": false,
+        "multiple": true,
+        "counts_as_major_elective": true,
+        "requirement_label": "{choice} concentration",
+        "source": "AY 2026-27 catalog p.96: optional, one or more may be declared, built from electives that also meet the major's elective rules. e-Commerce asks for twelve credit hours from three courses (COS 3015, INF 3075, INF 4081), so all three are planned. Data Science prefers INF 4080 and MAT 2001: the major counts at most six COS elective credits.",
+        "choices": {
+          "e-Commerce": {
+            "blocks": [
+              {
+                "courses": [
+                  "COS 3015",
+                  "INF 3075",
+                  "INF 4081"
+                ],
+                "count": 3
+              }
+            ]
+          },
+          "Data Science": {
+            "blocks": [
+              {
+                "courses": [
+                  "COS 1020",
+                  "COS 2030",
+                  "COS 3040",
+                  "COS 4080",
+                  "INF 4080",
+                  "INF 4081",
+                  "MAT 2001"
+                ],
+                "count": 4,
+                "prefer": [
+                  "INF 4080",
+                  "MAT 2001",
+                  "COS 3040",
+                  "COS 4080"
+                ]
+              }
+            ]
+          }
+        }
+      }
     },
     "Mathematics": {
-      "diploma": "dual"
+      "diploma": "dual",
+      "elective_rules_source": "AY 2026-27 catalog p.101: five courses from the list; after consulting the Mathematics faculty one may be replaced by COS 1050, COS 3060, ECO 3000, ECO 3010, ECO 4[4-9]NN, PHY 2010, PHY 2020, PHY 2030 or PHY 3010.",
+      "elective_pool": {
+        "courses_in": [
+          "MAT 4091",
+          "MAT 4092"
+        ],
+        "patterns": [
+          "ECO 4[4-9]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_most",
+          "courses": 1,
+          "label": "At most one elective from another discipline (after consulting the Mathematics faculty)",
+          "courses_in": [
+            "COS 1050",
+            "COS 3060",
+            "ECO 3000",
+            "ECO 3010",
+            "PHY 2010",
+            "PHY 2020",
+            "PHY 2030",
+            "PHY 3010"
+          ],
+          "patterns": [
+            "ECO 4[4-9]NN"
+          ]
+        }
+      ]
     },
     "Film and Creative Media": {
-      "diploma": "single"
+      "diploma": "single",
+      "elective_pool": {
+        "patterns": [
+          "FLM 3[4-9]NN"
+        ]
+      },
+      "elective_rules_source": "AY 2026-27 catalog p.92: FLM 3[4-9]NN Topics in Film count as electives."
     },
     "Journalism and Mass Communication": {
-      "diploma": "single"
+      "diploma": "single",
+      "elective_rules_source": "AY 2026-27 catalog p.98: any JMC course beyond the required ones, BUS 2060 (or ENT 2061), INF 2040 and MLL 2075; a professional internship (JMC 4081, no credit) does not count.",
+      "elective_pool": {
+        "prefixes": [
+          "JMC"
+        ],
+        "courses_in": [
+          "BUS 2060",
+          "ENT 2061",
+          "INF 2040",
+          "MLL 2075"
+        ]
+      },
+      "elective_excluded": [
+        "JMC 4081"
+      ],
+      "grade_rules": [
+        {
+          "kind": "course_needs_program_gpa",
+          "course": "JMC 4091",
+          "min_gpa": 3.25,
+          "source": "catalog p.98"
+        }
+      ]
     },
     "Physics": {
-      "diploma": "single"
+      "diploma": "single",
+      "elective_rules_source": "AY 2026-27 catalog p.107: at least six credit hours from PHY 1060, PHY 2060, PHY 4091/92; at most nine from the COS/ECO/INF/MAT/SCI list.",
+      "elective_pool": {
+        "courses_in": [
+          "PHY 4092"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits from PHY 1060, PHY 2060, PHY 4091/4092",
+          "courses_in": [
+            "PHY 1060",
+            "PHY 2060",
+            "PHY 4091",
+            "PHY 4092"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "credits": 9,
+          "label": "At most 9 credits from the COS, ECO, INF, MAT and SCI list",
+          "courses_in": [
+            "COS 2030",
+            "COS 3040",
+            "COS 4040",
+            "COS 4070",
+            "COS 4080",
+            "ECO 3010",
+            "ECO 4008",
+            "INF 4080",
+            "MAT 2001",
+            "MAT 2013",
+            "MAT 2014",
+            "MAT 2025",
+            "MAT 3013",
+            "MAT 3101",
+            "MAT 4102",
+            "SCI 1060"
+          ]
+        }
+      ]
     },
     "Self-Designed Major": {
-      "diploma": "single"
+      "diploma": "single",
+      "source": "AY 2026-27 catalog p.112: SDM 3001 Senior Thesis Proposal and SDM 4001 Senior Thesis are required; the electives follow the student's approved proposal, so the planner does not choose them.",
+      "required_courses": [
+        "SDM 3001",
+        "SDM 4001"
+      ],
+      "grade_rules": [
+        {
+          "kind": "course_needs_gpa",
+          "course": "SDM 3001",
+          "min_gpa": 3.5,
+          "source": "catalog p.112"
+        }
+      ]
     }
   },
   "minors": {
@@ -1364,7 +2345,12 @@
           "label": "Nine credit hours out of the following:",
           "rule_text": "Nine credit hours out of the following: POS 3001 Bulgarian Government and Politics POS 3003 Conflict and Conflict Resolution POS 3004 Global Political Economy POS 3005 International Law and Organizations POS 3006 Public Policy Analysis POS 3007 Research Methods POS 3008 Political Communication POS 4[4-9]NN Topics in Politics* * May be repeated for credit as long as the precise topics differ."
         }
-      ]
+      ],
+      "elective_pool": {
+        "patterns": [
+          "POS 4[4-9]NN"
+        ]
+      }
     },
     "Mathematics": {
       "source": "AY 2026-27 catalog p.123: required MAT 1003, MAT 1004, MAT 1005, MAT 2001 or MAT 2013, and MAT 2012. The PDF parser attaches the 'or MAT 2013' line to MAT 2012.",
@@ -1451,6 +2437,31 @@
           "label": "Elective Courses",
           "rule_text": "Elective Courses (12 credit hours): at least six credit hours out of ENG 2060 Balkan Literature and HTY 3[4-9]NN Topics in Southeast European History, and two additional courses from the lists above. At least six credit hours must be at the 3000- and/or 4000-level."
         }
+      ],
+      "elective_rules_source": "AY 2026-27 catalog p.130: at least six credit hours from ENG 2060 and HTY 3[4-9]NN Southeast European topics, two additional courses, and at least six credit hours at the 3000/4000 level.",
+      "elective_pool": {
+        "patterns": [
+          "HTY 3[4-9]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits from ENG 2060 or HTY 3[4-9]NN Southeast European topics",
+          "courses_in": [
+            "ENG 2060"
+          ],
+          "patterns": [
+            "HTY 3[4-9]NN"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits at the 3000- or 4000-level",
+          "min_level": 3000
+        }
       ]
     },
     "Computer Science": {
@@ -1476,6 +2487,13 @@
           "is_total": true,
           "label": "Electives",
           "rule_text": "Six more credit hours from the groups below. The catalog asks for fifteen elective credit hours with at least one course from each group; the three group courses are planned as course choices (9 credit hours). Fundamentals: COS 1050 Discrete Structures, COS 2035 Computer Architecture, COS 3031 Operating Systems, MAT 2050 Theory of Automata. Software Development: COS 2021 Fundamental Data Structures, COS 3015 Software Engineering, COS 3060 Algorithms (COS 4060 in earlier catalogs). Advanced Topics: COS 2031 Introduction to UNIX, COS 4040 Computer Networks, COS 4070 Artificial Intelligence and AI Programming."
+        }
+      ],
+      "placement_waivers": [
+        {
+          "course": "COS 1020",
+          "label": "Passed the C++ placement test (waives COS 1020)",
+          "replace_with_elective": true
         }
       ]
     },
@@ -1513,6 +2531,25 @@
           "is_total": false,
           "label": "Secondary Electives",
           "rule_text": "Secondary Electives (3 credit hours) Any other PHY course."
+        }
+      ],
+      "elective_rules_source": "AY 2026-27 catalog pp.127-128: nine credit hours of core electives, three of any other PHY course.",
+      "elective_pool": {
+        "prefixes": [
+          "PHY"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 9,
+          "label": "At least 9 credits from PHY 2010, PHY 2020, PHY 2030, PHY 3010",
+          "courses_in": [
+            "PHY 2010",
+            "PHY 2020",
+            "PHY 2030",
+            "PHY 3010"
+          ]
         }
       ]
     },
@@ -1553,6 +2590,728 @@
           "is_total": true,
           "label": "Elective Courses",
           "rule_text": "Elective Courses Choose nine credit hours out of the following: PSY 2002 Psychopathology and Mental Health PSY 2003 Personality Theory PSY 2004 Physiological Psychology PSY 2005 Developmental Psychology PSY 2075 Intercultural Communication (WIC)** PSY 2076 The History of Emotions** PSY 3000 Advanced Research Methods in Psychology (WIC) PSY 3001 Capstone Project PSY 3003 Cognitive Psychology PSY 3007 Cultural Psychology PSY 3008 Evolutionary Psychology PSY 3009 Media Psychology (WIC) PSY 3040 Organizational Theory and Behavior** PSY 3061 Consumer Behavior** PSY 3[4-9]NN Topics in Psychology* PSY 3412 Topics in Literary Theory and Criticism: Literature and Psychology** PSY 3413 Topics in Film: Psychoanalysis and Cinema** PSY 3414 Topics in Philosophy: Philosophy of Sex and Love (WIC)** PSY 3483 Topics in Literary Theory and Criticism: Psychoanalysis and Literature** PSY 4001 Research Project PSY 4[4-9]NN Advanced Topics in Psychology* PSY 4407 Topics in Advanced Microeconomics: Applied Behavioral Economics** PSY L098 Independent Study in Psychology* PSY L099 GHEA21 Topics in Psychology* * PSY 3[4-9]NN Topics in Psychology, PSY 4[4-9]NN Advanced Topics in Psychology, PSY L098 Independent Study in Psychology, and PSY L099 GHEA21 Topics in Psy- chology may be repeated for credit as long as the precise topic is different. ** Out of the nine credits from elective courses counting toward the Psychology mi- nor, at least six credits must be from PSY-coded courses that are not cross-listed with other disciplines."
+        }
+      ],
+      "elective_rules_source": "AY 2026-27 catalog p.129: of the nine elective credits at least six must come from PSY-coded courses that are not cross-listed with other disciplines.",
+      "elective_pool": {
+        "patterns": [
+          "PSY 3[4-9]NN",
+          "PSY 4[4-9]NN",
+          "PSY L098",
+          "PSY L099"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits from PSY courses that are not cross-listed with another discipline",
+          "prefixes": [
+            "PSY"
+          ],
+          "except": [
+            "PSY 2075",
+            "PSY 2076",
+            "PSY 3040",
+            "PSY 3061",
+            "PSY 3412",
+            "PSY 3413",
+            "PSY 3414",
+            "PSY 3483",
+            "PSY 4407",
+            "BUS 3040",
+            "BUS 3061",
+            "HTY 2002",
+            "JMC 2075",
+            "MLL 2075"
+          ]
+        }
+      ]
+    },
+    "Creative Writing": {
+      "elective_rules_source": "AY 2026-27 catalog pp.114-115: at least two courses at the 3000- or 4000-level.",
+      "elective_pool": {
+        "patterns": [
+          "ENG 3[4-9]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "courses": 2,
+          "label": "At least two elective courses at the 3000- or 4000-level",
+          "min_level": 3000
+        }
+      ]
+    },
+    "Entrepreneurship": {
+      "source": "AY 2026-27 catalog p.115: ENT 2020 is substitutable by BUS 2020 and ENT 2061 by BUS 2060; the PDF parser listed the substitutes as electives instead.",
+      "required_courses": [
+        "ENT 3000"
+      ],
+      "elective_requirements": [
+        {
+          "id": "entrepreneurship-choice-accounting",
+          "label": "Program Choice",
+          "credits_required": null,
+          "courses_required": null,
+          "is_total": false,
+          "allowed_courses": [
+            "ENT 2020",
+            "BUS 2020"
+          ],
+          "rule_text": "ENT 2020 Financial Accounting for Entrepreneurs or BUS 2020 Financial Accounting"
+        },
+        {
+          "id": "entrepreneurship-choice-marketing",
+          "label": "Program Choice",
+          "credits_required": null,
+          "courses_required": null,
+          "is_total": false,
+          "allowed_courses": [
+            "ENT 2061",
+            "BUS 2060"
+          ],
+          "rule_text": "ENT 2061 Marketing for Entrepreneurs or BUS 2060 Marketing"
+        },
+        {
+          "id": "entrepreneurship-electives",
+          "label": "Elective Courses",
+          "credits_required": 9,
+          "courses_required": null,
+          "is_total": true,
+          "allowed_courses": [
+            "ENT 4002",
+            "ENT 4040",
+            "EUR 3003"
+          ],
+          "rule_text": "Elective Courses (9 credit hours) ENT 4002 Entrepreneurship Internship ENT 4040 Conflict Management ENT 4[4-9]NN Topics in Entrepreneurship EUR 3003 Policies and Policy-Making in the EU (WIC)"
+        }
+      ],
+      "elective_pool": {
+        "patterns": [
+          "ENT 4[4-9]NN"
+        ]
+      }
+    },
+    "European Studies": {
+      "elective_rules_source": "AY 2026-27 catalog p.116: six credit hours from the first list, three from the second.",
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits from EUR 3003, EUR 3020, EUR 3021, EUR 3022",
+          "courses_in": [
+            "EUR 3003",
+            "EUR 3020",
+            "EUR 3021",
+            "EUR 3022"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 3,
+          "label": "At least 3 credits from EUR 3007/POS 3007 or EUR 4[4-9]NN topics",
+          "courses_in": [
+            "EUR 3007",
+            "POS 3007"
+          ],
+          "patterns": [
+            "EUR 4[4-9]NN"
+          ]
+        }
+      ]
+    },
+    "Film and Theater Studies": {
+      "elective_rules_source": "AY 2026-27 catalog pp.116-117: at least two production courses and two theory/history courses; at least two of the six courses at the 3000- or 4000-level (the two required courses are 2000-level).",
+      "elective_pool": {
+        "patterns": [
+          "FLM 3[4-9]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "courses": 2,
+          "label": "At least two production courses (FLM 2021, JMC 2033, THR 2022, FLM 4000)",
+          "courses_in": [
+            "FLM 2021",
+            "JMC 2033",
+            "THR 2022",
+            "FLM 4000"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "courses": 2,
+          "label": "At least two film theory and history courses",
+          "courses_in": [
+            "FLM 3400",
+            "FLM 3401",
+            "FLM 3402",
+            "FLM 4000",
+            "HTY 3013",
+            "HTY 3015",
+            "JMC 3063",
+            "JMC 4044",
+            "THR 1030",
+            "THR 2030"
+          ],
+          "patterns": [
+            "FLM 3[4-9]NN"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "courses": 2,
+          "label": "At least two of the six courses at the 3000- or 4000-level",
+          "min_level": 3000
+        }
+      ]
+    },
+    "History": {
+      "elective_rules_source": "AY 2026-27 catalog pp.118-119: six credit hours from the list and six from any HTY courses.",
+      "elective_pool": {
+        "prefixes": [
+          "HTY"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits from the listed HTY courses (incl. HTY 3[4-9]NN topics)",
+          "courses_in": [
+            "HTY 1008",
+            "HTY 2002",
+            "HTY 2012",
+            "HTY 2013",
+            "HTY 2014",
+            "HTY 2021",
+            "HTY 2022",
+            "HTY 2023",
+            "HTY 2024",
+            "HTY 2025",
+            "HTY 2041",
+            "HTY 2042",
+            "HTY 2043",
+            "HTY 2091",
+            "HTY 3001",
+            "HTY 3011",
+            "HTY 3013",
+            "HTY 3014",
+            "HTY 3015",
+            "HTY 4001"
+          ],
+          "patterns": [
+            "HTY 3[4-9]NN"
+          ]
+        }
+      ]
+    },
+    "Information Systems": {
+      "elective_rules_source": "AY 2026-27 catalog p.120: at least six credit hours from the INF list; no more than three from the ECO/JMC/MAT/MLL list, with only one MLL course. The C# placement test waives INF 1030.",
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 6,
+          "label": "At least 6 credits from INF 1050, 2040, 3035, 3070, 3075, 4040, 4080",
+          "courses_in": [
+            "INF 1050",
+            "INF 2040",
+            "INF 3035",
+            "INF 3070",
+            "INF 3075",
+            "INF 4040",
+            "INF 4080"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "credits": 3,
+          "label": "At most 3 credits from ECO 3000, ECO 3010, JMC 4011, MAT 2001, 2014, 2050 or one MLL language course",
+          "courses_in": [
+            "ECO 3000",
+            "ECO 3010",
+            "JMC 4011",
+            "MAT 2001",
+            "MAT 2014",
+            "MAT 2050",
+            "MLL 1015",
+            "MLL 1016",
+            "MLL 2015",
+            "MLL 2016",
+            "MLL 2017",
+            "MLL 1025",
+            "MLL 1026",
+            "MLL 2025",
+            "MLL 2026",
+            "MLL 2027",
+            "MLL 1055",
+            "MLL 1056",
+            "MLL 2055",
+            "MLL 2056",
+            "MLL 2057"
+          ]
+        },
+        {
+          "kind": "at_most",
+          "courses": 1,
+          "label": "Only one German, French or Spanish MLL course",
+          "courses_in": [
+            "MLL 1015",
+            "MLL 1016",
+            "MLL 2015",
+            "MLL 2016",
+            "MLL 2017",
+            "MLL 1025",
+            "MLL 1026",
+            "MLL 2025",
+            "MLL 2026",
+            "MLL 2027",
+            "MLL 1055",
+            "MLL 1056",
+            "MLL 2055",
+            "MLL 2056",
+            "MLL 2057"
+          ]
+        }
+      ],
+      "placement_waivers": [
+        {
+          "course": "INF 1030",
+          "label": "Passed the C# placement test (waives INF 1030)",
+          "replace_with_elective": true
+        }
+      ]
+    },
+    "Integrated Marketing Communications": {
+      "elective_pool": {
+        "patterns": [
+          "BUS 4[4-9]NN",
+          "JMC 4[4-9]NN"
+        ]
+      },
+      "elective_rules_source": "AY 2026-27 catalog p.121: BUS 4[4-9]NN marketing topics and JMC 4[4-9]NN topics count."
+    },
+    "Literature": {
+      "elective_rules_source": "AY 2026-27 catalog p.122: at least three credit hours from the 2000-level list and nine from ENG 3088 and the ENG 3[4-9]NN topics; ENG 2010 must come before any 3000-level course.",
+      "elective_pool": {
+        "patterns": [
+          "ENG 3[4-9]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 3,
+          "label": "At least 3 credits from ENG 2005, 2006, 2031, 2032, 2041, 2042, 2051, 2052, 2060",
+          "courses_in": [
+            "ENG 2005",
+            "ENG 2006",
+            "ENG 2031",
+            "ENG 2032",
+            "ENG 2041",
+            "ENG 2042",
+            "ENG 2051",
+            "ENG 2052",
+            "ENG 2060"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 9,
+          "label": "At least 9 credits from ENG 3088 or ENG 3[4-9]NN topics",
+          "courses_in": [
+            "ENG 3088"
+          ],
+          "patterns": [
+            "ENG 3[4-9]NN"
+          ]
+        }
+      ],
+      "sequence_rules": [
+        {
+          "before": "ENG 2010",
+          "min_level": 3000,
+          "prefixes": [
+            "ENG"
+          ],
+          "label": "ENG 2010 must be completed before 3000-level courses (catalog p.122)."
+        }
+      ]
+    },
+    "Philosophy": {
+      "elective_pool": {
+        "patterns": [
+          "PHI L[1-2]NN",
+          "PHI L099",
+          "PHI 3[4-9]NN"
+        ],
+        "courses_in": [
+          "PHI 4098"
+        ]
+      },
+      "elective_rules_source": "AY 2026-27 catalog p.127: PHI special topics, topics and independent study count."
+    },
+    "Public Policy": {
+      "elective_rules_source": "AY 2026-27 catalog pp.129-130: at least three credit hours from each list.",
+      "elective_pool": {
+        "patterns": [
+          "EUR 4[4-9]NN",
+          "POS 4[4-9]NN"
+        ]
+      },
+      "elective_rules": [
+        {
+          "kind": "at_least",
+          "credits": 3,
+          "label": "At least 3 credits from ECO 2011, ECO 2021, ECO 2031",
+          "courses_in": [
+            "ECO 2011",
+            "ECO 2021",
+            "ECO 2031"
+          ]
+        },
+        {
+          "kind": "at_least",
+          "credits": 3,
+          "label": "At least 3 credits from EUR 3003, EUR 3021, POS 3004, POS 3007 or approved EUR/POS topics",
+          "courses_in": [
+            "EUR 3003",
+            "EUR 3021",
+            "POS 3004",
+            "POS 3007"
+          ],
+          "patterns": [
+            "EUR 4[4-9]NN",
+            "POS 4[4-9]NN"
+          ]
+        }
+      ]
+    },
+    "Sustainability Studies": {
+      "elective_rules_source": "AY 2026-27 catalog pp.131-132: at least nine credit hours from one thematic area and three from any. Topics, projects and theses count only with a sustainability topic approved by the Dean, which the planner cannot know, so only the listed courses are in the areas.",
+      "elective_rules": [
+        {
+          "kind": "at_least_in_one_group",
+          "credits": 9,
+          "label": "At least 9 credits from one thematic area",
+          "groups": {
+            "Managing for a Sustainable Future": {
+              "courses_in": [
+                "ECO 2011",
+                "BUS 3000",
+                "SUS 3001",
+                "SUS 4500"
+              ]
+            },
+            "Scientific Understanding of Environment and Sustainability": {
+              "courses_in": [
+                "SCI 1060",
+                "SCI 1050",
+                "PHY 1010"
+              ]
+            },
+            "Society, Policy, and Communications": {
+              "courses_in": [
+                "POS 3006"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "Modern Languages and Cultures": {
+      "source": "AY 2026-27 catalog pp.123-126: MLL 1075 and fifteen credit hours in one language focus. MLL 2015/2025/2055 may be waived by placement test, with an additional 2000+ course in the language instead.",
+      "required_courses": [
+        "MLL 1075"
+      ],
+      "elective_requirements": [
+        {
+          "id": "modern-languages-and-cultures-minor-electives",
+          "label": "Elective Courses",
+          "credits_required": 15,
+          "courses_required": null,
+          "is_total": true,
+          "allowed_courses": [],
+          "rule_text": "Elective Courses (15 credit hours) in the chosen language focus."
+        }
+      ],
+      "elective_pool_only": true,
+      "placement_waivers": [
+        {
+          "course": "MLL 2025",
+          "label": "German placement test (waives MLL 2025)",
+          "replace_with_elective": true
+        },
+        {
+          "course": "MLL 2015",
+          "label": "French placement test (waives MLL 2015)",
+          "replace_with_elective": true
+        },
+        {
+          "course": "MLL 2055",
+          "label": "Spanish placement test (waives MLL 2055)",
+          "replace_with_elective": true
+        }
+      ],
+      "options": {
+        "label": "Language focus",
+        "description": "Choose German, French, Spanish or Bulgarian: MLL 1075 and fifteen credits in that language (catalog pp.123-126).",
+        "required": true,
+        "multiple": false,
+        "requirement_label": "{choice}-language focus",
+        "missing_message": "The Modern Languages and Cultures minor needs a language focus: choose German, French, Spanish or Bulgarian (catalog p.123).",
+        "source": "AY 2026-27 catalog pp.123-126.",
+        "choices": {
+          "German": {
+            "blocks": [],
+            "elective_pool": {
+              "courses_in": [
+                "MLL 1025",
+                "MLL 1026",
+                "MLL 2025",
+                "MLL 2026",
+                "MLL 2027",
+                "MLL 3002",
+                "BUS 3040",
+                "MLL 2075",
+                "MLL 3036",
+                "JMC 3036",
+                "MLL 4025"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 1025, MLL 1026, MLL 2025",
+                "courses_in": [
+                  "MLL 1025",
+                  "MLL 1026",
+                  "MLL 2025"
+                ]
+              },
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 2026, MLL 2027",
+                "courses_in": [
+                  "MLL 2026",
+                  "MLL 2027"
+                ]
+              },
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 3002 or German topics courses",
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "MLL 3002"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (German Focus) Elective"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "French": {
+            "blocks": [],
+            "elective_pool": {
+              "courses_in": [
+                "MLL 1015",
+                "MLL 1016",
+                "MLL 2015",
+                "MLL 2016",
+                "MLL 2017",
+                "MLL 3001",
+                "BUS 3040",
+                "MLL 2075",
+                "MLL 3036",
+                "JMC 3036",
+                "MLL 4015"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 1015, MLL 1016, MLL 2015",
+                "courses_in": [
+                  "MLL 1015",
+                  "MLL 1016",
+                  "MLL 2015"
+                ]
+              },
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 2016, MLL 2017",
+                "courses_in": [
+                  "MLL 2016",
+                  "MLL 2017"
+                ]
+              },
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 3001 or French topics courses",
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "MLL 3001"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (French Focus) Elective"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "Spanish": {
+            "blocks": [],
+            "elective_pool": {
+              "courses_in": [
+                "MLL 1055",
+                "MLL 1056",
+                "MLL 2055",
+                "MLL 2056",
+                "MLL 2057",
+                "MLL 3003",
+                "BUS 3040",
+                "FAR 3010",
+                "MLL 2075",
+                "MLL 3036",
+                "JMC 3036",
+                "MLL 4055"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 1055, MLL 1056, MLL 2055",
+                "courses_in": [
+                  "MLL 1055",
+                  "MLL 1056",
+                  "MLL 2055"
+                ]
+              },
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 2056, MLL 2057",
+                "courses_in": [
+                  "MLL 2056",
+                  "MLL 2057"
+                ]
+              },
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from MLL 3003 or Spanish topics courses",
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "MLL 3003"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (Spanish Focus) Elective"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "Bulgarian": {
+            "blocks": [],
+            "elective_pool": {
+              "courses_in": [
+                "MLL 1036",
+                "MLL 2035",
+                "FAR 3009",
+                "HTY 2024",
+                "MLL 1035",
+                "POS 3001",
+                "BUS 3040",
+                "ENG 2060",
+                "MLL 2075",
+                "MLL 3036",
+                "JMC 3036"
+              ]
+            },
+            "elective_rules": [
+              {
+                "kind": "at_least",
+                "credits": 6,
+                "label": "At least 6 credits from MLL 1036, MLL 2035 or Bulgarian special topics",
+                "any_of": [
+                  {
+                    "courses_in": [
+                      "MLL 1036",
+                      "MLL 2035"
+                    ]
+                  },
+                  {
+                    "patterns": [
+                      "MLL 3[4-9]NN",
+                      "MLL L[1-2]NN",
+                      "MLL L098"
+                    ],
+                    "and_excel_tags": [
+                      "MLC Major (Bulgarian Focus) Elective"
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "at_least",
+                "credits": 3,
+                "label": "At least 3 credits from FAR 3009, HTY 2024, MLL 1035, POS 3001",
+                "courses_in": [
+                  "FAR 3009",
+                  "HTY 2024",
+                  "MLL 1035",
+                  "POS 3001"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Finance": {
+      "grade_rules": [
+        {
+          "kind": "min_grade",
+          "grade": "C",
+          "source": "catalog p.117"
         }
       ]
     }

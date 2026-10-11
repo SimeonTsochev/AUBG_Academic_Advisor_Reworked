@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ElectiveProgress } from '../api';
-import { describeElectiveRemaining, summarizeElectiveRequirements } from './electiveProgress';
+import { describeElectiveRemaining, describeElectiveRule, summarizeElectiveRequirements } from './electiveProgress';
 
 const progress = (overrides: Partial<ElectiveProgress>): ElectiveProgress => ({
   program: 'Economics',
@@ -60,5 +60,24 @@ describe('describeElectiveRemaining', () => {
     expect(describeElectiveRemaining({ remaining: 6, unit: 'credits' })).toBe('6 credits left');
     expect(describeElectiveRemaining({ remaining: 1, unit: 'courses' })).toBe('1 course left');
     expect(describeElectiveRemaining({ remaining: 0, unit: 'credits' })).toBe('Completed');
+  });
+});
+
+describe('describeElectiveRule', () => {
+  const rule = { label: 'At least 6 credits from INF 1050, INF 3075, INF 4080', kind: 'at_least', unit: 'credits' as const };
+  it('says what an unmet minimum still needs', () => {
+    expect(describeElectiveRule({ ...rule, required: 6, counted: 3, met: false })).toEqual({
+      text: 'At least 6 credits from INF 1050, INF 3075, INF 4080: 3 of 6 credits so far',
+      tone: 'missing',
+    });
+    expect(describeElectiveRule({ ...rule, required: 6, counted: 6, met: true }).tone).toBe('ok');
+  });
+  it('treats an exceeded cap as information', () => {
+    const cap = { label: 'At most three non-COS courses', kind: 'at_most', unit: 'courses' as const, required: 3, met: true };
+    expect(describeElectiveRule({ ...cap, counted: 4, over_cap: true })).toEqual({
+      text: 'At most three non-COS courses: only 3 courses of 4 count',
+      tone: 'capped',
+    });
+    expect(describeElectiveRule({ ...cap, counted: 2, over_cap: false }).tone).toBe('ok');
   });
 });

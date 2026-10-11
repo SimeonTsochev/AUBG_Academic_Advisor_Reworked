@@ -7,6 +7,8 @@ A course counts toward program P's electives when it does not fill one of P's ow
   "BUS/ENT 3000-4000 level courses".
 A course required by another selected program still counts: students may double count across programs.
 Capped blocks ("At most 3 credits may come from ...") limit what their courses contribute.
+A program's `elective_rules` (and those of its chosen options) state the catalog's sub-rules
+explicitly; elective_rules.py evaluates them, and `elective_excluded` courses never count.
 """
 from __future__ import annotations
 
@@ -25,7 +27,11 @@ from degree_engine import (
     _normalize_course_code,
     _parse_number,
 )
+from elective_rules import deficit_credits, evaluate, pool_matcher
 from excel_catalog import PROGRAM_TAG_ALIASES, is_program_elective_tag
+
+# Transfer applicants may transfer at most 18 credit hours toward a major (catalog p.68).
+MAX_TRANSFER_MAJOR_CREDITS = 18
 
 CAP_RE = re.compile(r"\b(at\s+most|no\s+more\s+than|up\s+to)\b", re.IGNORECASE)
 # "BUS/ENT 3000-4000 level", "JMC 3000- or 4000-level"
@@ -110,6 +116,19 @@ def _own_requirement_courses(program: str, slots: Dict, taken: Set[str]) -> Set[
     return own
 
 
+def _program_rules(program_data: Dict, chosen_options: List[str]) -> Tuple[List[Dict], List[Dict]]:
+    """The program's elective rules and pools plus those of the options the student chose (an MLC focus)."""
+    rules = [r for r in program_data.get("elective_rules") or [] if isinstance(r, dict)]
+    pools = [program_data["elective_pool"]] if isinstance(program_data.get("elective_pool"), dict) else []
+    choices = ((program_data.get("options") or {}).get("choices") or {})
+    for choice in chosen_options:
+        entry = choices.get(choice) or {}
+        rules += [r for r in entry.get("elective_rules") or [] if isinstance(r, dict)]
+        if isinstance(entry.get("elective_pool"), dict):
+            pools.append(entry["elective_pool"])
+    return rules, pools
+
+
 def compute_elective_progress(
     catalog: Dict,
     programs: Iterable[Tuple[str, str]],
@@ -117,8 +136,16 @@ def compute_elective_progress(
     completed: Set[str],
     planned: Set[str],
     manual_major_elective_credits: Dict[str, int],
+    program_options: Dict[str, List[str]] | None = None,
+    extra_elective_credits: Dict[Tuple[str, str], int] | None = None,
+    waived: Set[str] | None = None,
 ) -> List[Dict]:
-    """One entry per (program, "major"/"minor") that has an elective requirement."""
+    """One entry per (program, "major"/"minor") that has an elective requirement.
+
+    `extra_elective_credits`: credits a program's electives grow by, e.g. when a placement test
+    waives a required course and the student takes another elective instead (catalog p.86).
+    `waived`: placement-waived courses; they satisfy elective rules but earn no credits.
+    """
     catalog_courses = _catalog_courses(catalog)
     taken = completed | planned
     progress: List[Dict] = []
@@ -129,15 +156,29 @@ def compute_elective_progress(
         if credits_required is None and courses_required is None:
             continue
 
+        extra = int((extra_elective_credits or {}).get((program, program_type), 0) or 0)
+        if credits_required is not None:
+            credits_required += extra
+        rules, pools = _program_rules(program_data, (program_options or {}).get(program, []))
+        in_rule_pool = pool_matcher(catalog, rules, pools)
+        # Programs whose electives depend on a choice (an MLC language focus) count only the courses
+        # their rules and pools name, never the broad Excel tags or subject matchers.
+        pool_only = bool(program_data.get("elective_pool_only"))
+        excluded = {_normalize_course_code(c) for c in program_data.get("elective_excluded") or []}
         listed = set().union(*(_listed_courses(block, catalog_courses) for block in blocks)) if blocks else set()
         matchers = _rule_matchers(program, blocks, bool(listed))
         own = _own_requirement_courses(program, slots, taken)
 
         def counts(code: str) -> bool:
-            return code not in own and (
+            if code in own or code in excluded:
+                return False
+            if pool_only:
+                return in_rule_pool(code)
+            return (
                 code in listed
                 or any(m.matches(code) for m in matchers)
                 or _excel_tagged_elective(catalog, program, code)
+                or in_rule_pool(code)
             )
 
         cap_blocks = [
@@ -148,18 +189,30 @@ def compute_elective_progress(
             and CAP_RE.search(_elective_block_rule_text(block))
         ]
         counted_courses = sorted(code for code in taken if counts(code) and _course_credits(catalog, code) > 0)
-        credits_counted = _counted_credits_with_caps(
-            catalog=catalog,
-            taken=set(counted_courses),
-            cap_blocks=cap_blocks,
-            required_exclusions=set(),
-            allowed_predicate=lambda code: True,
-        ) + int(manual_major_elective_credits.get(program, 0) if program_type == "major" else 0)
+        rule_statuses: List[Dict] = []
+        if rules:
+            course_credit, rule_statuses = evaluate(
+                catalog, rules, counted_courses, completed, waived=waived or set(), extra_credits=extra
+            )
+            course_credits_counted = sum(course_credit.values())
+        else:
+            course_credits_counted = _counted_credits_with_caps(
+                catalog=catalog,
+                taken=set(counted_courses),
+                cap_blocks=cap_blocks,
+                required_exclusions=set(),
+                allowed_predicate=lambda code: True,
+            )
+        transfer_cap = int(program_data.get("max_transfer_elective_credits") or MAX_TRANSFER_MAJOR_CREDITS)
+        transferred = min(int(manual_major_elective_credits.get(program, 0) or 0), transfer_cap)
+        credits_counted = course_credits_counted + (transferred if program_type == "major" else 0)
 
         if credits_required is not None:
-            remaining = max(0, credits_required - credits_counted)
+            remaining = max(0, credits_required - credits_counted, deficit_credits(rule_statuses))
         else:
-            remaining = max(0, (courses_required or 0) - len(counted_courses))
+            remaining = max(
+                0, (courses_required or 0) - len(counted_courses), deficit_credits(rule_statuses, unit="courses")
+            )
         progress.append({
             "program": program,
             "program_type": program_type,
@@ -169,6 +222,7 @@ def compute_elective_progress(
             "remaining": remaining,
             "unit": "credits" if credits_required is not None else "courses",
             "rule_text": rule_text,
+            "rules": rule_statuses,
             "courses": [
                 {"code": code, "credits": _course_credits(catalog, code), "completed": code in completed}
                 for code in counted_courses

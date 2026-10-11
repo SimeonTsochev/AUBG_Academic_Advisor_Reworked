@@ -7,7 +7,7 @@ import { AdvisorHeader } from './advisor/AdvisorHeader';
 import { PlanAlerts } from './advisor/PlanAlerts';
 import { ProgramOptionPrompt } from './advisor/ProgramOptionPrompt';
 import { DiplomaNote } from './advisor/DiplomaNote';
-import { majorsMissingRequiredOption, normalizeProgramOptions } from '../utils/programOptions';
+import { majorsMissingRequiredOption, normalizeProgramOptions, selectedProgramInfo } from '../utils/programOptions';
 import { loadGrades, saveGrades, toGradeEntries, type GradeMap } from '../utils/grades';
 import { RequirementsTab } from './advisor/RequirementsTab';
 import { SummaryStrip } from './advisor/SummaryStrip';
@@ -58,6 +58,8 @@ interface MainAdvisorScreenProps {
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     /** Per major, the chosen options (a CS concentration, the European Studies language). */
     programOptions?: ProgramOptionSelection;
+    /** Courses a placement test waived (COS 1020, INF 1030, MLL 2025, ...). */
+    placementWaivers?: string[];
     completedCourses: string[];
     inProgressCourses: string[];
     /** Transcript courses not passed; the plan schedules them again when still required. */
@@ -111,6 +113,7 @@ function buildSnapshotPayload(params: {
     businessConcentration: params.selection.businessConcentration,
     economicsIntermediateChoice: params.selection.economicsIntermediateChoice,
     programOptions: { ...(params.selection.programOptions ?? {}) },
+    placementWaivers: [...(params.selection.placementWaivers ?? [])],
     completedCourses: [...params.completedCourses],
     inProgressCourses: [...params.inProgressCourses],
     failedCourses: (params.selection.failedCourses ?? []).map((entry) => ({ ...entry })),
@@ -251,10 +254,13 @@ export function MainAdvisorScreen({
   const [overrides, setOverrides] = useState<PlanOverrides>(() => clonePlanOverrides(initialSnapshot?.overrides));
   // Chosen major options. Editable here so a plan saved without the European Studies language can add it
   // without redoing setup (which would start a new plan).
+  // Options and placement tests of the selected programs: majors read program_info, minors minor_info.
+  const optionInfo = selectedProgramInfo(selection.majors, selection.minors, catalog.program_info, catalog.minor_info);
+  const selectedPrograms = [...selection.majors, ...selection.minors];
   const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>(
-    () => normalizeProgramOptions(selection.programOptions, selection.majors, catalog.program_info ?? {}),
+    () => normalizeProgramOptions(selection.programOptions, selectedPrograms, optionInfo),
   );
-  const majorsNeedingOption = majorsMissingRequiredOption(selection.majors, catalog.program_info ?? {}, programOptions);
+  const majorsNeedingOption = majorsMissingRequiredOption(selectedPrograms, optionInfo, programOptions);
   // Transcript grades for GPA. Private: stored in this browser under the share token and sent with
   // plan requests, but never part of the snapshot payload, so a shared link does not reveal them.
   const [grades] = useState<GradeMap>(() =>
@@ -2334,6 +2340,7 @@ export function MainAdvisorScreen({
     minors: selection.minors,
     business_concentration: selection.businessConcentration,
     program_options: programOptions,
+    placement_waivers: selection.placementWaivers ?? [],
     grades: toGradeEntries(grades),
     completed_courses: planningCompleted,
     manual_credits: manualCredits,
@@ -5194,9 +5201,9 @@ export function MainAdvisorScreen({
         majors={selection.majors}
         minors={selection.minors}
         businessConcentration={selection.businessConcentration}
-        optionLabels={selection.majors.flatMap((major) => {
-          const label = catalog.program_info?.[major]?.options?.label;
-          return label ? (programOptions[major] ?? []).map((choice) => `${label}: ${choice}`) : [];
+        optionLabels={selectedPrograms.flatMap((program) => {
+          const label = optionInfo[program]?.options?.label;
+          return label ? (programOptions[program] ?? []).map((choice) => `${label}: ${choice}`) : [];
         })}
         canDownload={!!plan}
         share={{
@@ -5376,7 +5383,7 @@ export function MainAdvisorScreen({
                       <div className="advisor-inset">
                         <ProgramOptionPrompt
                           majors={majorsNeedingOption}
-                          programInfo={catalog.program_info ?? {}}
+                          programInfo={optionInfo}
                           onChoose={(major, choice) => setProgramOptions((prev) => ({ ...prev, [major]: [choice] }))}
                         />
                       </div>

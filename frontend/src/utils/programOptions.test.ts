@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ProgramInfo } from "../api";
-import { majorsMissingRequiredOption, normalizeProgramOptions, toggleProgramOption } from "./programOptions";
+import {
+  majorsMissingRequiredOption,
+  normalizeProgramOptions,
+  offeredPlacementWaivers,
+  selectedProgramInfo,
+  toggleProgramOption,
+} from "./programOptions";
 
 const INFO: Record<string, ProgramInfo> = {
   "European Studies": {
@@ -65,5 +71,31 @@ describe("toggleProgramOption", () => {
     selection = toggleProgramOption(selection, "Computer Science", "Foundations of Computing", true);
     selection = toggleProgramOption(selection, "Computer Science", "Software Development", true);
     expect(selection).toEqual({ "European Studies": ["German"] });
+  });
+});
+
+describe("selectedProgramInfo", () => {
+  it("reads majors from program_info and minors from minor_info", () => {
+    const majorInfo: Record<string, ProgramInfo> = { "Modern Languages and Cultures": { diploma: "single" } };
+    const minorInfo: Record<string, ProgramInfo> = {
+      "Modern Languages and Cultures": { options: { label: "Language focus", required: true, multiple: false, choices: ["German"] } },
+    };
+    expect(selectedProgramInfo(["Modern Languages and Cultures"], [], majorInfo, minorInfo)["Modern Languages and Cultures"])
+      .toEqual({ diploma: "single" });
+    expect(selectedProgramInfo(["Economics"], ["Modern Languages and Cultures"], majorInfo, minorInfo)["Modern Languages and Cultures"]?.options?.label)
+      .toBe("Language focus");
+  });
+});
+
+describe("offeredPlacementWaivers", () => {
+  it("lists each waivable course once", () => {
+    const info: Record<string, ProgramInfo> = {
+      "Computer Science": { placement_waivers: [{ course: "COS 1020", label: "C++ placement test" }] },
+      "Information Systems": { placement_waivers: [{ course: "INF 1030", label: "C# placement test" }] },
+    };
+    const both = { ...info, "Computer Science minor": info["Computer Science"] };
+    expect(offeredPlacementWaivers(["Computer Science", "Computer Science minor", "Information Systems"], both).map((w) => w.course))
+      .toEqual(["COS 1020", "INF 1030"]);
+    expect(offeredPlacementWaivers(["Economics"], info)).toEqual([]);
   });
 });
