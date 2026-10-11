@@ -13,7 +13,7 @@ from excel_course_catalog import build_course_catalog_data
 BACKEND_DIR = Path(__file__).resolve().parent
 DATA_DIR = BACKEND_DIR / "data"
 
-DEFAULT_PDF_SOURCE_PATH = BACKEND_DIR / "AY-2025-26-3rd-ed.pdf"
+DEFAULT_PDF_SOURCE_PATH = BACKEND_DIR / "AY-2026-27-2nd-ed.pdf"
 DEFAULT_EXCEL_SOURCE_BASENAME = "course_catalog 031926"
 DEFAULT_EXCEL_SOURCE_PATHS = [
     BACKEND_DIR / f"{DEFAULT_EXCEL_SOURCE_BASENAME}.xlsx",

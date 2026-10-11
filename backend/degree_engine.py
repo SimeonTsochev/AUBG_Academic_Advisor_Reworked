@@ -80,7 +80,8 @@ INSTANCE_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, "aubg-plan-instance-v1")
 CS_MINOR_REQUIRED_COURSES = {"COS 1020"}
 CS_MINOR_GROUPS: Dict[str, Set[str]] = {
     "Foundations": {"COS 1050", "COS 2035", "COS 3031", "MAT 2050"},
-    "Software Development": {"COS 2021", "COS 3015", "COS 4060"},
+    # Algorithms is COS 3060 from AY 2026-27; COS 4060 is its earlier number.
+    "Software Development": {"COS 2021", "COS 3015", "COS 3060", "COS 4060"},
     "Advanced Topics": {"COS 2031", "COS 4040", "COS 4070"},
 }
 CS_MINOR_ELECTIVE_CREDITS_REQUIRED = 15
@@ -90,7 +91,7 @@ CREATIVE_WRITING_BASE_ELECTIVES = {"JMC 1050", "FLM 2021", "ENG 3005", "JMC 4045
 CREATIVE_WRITING_ELECTIVE_CREDITS_REQUIRED = 16
 CREATIVE_WRITING_MIN_UPPER_LEVEL_ELECTIVES = 2
 
-# Sustainability Studies minor rules (AY 2025-26 screenshots):
+# Sustainability Studies minor rules (AY 2026-27 catalog pp.130-132):
 # - Total: 18 credits
 # - Required: SUS 1000 and SUS 2010
 # - Electives: 12 credits with distribution: minimum 9 credits from ONE thematic area and 3 credits from another.
@@ -194,7 +195,7 @@ def _is_business_administration_bus_ent_upper_level(code: str) -> bool:
 
 def _business_administration_required_courses(catalog: Dict) -> Set[str]:
     """The major's own required courses. Concentration courses are not among them: they count
-    toward the major's elective credits (AY 2025-26 catalog, Business Administration)."""
+    toward the major's elective credits (AY 2026-27 catalog p.83, Business Administration)."""
     majors = catalog.get("majors", {}) or {}
     required_courses: Set[str] = set()
     if not isinstance(majors, dict):

@@ -514,6 +514,9 @@ def _parse_gen_ed_from_section(lines: List[str]) -> Tuple[Dict[str, int], Dict[s
             else:
                 if re.search(r"following", line, re.IGNORECASE):
                     continue
+                # Running page header ("General Education 76"): the list continues on the next page.
+                if re.match(r"^General Education\s+\d+$", line, re.IGNORECASE):
+                    continue
                 if len(line) < 12:
                     continue
                 if line.lower().startswith("learning outcomes"):

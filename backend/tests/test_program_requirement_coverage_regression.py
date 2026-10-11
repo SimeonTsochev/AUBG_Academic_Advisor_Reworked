@@ -36,7 +36,7 @@ class ProgramRequirementCoverageRegressionTests(IsolatedTestCase):
         ]
 
     def test_literature_major_requires_two_courses_and_four_of_the_six_surveys(self):
-        # AY 2025-26 catalog p.101: ENG 2010, ENG 3088, "plus twelve credit hours out of" six surveys.
+        # AY 2026-27 catalog p.99: ENG 2010, ENG 3088, "plus twelve credit hours out of" six surveys.
         slots = self._program_slots("Literature", "major")
         fixed_courses = {
             slot.get("course")
@@ -84,7 +84,8 @@ class ProgramRequirementCoverageRegressionTests(IsolatedTestCase):
             for slot in slots
             if slot.get("type") == "fixed"
         }
-        self.assertTrue({"BUS 3062", "JMC 1041", "JMC 1050"}.issubset(fixed_courses))
+        # AY 2026-27 catalog p.121: BUS 3061 is required; BUS 3062 moved to the electives.
+        self.assertTrue({"BUS 3061", "JMC 1041", "JMC 1050"}.issubset(fixed_courses))
 
         choice_sets = {
             tuple(sorted(slot.get("courses") or []))
@@ -94,7 +95,7 @@ class ProgramRequirementCoverageRegressionTests(IsolatedTestCase):
         self.assertIn(("BUS 2060", "ENT 2061"), choice_sets)
 
     def test_mathematics_minor_requires_mat2012_and_a_choice_of_mat2001_or_mat2013(self):
-        # AY 2025-26 catalog p.126: "MAT 2001 Mathematical Statistics or MAT 2013 ...", then MAT 2012.
+        # AY 2026-27 catalog p.123: "MAT 2001 Mathematical Statistics or MAT 2013 ...", then MAT 2012.
         slots = self._program_slots("Mathematics", "minor")
         fixed_courses = {
             slot.get("course")
@@ -111,7 +112,7 @@ class ProgramRequirementCoverageRegressionTests(IsolatedTestCase):
         self.assertEqual(choice_sets, {("MAT 2001", "MAT 2013")})
 
     def test_political_science_minor_requires_pos2002_and_two_of_the_other_core_courses(self):
-        # AY 2025-26 catalog p.131: ten credit hours out of POS 1001, POS 1002, POS 2013 or EUR 2013,
+        # AY 2026-27 catalog p.128: ten credit hours out of POS 1001, POS 1002, POS 2013 or EUR 2013,
         # and POS 2002. POS 2002 is the only 4-credit course, so it is needed to reach ten.
         slots = self._program_slots("Political Science and International Relations", "minor")
         fixed_courses = {

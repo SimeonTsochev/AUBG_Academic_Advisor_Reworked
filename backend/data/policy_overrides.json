@@ -1,7 +1,7 @@
 {
   "catalog_year": null,
   "degree_total_credits": 120,
-  "degree_total_credits_source": "AY 2025-26 catalog p.85: 'A minimum of 120 credit hours is required to earn a Bachelor of Arts degree at AUBG.'",
+  "degree_total_credits_source": "AY 2026-27 catalog p.72: 'A minimum of 120 credit hours is required to earn a Bachelor of Arts degree at AUBG.'",
   "business_concentration_manual_matches": {
     "Tourism and Hospitality": {
       "tourism_special_topics": [
@@ -617,31 +617,11 @@
       ]
     },
     "MLL 3036": {
-      "prereq_text": "JMC 1041 and JMC 1050",
-      "prereq_codes": [
-        "JMC 1041",
-        "JMC 1050"
-      ],
-      "prereqs": [
-        "JMC 1041",
-        "JMC 1050"
-      ],
-      "prereq_expr": {
-        "and": [
-          "JMC 1041",
-          "JMC 1050"
-        ]
-      },
-      "prereq_blocks": [
-        {
-          "code": "JMC 1041",
-          "type": "course"
-        },
-        {
-          "code": "JMC 1050",
-          "type": "course"
-        }
-      ]
+      "prereq_text": "Junior standing",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
     },
     "MLL 4055": {
       "prereq_text": "MLL 3003, or MLL 3[4-9]NN in Spanish, or a placement test before registration (with a signed permission from the instructor)",
@@ -704,6 +684,13 @@
       "prereqs": [],
       "prereq_expr": null,
       "prereq_blocks": []
+    },
+    "FLM 3001": {
+      "prereq_text": "Junior standing, a minimum cumulative GPA of 3.250, and approval by the senior thesis faculty committee",
+      "prereq_codes": [],
+      "prereqs": [],
+      "prereq_expr": null,
+      "prereq_blocks": []
     }
   },
   "courses": {},
@@ -717,7 +704,7 @@
   },
   "majors": {
     "Political Science and International Relations": {
-      "source": "AY 2025-26 catalog p.110: required POS 1001, POS 1002, POS 2013 or EUR 2013, and POS 2002 (4 courses); electives are three courses from the first list plus ten credit hours from the second (32 credit hours in total). The PDF parser attaches the 'or EUR 2013' line to POS 2002 and reads 'three courses' as the elective total.",
+      "source": "AY 2026-27 catalog p.108: required POS 1001, POS 1002, POS 2013 or EUR 2013, and POS 2002 (4 courses); electives are three courses from the first list plus ten credit hours from the second (32 credit hours in total). The PDF parser attaches the 'or EUR 2013' line to POS 2002 and reads 'three courses' as the elective total.",
       "required_courses": [
         "POS 1001",
         "POS 1002",
@@ -783,7 +770,7 @@
       ]
     },
     "Literature": {
-      "source": "AY 2025-26 catalog p.101: 'Required Courses (18 credit hours): ENG 2010, ENG 3088, plus twelve credit hours out of' six survey courses. The PDF parser made all six surveys required.",
+      "source": "AY 2026-27 catalog p.99: 'Required Courses (18 credit hours): ENG 2010, ENG 3088, plus twelve credit hours out of' six survey courses. The PDF parser made all six surveys required.",
       "required_courses": [
         "ENG 2010",
         "ENG 3088"
@@ -844,7 +831,7 @@
       ]
     },
     "Modern Languages and Cultures": {
-      "source": "AY 2025-26 catalog pp.105-108: 36 credits in one language focus: MLL 1075 plus three focus courses (12 credit hours required), 18 or more credit hours of focus electives, and additional electives (6 credit hours maximum). The PDF parser dropped the required courses and kept 18 credit hours as the total. The planner has no language-focus choice, so MLL 1075 is required and the other 33 credit hours are tracked as one total.",
+      "source": "AY 2026-27 catalog pp.101-105: 36 credits in one language focus: MLL 1075 plus three focus courses (12 credit hours required), 18 or more credit hours of focus electives, and additional electives (6 credit hours maximum). The PDF parser dropped the required courses and kept 18 credit hours as the total. The planner has no language-focus choice, so MLL 1075 is required and the other 33 credit hours are tracked as one total.",
       "required_courses": [
         "MLL 1075"
       ],
@@ -1052,11 +1039,48 @@
           "rule_text": "Additional Electives (6 credit hours maximum) MLL courses in Spanish, German, and French BUS 2001 Management Information Systems BUS 2060 Marketing BUS 3040 Organizational Theory and Behavior ENG 2010 Introduction to Literature ENG 2032 World Literature – Literatures in Translation EUR 1011 European Integration and Transformation of Diplomacy: From 1945 to Present EUR 2012 EU Politics Major Programs 108 EUR 2013 Comparative Politics [cross-listed as POS 2013] JMC 1041 Communication, Media, and Society JMC 1050 Writing for Media (WIC) MLL 3036 Semiotics [cross-listed as JMC 3036] PHI 1001 Introduction to Philosophy POS 1002 Introduction to Global Politics Other courses as approved by the Department Chair and the Dean of Faculty. MLL 1036/ 2015/ 2025/ 2055 may be waived and replaced with an elective in French/ German/Spanish/Bulgarian. The subject of the courses MLL L[1-2]NN Special Topics in German/French/Spanish/Bulgarian Language and Culture and MLL L098 Independent Study in German/French/Spanish/Bulgarian Language and Culture and their descrip- tions are defined for every particular offering. Students must consult with their language instructor on when such a course will be offered. Special Topics, Topics classes, and Inde- pendent Study courses in the target language may be repeated for credit as long as the precise topic is different. Students are encouraged to complete a study abroad experience in a country where the language of study is spoken. No more than nine AUBG credits that have been completed abroad may be counted for the major."
         }
       ]
+    },
+    "Psychology": {
+      "source": "AY 2026-27 catalog pp.109-110: the elective list names the PSY cross-listings (PSY 2075, PSY 2076, PSY 3040, PSY 3061). Students who registered under the other listing (MLL/JMC 2075, HTY 2002, BUS 3040, BUS 3061) took the same course, so both codes count.",
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "BUS 3040",
+            "BUS 3061",
+            "HTY 2002",
+            "JMC 2075",
+            "MLL 2075",
+            "PSY 2075",
+            "PSY 2076",
+            "PSY 3000",
+            "PSY 3001",
+            "PSY 3003",
+            "PSY 3007",
+            "PSY 3008",
+            "PSY 3009",
+            "PSY 3040",
+            "PSY 3061",
+            "PSY 3412",
+            "PSY 3413",
+            "PSY 3414",
+            "PSY 3483",
+            "PSY 4001",
+            "PSY 4081",
+            "PSY 4407"
+          ],
+          "courses_required": null,
+          "credits_required": 15,
+          "id": "psychology-elective-1",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (15 credit hours) A minimum of 9 credit hours must come from the following courses: PSY 3000 Advanced Research Methods in Psychology (WIC) PSY 3003 Cognitive Psychology PSY 3007 Cultural Psychology PSY 3008 Evolutionary Psychology PSY 3009 Media Psychology (WIC) PSY 3[4-9]NN Topics in Psychology* PSY 4[4-9]NN Advanced Topics in Psychology* The following courses also count as electives in Psychology: PSY 2075 Intercultural Communication (WIC) PSY 2076 The History of Emotions PSY 3001 Capstone Project PSY 3040 Organizational Theory and Behavior PSY 3061 Consumer Behavior PSY 3412 Topics in Literary Theory and Criticism: Literature and Psychology PSY 3413 Topics in Film: Psychoanalysis and Cinema PSY 3414 Topics in Philosophy: Philosophy of Sex and Love (WIC) PSY 3483 Topics in Literary Theory and Criticism: Psychoanalysis and Literature PSY 4001 Research Project PSY 4081 Internship PSY 4407 Topics in Advanced Microeconomics: Applied Behavioral Economics PSY L098 Independent Study in Psychology* PSY L099 GHEA21 Topics in Psychology* * PSY 3[4-9]NN Topics in Psychology, PSY 4[4-9]NN Advanced Topics in Psychology, PSY L098 Independent Study in Psychology, and PSY L099 GHEA21 Topics in Psy- chology may be repeated for credit as long as the precise topic is different. Major Programs 111"
+        }
+      ]
     }
   },
   "minors": {
     "Economics": {
-      "source": "AY 2025-26 catalog p.118: required ECO 1001, ECO 1002, and ECO 3001 or ECO 3002; the PDF parser splits the 'or' line into a required ECO 3001 plus a one-course ECO 3002 choice.",
+      "source": "AY 2026-27 catalog p.115: required ECO 1001, ECO 1002, and ECO 3001 or ECO 3002; the PDF parser splits the 'or' line into a required ECO 3001 plus a one-course ECO 3002 choice.",
       "required_courses": [
         "ECO 1001",
         "ECO 1002"
@@ -1086,7 +1110,7 @@
       ]
     },
     "Political Science and International Relations": {
-      "source": "AY 2025-26 catalog p.131: 'Required Courses: ten credit hours out of POS 1001, POS 1002, POS 2013 or EUR 2013, POS 2002', then nine elective credit hours (19 in total). POS 2002 is the only 4-credit course, so ten credit hours means POS 2002 plus two of the others. The PDF parser made POS 1001, POS 1002 and POS 2013 required and paired EUR 2013 with POS 2002.",
+      "source": "AY 2026-27 catalog p.128: 'Required Courses: ten credit hours out of POS 1001, POS 1002, POS 2013 or EUR 2013, POS 2002', then nine elective credit hours (19 in total). POS 2002 is the only 4-credit course, so ten credit hours means POS 2002 plus two of the others. The PDF parser made POS 1001, POS 1002 and POS 2013 required and paired EUR 2013 with POS 2002.",
       "required_courses": [
         "POS 2002"
       ],
@@ -1125,7 +1149,7 @@
       ]
     },
     "Mathematics": {
-      "source": "AY 2025-26 catalog p.126: required MAT 1003, MAT 1004, MAT 1005, MAT 2001 or MAT 2013, and MAT 2012. The PDF parser attaches the 'or MAT 2013' line to MAT 2012.",
+      "source": "AY 2026-27 catalog p.123: required MAT 1003, MAT 1004, MAT 1005, MAT 2001 or MAT 2013, and MAT 2012. The PDF parser attaches the 'or MAT 2013' line to MAT 2012.",
       "required_courses": [
         "MAT 1003",
         "MAT 1004",
@@ -1175,7 +1199,7 @@
       ]
     },
     "Southeast European Studies": {
-      "source": "AY 2025-26 catalog p.133: 18 credit hours: at least six out of HTY 2021-2025, at least six out of ENG 2060 and HTY 3[4-9]NN Topics in Southeast European History, and two additional courses from those lists; at least six credit hours at the 3000/4000 level. The PDF parser made all six listed courses required.",
+      "source": "AY 2026-27 catalog p.130: 18 credit hours: at least six out of HTY 2021-2025, at least six out of ENG 2060 and HTY 3[4-9]NN Topics in Southeast European History, and two additional courses from those lists; at least six credit hours at the 3000/4000 level. The PDF parser made all six listed courses required.",
       "required_courses": [],
       "elective_requirements": [
         {
@@ -1212,7 +1236,7 @@
       ]
     },
     "Computer Science": {
-      "source": "AY 2025-26 catalog p.116: COS 1020 plus fifteen credit hours of electives with at least one course from each of three groups (18 in total). The PDF parser read 'at least one course' as the elective total, so progress showed 1 course instead of the remaining 6 credit hours.",
+      "source": "AY 2026-27 catalog pp.113-114: COS 1020 plus fifteen credit hours of electives with at least one course from each of three groups (18 in total). The PDF parser read 'at least one course' as the elective total, so progress showed 1 course instead of the remaining 6 credit hours. Algorithms is COS 3060 from AY 2026-27; COS 4060 (its earlier number) still counts.",
       "elective_requirements": [
         {
           "allowed_courses": [
@@ -1222,6 +1246,7 @@
             "COS 2035",
             "COS 3015",
             "COS 3031",
+            "COS 3060",
             "COS 4040",
             "COS 4060",
             "COS 4070",
@@ -1232,12 +1257,12 @@
           "id": "computer-science-elective-1",
           "is_total": true,
           "label": "Electives",
-          "rule_text": "Six more credit hours from the groups below. The catalog asks for fifteen elective credit hours with at least one course from each group; the three group courses are planned as course choices (9 credit hours). Fundamentals: COS 1050 Discrete Structures, COS 2035 Computer Architecture, COS 3031 Operating Systems, MAT 2050 Theory of Automata. Software Development: COS 2021 Fundamental Data Structures, COS 3015 Software Engineering, COS 4060 Algorithms. Advanced Topics: COS 2031 Introduction to UNIX, COS 4040 Computer Networks, COS 4070 Artificial Intelligence and AI Programming."
+          "rule_text": "Six more credit hours from the groups below. The catalog asks for fifteen elective credit hours with at least one course from each group; the three group courses are planned as course choices (9 credit hours). Fundamentals: COS 1050 Discrete Structures, COS 2035 Computer Architecture, COS 3031 Operating Systems, MAT 2050 Theory of Automata. Software Development: COS 2021 Fundamental Data Structures, COS 3015 Software Engineering, COS 3060 Algorithms (COS 4060 in earlier catalogs). Advanced Topics: COS 2031 Introduction to UNIX, COS 4040 Computer Networks, COS 4070 Artificial Intelligence and AI Programming."
         }
       ]
     },
     "Physics": {
-      "source": "AY 2025-26 catalog p.130: 20 credit hours: PHY 1010, PHY 1020, 9 credit hours of core electives and 3 of secondary electives (any other PHY course). The parsed blocks had no total, so elective progress was not tracked.",
+      "source": "AY 2026-27 catalog p.127: 20 credit hours: PHY 1010, PHY 1020, 9 credit hours of core electives and 3 of secondary electives (any other PHY course). The parsed blocks had no total, so elective progress was not tracked.",
       "elective_requirements": [
         {
           "allowed_courses": [],
@@ -1272,7 +1297,47 @@
           "rule_text": "Secondary Electives (3 credit hours) Any other PHY course."
         }
       ]
+    },
+    "Psychology": {
+      "source": "AY 2026-27 catalog pp.128-129: the elective list names the PSY cross-listings (PSY 2075, PSY 2076, PSY 3040, PSY 3061). Students who registered under the other listing (MLL/JMC 2075, HTY 2002, BUS 3040, BUS 3061) took the same course, so both codes count.",
+      "elective_requirements": [
+        {
+          "allowed_courses": [
+            "BUS 3040",
+            "BUS 3061",
+            "HTY 2002",
+            "JMC 2075",
+            "MLL 2075",
+            "PSY 2002",
+            "PSY 2003",
+            "PSY 2004",
+            "PSY 2005",
+            "PSY 2075",
+            "PSY 2076",
+            "PSY 3000",
+            "PSY 3001",
+            "PSY 3003",
+            "PSY 3007",
+            "PSY 3008",
+            "PSY 3009",
+            "PSY 3040",
+            "PSY 3061",
+            "PSY 3412",
+            "PSY 3413",
+            "PSY 3414",
+            "PSY 3483",
+            "PSY 4001",
+            "PSY 4407"
+          ],
+          "courses_required": null,
+          "credits_required": 9,
+          "id": "psychology-elective-1",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses Choose nine credit hours out of the following: PSY 2002 Psychopathology and Mental Health PSY 2003 Personality Theory PSY 2004 Physiological Psychology PSY 2005 Developmental Psychology PSY 2075 Intercultural Communication (WIC)** PSY 2076 The History of Emotions** PSY 3000 Advanced Research Methods in Psychology (WIC) PSY 3001 Capstone Project PSY 3003 Cognitive Psychology PSY 3007 Cultural Psychology PSY 3008 Evolutionary Psychology PSY 3009 Media Psychology (WIC) PSY 3040 Organizational Theory and Behavior** PSY 3061 Consumer Behavior** PSY 3[4-9]NN Topics in Psychology* PSY 3412 Topics in Literary Theory and Criticism: Literature and Psychology** PSY 3413 Topics in Film: Psychoanalysis and Cinema** PSY 3414 Topics in Philosophy: Philosophy of Sex and Love (WIC)** PSY 3483 Topics in Literary Theory and Criticism: Psychoanalysis and Literature** PSY 4001 Research Project PSY 4[4-9]NN Advanced Topics in Psychology* PSY 4407 Topics in Advanced Microeconomics: Applied Behavioral Economics** PSY L098 Independent Study in Psychology* PSY L099 GHEA21 Topics in Psychology* * PSY 3[4-9]NN Topics in Psychology, PSY 4[4-9]NN Advanced Topics in Psychology, PSY L098 Independent Study in Psychology, and PSY L099 GHEA21 Topics in Psy- chology may be repeated for credit as long as the precise topic is different. ** Out of the nine credits from elective courses counting toward the Psychology mi- nor, at least six credits must be from PSY-coded courses that are not cross-listed with other disciplines."
+        }
+      ]
     }
   },
-  "course_meta_source": "Prerequisites for courses whose description rows the PDF parser missed are copied from the 'Course Descriptions' table of the AY 2025-26 catalog."
+  "course_meta_source": "Prerequisites for courses whose description rows the PDF parser missed are copied from the 'Course Descriptions' table of the AY 2026-27 catalog."
 }

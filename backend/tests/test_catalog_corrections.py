@@ -1,4 +1,4 @@
-"""Corrections in data/policy_overrides.json, checked against the AY 2025-26 catalog PDF."""
+"""Corrections in data/policy_overrides.json, checked against the AY 2026-27 catalog PDF."""
 import os
 import sys
 from unittest.mock import patch

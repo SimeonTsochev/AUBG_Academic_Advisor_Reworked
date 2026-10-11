@@ -68,7 +68,7 @@ class MajorProgramChoiceRegressionTests(IsolatedTestCase):
         self.assertNotIn("Program Choice", placeholder_labels)
 
     def test_political_science_major_requires_pos2002_and_a_comparative_politics_choice(self):
-        # AY 2025-26 catalog p.110: POS 1001, POS 1002, "POS 2013 ... or EUR 2013 Comparative Politics", POS 2002.
+        # AY 2026-27 catalog p.108: POS 1001, POS 1002, "POS 2013 ... or EUR 2013 Comparative Politics", POS 2002.
         slots = build_requirement_slots(
             self.catalog,
             majors=["Political Science and International Relations"],

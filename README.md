@@ -1,6 +1,6 @@
 # AUBG Academic Advisor
 
-Plans a student's remaining semesters from the AUBG 2025-26 catalog: pick majors and minors, import a
+Plans a student's remaining semesters from the AUBG 2026-27 catalog: pick majors and minors, import a
 transcript, then edit the plan. The backend is the source of truth for what the plan contains and whether
 it lets the student graduate.
 

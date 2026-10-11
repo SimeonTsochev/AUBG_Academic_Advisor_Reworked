@@ -2216,7 +2216,7 @@ export function MainAdvisorScreen({
     const timeoutId = window.setTimeout(async () => {
       try {
         const snapshot = await createProgramSnapshot(
-          catalog.catalog_year ?? "2025-26",
+          catalog.catalog_year ?? "2026-27",
           snapshotPayload
         );
         if (cancelled) return;
@@ -6592,7 +6592,7 @@ export function MainAdvisorScreen({
                   electiveRequirements={electiveRequirementStatus}
                   progress={progress}
                   totalCredits={totalCredits}
-                  catalogYear={catalog.catalog_year ?? '2025-26'}
+                  catalogYear={catalog.catalog_year ?? '2026-27'}
                   genEdNeeds={genEdCategoryNeeds}
                   wic={wicRequirementStatus}
                   concentrationAudit={plan?.business_concentration_audit ?? null}

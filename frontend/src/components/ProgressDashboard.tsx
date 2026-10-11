@@ -64,7 +64,7 @@ export function ProgressDashboard({ progress, totalCredits, catalogYear }: Progr
 
       <p className="flex items-center gap-2 text-xs muted">
         <BadgeCheck aria-hidden="true" className="requirement-icon" />
-        Checked against the {catalogYear ? `AY ${catalogYear}` : 'AY 2025-26'} AUBG academic catalog.
+        Checked against the {catalogYear ? `AY ${catalogYear}` : 'AY 2026-27'} AUBG academic catalog.
       </p>
     </section>
   );
