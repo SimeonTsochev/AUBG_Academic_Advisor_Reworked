@@ -88,6 +88,7 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
         majors=req.majors,
         minors=req.minors,
         business_concentration=req.business_concentration,
+        program_options=req.program_options,
         completed_courses=set(req.completed_courses),
         manual_credits=[entry.model_dump() for entry in req.manual_credits],
         retake_courses=set(req.retake_courses or []),
@@ -103,6 +104,29 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
         in_progress_terms=req.in_progress_terms or {},
         current_term_label=req.current_term_label,
     )
+
+
+def _program_info(catalog: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """What the setup screen shows per major: diploma type and the options a student chooses."""
+    info: Dict[str, Dict[str, Any]] = {}
+    for name, data in (catalog.get("majors") or {}).items():
+        if not isinstance(data, dict):
+            continue
+        entry: Dict[str, Any] = {}
+        if data.get("diploma"):
+            entry["diploma"] = data["diploma"]
+        options = data.get("options")
+        if isinstance(options, dict) and options.get("choices"):
+            entry["options"] = {
+                "label": options.get("label") or "Option",
+                "required": bool(options.get("required")),
+                "multiple": bool(options.get("multiple")),
+                "choices": list(options["choices"]),
+                "description": options.get("description"),
+            }
+        if entry:
+            info[name] = entry
+    return info
 
 
 def _require_catalog_cache():
@@ -392,11 +416,7 @@ def load_default_catalog():
         course_meta=_catalog_course_meta_for_response(catalog),
         gen_ed=catalog.get("gen_ed", {}),
         excel_only_codes=excel_only_codes,
-        program_info={
-            name: {"diploma": data["diploma"]}
-            for name, data in (catalog.get("majors") or {}).items()
-            if isinstance(data, dict) and data.get("diploma")
-        },
+        program_info=_program_info(catalog),
     )
 
 

@@ -202,6 +202,34 @@ function electiveSection(block) {
   return `<h3>${esc(block.label)}</h3>${wording}${courses}`;
 }
 
+const DIPLOMA = {
+  dual: 'A dual-diploma major: graduates receive an American and a Bulgarian diploma.',
+  single: 'A single-diploma major (American diploma only): AUBG students also need a dual-diploma major to graduate.',
+};
+
+// CS concentrations, the European Studies language: options the student chooses.
+function optionSection(options) {
+  const heading = options.label === 'Concentration' ? 'Concentrations' : options.label;
+  const intro = options.description ? `<p>${esc(options.description)}</p>` : '';
+  const choices = options.choices
+    .filter((choice) => choice.blocks.length)
+    .map(
+      (choice) =>
+        `<h3>${esc(choice.name)}</h3>${choice.blocks
+          .map(
+            (block) =>
+              `<p class="rule">${
+                block.count >= block.courses.length
+                  ? `Take all ${plural(block.courses.length, 'course')}`
+                  : `Choose ${plural(block.count, 'course')} from these ${block.courses.length}`
+              }</p>${courseTable(block.courses)}`,
+          )
+          .join('')}`,
+    )
+    .join('');
+  return `<h2>${esc(heading)}</h2>${intro}${choices}`;
+}
+
 export function programPage(program, data) {
   const kind = KIND[program.kind];
   const path = programPath(program);
@@ -230,6 +258,9 @@ export function programPage(program, data) {
   if (program.electives.length) {
     sections.push(`<h2>Electives</h2>${program.electives.map(electiveSection).join('')}`);
   }
+  if (program.options) {
+    sections.push(optionSection(program.options));
+  }
   if (program.kind === 'major' && program.name === 'Business Administration' && data.business_concentrations.length) {
     sections.push(
       `<h2>Business concentrations</h2><p>Business Administration majors can add a concentration in ${esc(
@@ -244,6 +275,7 @@ export function programPage(program, data) {
   const body = `
 <h1>${esc(program.name)} ${program.kind} requirements at AUBG</h1>
 <p class="lede">What you need to complete the ${esc(program.name)} ${program.kind} at the American University in Bulgaria, from the AUBG Academic Catalog AY ${esc(year)}: ${esc(summary)}.</p>
+${program.diploma && DIPLOMA[program.diploma] ? `<p>${DIPLOMA[program.diploma]}</p>` : ''}
 <p><a class="btn" href="${plannerLink(program)}">Plan my ${esc(program.name)} ${program.kind} →</a></p>
 ${disclaimer(data)}
 ${sections.join('\n')}

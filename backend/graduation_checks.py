@@ -79,6 +79,9 @@ def double_counting_check(catalog: Dict, slots: Dict, courses: Set[str]) -> Tupl
     programs_by_course: Dict[str, Set[Tuple[str, str]]] = {}
     for slot_id, code in assignment.items():
         slot = slots.get("by_id", {}).get(slot_id) or {}
+        # Collateral requirements (e.g. the European Studies language) are not the program's own courses.
+        if slot.get("collateral"):
+            continue
         if code in courses and slot.get("program") and slot.get("program_type") in ("major", "minor"):
             programs_by_course.setdefault(code, set()).add((slot["program"], slot["program_type"]))
 
@@ -101,6 +104,23 @@ def double_counting_check(catalog: Dict, slots: Dict, courses: Set[str]) -> Tupl
     return errors, details
 
 
+def program_options_check(
+    catalog: Dict, majors: List[str], program_options: Dict[str, List[str]] | None
+) -> Tuple[List[str], Dict]:
+    """A major whose option is required (the European Studies language, p.90) needs a choice."""
+    errors: List[str] = []
+    chosen: Dict[str, List[str]] = {}
+    for major in majors:
+        options = (catalog.get("majors", {}).get(major) or {}).get("options")
+        if not isinstance(options, dict):
+            continue
+        valid = [c for c in (program_options or {}).get(major) or [] if c in (options.get("choices") or {})]
+        chosen[major] = valid
+        if options.get("required") and not valid:
+            errors.append(options.get("missing_message") or f"Choose a {options.get('label')} for the {major} major in setup.")
+    return errors, chosen
+
+
 def graduation_checks(
     catalog: Dict,
     majors: List[str],
@@ -108,6 +128,7 @@ def graduation_checks(
     courses: Set[str],
     aubg_credits: int,
     retakes: Set[str],
+    program_options: Dict[str, List[str]] | None = None,
 ) -> Tuple[List[str], Dict]:
     """`courses`: every completed, in-progress and planned course code (no placeholders)."""
     errors: List[str] = []
@@ -118,6 +139,7 @@ def graduation_checks(
         ("residency", residency_check(catalog, aubg_credits)),
         ("retakes", retake_check(retakes)),
         ("double_counting", double_counting_check(catalog, slots, courses)),
+        ("program_options", program_options_check(catalog, majors, program_options)),
     ):
         errors.extend(check_errors)
         checks[key] = details

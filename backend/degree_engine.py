@@ -2279,7 +2279,10 @@ def build_requirement_slots(
     majors: List[str],
     minors: List[str],
     business_concentration: str | None = None,
+    program_options: Dict[str, List[str]] | None = None,
 ) -> Dict:
+    """`program_options`: per major, the chosen options it offers (catalog `majors.<name>.options`),
+    e.g. {"Computer Science": ["Software Development"], "European Studies": ["French"]}."""
     slots: List[Dict] = []
     by_id: Dict[str, Dict] = {}
     slot_id = 0
@@ -2293,7 +2296,7 @@ def build_requirement_slots(
         by_id[slot["id"]] = slot
 
     def add_fixed_course(
-        course: str, program_name: str, program_type: str, concentration: str | None = None
+        course: str, program_name: str, program_type: str, concentration: str | None = None, **option: Any
     ) -> None:
         if course not in catalog_courses:
             return
@@ -2308,9 +2311,12 @@ def build_requirement_slots(
         }
         if concentration:
             slot["concentration"] = concentration
+        slot.update(option)
         add_slot(slot)
 
-    def add_choice_group(courses: List[str], count: int, program_name: str, program_type: str, label: str) -> None:
+    def add_choice_group(
+        courses: List[str], count: int, program_name: str, program_type: str, label: str, **option: Any
+    ) -> None:
         group_id = f"choice:{program_type}:{program_name}:{label}"
         filtered = [c for c in courses if c in catalog_courses]
         if not filtered or count <= 0:
@@ -2326,7 +2332,36 @@ def build_requirement_slots(
                 "program_type": program_type,
                 "group_id": group_id,
                 "label": label,
+                **option,
             })
+
+    def add_program_option_slots(major: str, data: Dict, fixed_seen: Set[str]) -> None:
+        """Slots for the options chosen for `major`. Blocks that count as the major's electives are
+        tagged `concentration` (elective progress then counts them as electives); the others are
+        collateral requirements outside the major's credits, such as the European Studies language."""
+        options = data.get("options")
+        if not isinstance(options, dict):
+            return
+        choices = options.get("choices") or {}
+        for choice in (program_options or {}).get(major) or []:
+            entry = choices.get(choice)
+            if not isinstance(entry, dict):
+                continue
+            option_label = str(options.get("requirement_label") or "{choice}").format(choice=choice)
+            for index, block in enumerate(entry.get("blocks") or []):
+                courses = [_normalize_course_code(c) for c in block.get("courses") or [] if isinstance(c, str)]
+                count = int(block.get("count") or 0)
+                if block.get("counts_as_major_elective", options.get("counts_as_major_elective")):
+                    tags: Dict[str, Any] = {"concentration": choice}
+                else:
+                    tags = {"option_label": option_label, "collateral": True}
+                if count >= len(courses):
+                    for course in courses:
+                        if course not in fixed_seen:
+                            fixed_seen.add(course)
+                            add_fixed_course(course, major, "major", **tags)
+                else:
+                    add_choice_group(courses, count, major, "major", f"{option_label} ({index + 1})", **tags)
 
     def parse_requirements(program_data: Dict) -> Tuple[List[str], List[Dict]]:
         reqs = program_data.get("required_courses")
@@ -2444,6 +2479,9 @@ def build_requirement_slots(
             add_fixed_course(course, major, "major", concentration=concentration)
         for group in choices:
             add_choice_group(group["courses"], group["count"], major, "major", group["label"])
+        add_program_option_slots(
+            major, data, {_normalize_course_code(c) for c in fixed + concentration_courses if isinstance(c, str)}
+        )
 
     for minor in minors:
         data = catalog.get("minors", {}).get(minor, {})
@@ -2775,6 +2813,20 @@ def _requirement_entry(slot: Dict) -> Dict[str, Any]:
     program = slot.get("program") or ""
     program_type = slot.get("program_type") or "program"
     owner_label = f"{program} {program_type}".strip()
+    if slot.get("option_label"):
+        return {
+            "program": program,
+            "program_type": program_type,
+            "kind": "option",
+            "label": f"{owner_label}: {slot['option_label']}",
+        }
+    if slot.get("concentration"):
+        return {
+            "program": program,
+            "program_type": program_type,
+            "kind": "concentration",
+            "label": f"{owner_label}: {slot['concentration']} concentration (counts as a major elective)",
+        }
     if slot.get("type") == "choice":
         options = len(slot.get("courses") or [])
         count = int(slot.get("count") or 1)
@@ -2784,13 +2836,6 @@ def _requirement_entry(slot: Dict) -> Dict[str, Any]:
             "program_type": program_type,
             "kind": "choice",
             "label": f"{owner_label}: {choice} of {options} options",
-        }
-    if slot.get("concentration"):
-        return {
-            "program": program,
-            "program_type": program_type,
-            "kind": "concentration",
-            "label": f"{owner_label}: {slot['concentration']} concentration (counts as a major elective)",
         }
     return {"program": program, "program_type": program_type, "kind": "required", "label": f"{owner_label}: required course"}
 
@@ -5405,6 +5450,7 @@ def generate_plan(
     in_progress_courses: Set[str] | List[str] | None = None,
     in_progress_terms: Dict[str, str] | None = None,
     current_term_label: str | None = None,
+    program_options: Dict[str, List[str]] | None = None,
 ) -> Dict:
     if not catalog.get("gen_ed", {}).get("rules"):
         raise ValueError("Gen Ed rules are missing from the catalog. Please re-upload a catalog with Gen Ed requirements.")
@@ -5462,7 +5508,9 @@ def generate_plan(
     if not (isinstance(degree_total_credits, int) and degree_total_credits > 0):
         degree_total_credits = None
 
-    slots = build_requirement_slots(catalog, majors, minors, business_concentration=business_concentration)
+    slots = build_requirement_slots(
+        catalog, majors, minors, business_concentration=business_concentration, program_options=program_options
+    )
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
     max_credits = max(14, int(max_credits_per_semester))
@@ -5750,6 +5798,7 @@ def generate_plan(
             catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset
         ) - total_manual_credits,
         retakes=normalized_retakes,
+        program_options=program_options,
     )
     validation_errors.extend(graduation_errors)
     is_valid = True

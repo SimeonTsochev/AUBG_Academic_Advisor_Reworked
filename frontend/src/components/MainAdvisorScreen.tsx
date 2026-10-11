@@ -5,6 +5,8 @@ import { ElectiveRecommendationPanel } from './ElectiveRecommendationPanel';
 import { PrereqConfirmDialog } from './PrereqConfirmDialog';
 import { AdvisorHeader } from './advisor/AdvisorHeader';
 import { PlanAlerts } from './advisor/PlanAlerts';
+import { ProgramOptionPrompt } from './advisor/ProgramOptionPrompt';
+import { majorsMissingRequiredOption, normalizeProgramOptions } from '../utils/programOptions';
 import { RequirementsTab } from './advisor/RequirementsTab';
 import { SummaryStrip } from './advisor/SummaryStrip';
 import type { Course, Progress, ElectiveSuggestion, FailedCourse, ManualCreditEntry, RetakeEntry } from '../types';
@@ -16,6 +18,7 @@ import type {
   PlanOverrideAdd,
   PlanOverrideRemove,
   PlanOverrides,
+  ProgramOptionSelection,
   ProgramSnapshotPayload,
   ProgramSnapshotSwappedElective,
   MinorSuggestion as ApiMinorSuggestion,
@@ -51,6 +54,8 @@ interface MainAdvisorScreenProps {
     minors: string[];
     businessConcentration: string | null;
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
+    /** Per major, the chosen options (a CS concentration, the European Studies language). */
+    programOptions?: ProgramOptionSelection;
     completedCourses: string[];
     inProgressCourses: string[];
     /** Transcript courses not passed; the plan schedules them again when still required. */
@@ -102,6 +107,7 @@ function buildSnapshotPayload(params: {
     minors: [...params.selection.minors],
     businessConcentration: params.selection.businessConcentration,
     economicsIntermediateChoice: params.selection.economicsIntermediateChoice,
+    programOptions: { ...(params.selection.programOptions ?? {}) },
     completedCourses: [...params.completedCourses],
     inProgressCourses: [...params.inProgressCourses],
     failedCourses: (params.selection.failedCourses ?? []).map((entry) => ({ ...entry })),
@@ -237,6 +243,12 @@ export function MainAdvisorScreen({
   const planAlertsRef = useRef<HTMLDivElement | null>(null);
   const [plan, setPlan] = useState<GeneratePlanResponse | null>(null);
   const [overrides, setOverrides] = useState<PlanOverrides>(() => clonePlanOverrides(initialSnapshot?.overrides));
+  // Chosen major options. Editable here so a plan saved without the European Studies language can add it
+  // without redoing setup (which would start a new plan).
+  const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>(
+    () => normalizeProgramOptions(selection.programOptions, selection.majors, catalog.program_info ?? {}),
+  );
+  const majorsNeedingOption = majorsMissingRequiredOption(selection.majors, catalog.program_info ?? {}, programOptions);
 
   const addOverrideAdd = (
     term: string,
@@ -2134,7 +2146,7 @@ export function MainAdvisorScreen({
   const snapshotPayload = useMemo(
     () =>
       buildSnapshotPayload({
-        selection,
+        selection: { ...selection, programOptions },
         completedCourses,
         inProgressCourses,
         manualCredits,
@@ -2151,6 +2163,7 @@ export function MainAdvisorScreen({
       }),
     [
       selection,
+      programOptions,
       completedCourses,
       inProgressCourses,
       manualCredits,
@@ -2300,6 +2313,7 @@ export function MainAdvisorScreen({
     majors: selection.majors,
     minors: selection.minors,
     business_concentration: selection.businessConcentration,
+    program_options: programOptions,
     completed_courses: planningCompleted,
     manual_credits: manualCredits,
     retake_courses: [],
@@ -2320,6 +2334,7 @@ export function MainAdvisorScreen({
   }), [
     catalog.catalog_id,
     selection,
+    programOptions,
     planningCompleted,
     manualCredits,
     effectiveInProgress,
@@ -5150,6 +5165,10 @@ export function MainAdvisorScreen({
         majors={selection.majors}
         minors={selection.minors}
         businessConcentration={selection.businessConcentration}
+        optionLabels={selection.majors.flatMap((major) => {
+          const label = catalog.program_info?.[major]?.options?.label;
+          return label ? (programOptions[major] ?? []).map((choice) => `${label}: ${choice}`) : [];
+        })}
         canDownload={!!plan}
         share={{
           token: currentSnapshotToken,
@@ -5314,6 +5333,15 @@ export function MainAdvisorScreen({
                 )}
                 {plan && (
                   <>
+                    {majorsNeedingOption.length > 0 && (
+                      <div className="advisor-inset">
+                        <ProgramOptionPrompt
+                          majors={majorsNeedingOption}
+                          programInfo={catalog.program_info ?? {}}
+                          onChoose={(major, choice) => setProgramOptions((prev) => ({ ...prev, [major]: [choice] }))}
+                        />
+                      </div>
+                    )}
                     {validationErrors.length > 0 && (
                       <div className="advisor-inset">
                         <PlanAlerts ref={planAlertsRef} errors={validationErrors} />

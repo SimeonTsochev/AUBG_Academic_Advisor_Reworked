@@ -5,12 +5,15 @@ import {
   importTranscriptText,
   searchCourses,
   type CourseCatalogRecord,
+  type ProgramInfo,
+  type ProgramOptionSelection,
   type TranscriptImportCourse,
   type TranscriptImportResponse,
 } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { extractTranscriptLinesFromImage, extractTranscriptLinesFromPdf } from '../utils/transcriptOcr';
 import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from '../constants/academic';
+import { majorsMissingRequiredOption, normalizeProgramOptions, toggleProgramOption } from '../utils/programOptions';
 import type { FailedCourse, ManualCreditEntry } from '../types';
 import {
   TranscriptImportReviewDialog,
@@ -74,7 +77,7 @@ interface AcademicSetupScreenProps {
   majors: string[];
   minors: string[];
   /** Per major; "dual" majors lead to a US and a Bulgarian diploma (catalog p.72). */
-  programInfo?: Record<string, { diploma?: "dual" | "single" }>;
+  programInfo?: Record<string, ProgramInfo>;
   courses: Record<string, string>; // code -> title
   courseMeta?: Record<string, {
     credits?: number;
@@ -88,6 +91,7 @@ interface AcademicSetupScreenProps {
     minors: string[];
     businessConcentration: string | null;
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
+    programOptions: ProgramOptionSelection;
     completedCourses: string[];
     inProgressCourses: string[];
     failedCourses: FailedCourse[];
@@ -126,6 +130,7 @@ export function AcademicSetupScreen({
   const [selectedMinors, setSelectedMinors] = useState<string[]>(initialMinors);
   const [businessConcentration, setBusinessConcentration] = useState<string>('General');
   const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(null);
+  const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>({});
   const [maxCreditsPerSemester, setMaxCreditsPerSemester] = useState(17);
   const [maxCreditsInput, setMaxCreditsInput] = useState('17');
   const [waivedMat1000, setWaivedMat1000] = useState(false);
@@ -201,9 +206,12 @@ export function AcademicSetupScreen({
     businessMajorSelected
     && businessConcentration === 'Marketing'
     && selectedMinors.includes('Integrated Marketing Communications');
+  const majorsWithOptions = selectedMajors.filter((m) => programInfo[m]?.options);
+  const selectedProgramOptions = normalizeProgramOptions(programOptions, selectedMajors, programInfo);
   const canSubmit =
     selectedMajors.length > 0
     && (!economicsMinorSelected || economicsIntermediateChoice !== null)
+    && majorsMissingRequiredOption(selectedMajors, programInfo, selectedProgramOptions).length === 0
     && !marketingImcConflict;
 
   const availableMinors = useMemo(
@@ -584,6 +592,7 @@ export function AcademicSetupScreen({
       minors: selectedMinors,
       businessConcentration: businessMajorSelected ? businessConcentration : null,
       economicsIntermediateChoice,
+      programOptions: selectedProgramOptions,
       completedCourses: completedForPlan,
       inProgressCourses,
       // A course added by hand as completed or in progress overrides an earlier failed attempt.
@@ -920,6 +929,38 @@ export function AcademicSetupScreen({
                 </div>
               )}
             </div>
+
+            {majorsWithOptions.map((major) => {
+              const options = programInfo[major]?.options;
+              if (!options) return null;
+              const chosen = selectedProgramOptions[major] ?? [];
+              return (
+                <div key={major} className="card card-pad setup-card">
+                  <h2 className="section-title">{major}: {options.label}</h2>
+                  <p className="section-subtitle setup-card-intro">
+                    {options.required
+                      ? 'Required: choose one.'
+                      : options.multiple ? 'Optional: choose any you want to declare.' : 'Optional.'}
+                  </p>
+                  <div className="grid-auto">
+                    {options.choices.map((choice) => (
+                      <label key={choice} className="select-tile">
+                        <input
+                          type={options.multiple ? 'checkbox' : 'radio'}
+                          name={`program-option-${major}`}
+                          checked={chosen.includes(choice)}
+                          onChange={() => setProgramOptions((prev) => toggleProgramOption(
+                            normalizeProgramOptions(prev, selectedMajors, programInfo), major, choice, options.multiple,
+                          ))}
+                        />
+                        <span>{choice}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {options.description && <div className="text-xs mt-3 muted">{options.description}</div>}
+                </div>
+              );
+            })}
 
             {businessMajorSelected && (
               <div className="card card-pad setup-card">

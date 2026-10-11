@@ -1089,13 +1089,190 @@
       "diploma": "dual"
     },
     "Computer Science": {
-      "diploma": "dual"
+      "diploma": "dual",
+      "options": {
+        "label": "Concentration",
+        "description": "A concentration focuses your 12 elective credits: Foundations of Computing takes all four electives from its list; Software Development takes three, plus BUS 2060 or ENT 3000 (catalog p.87).",
+        "required": false,
+        "multiple": true,
+        "counts_as_major_elective": true,
+        "requirement_label": "{choice} concentration",
+        "source": "AY 2026-27 catalog p.87: concentrations are optional, one or more may be declared, and their courses are taken as the major's electives; Software Development adds three credits of BUS 2060 or ENT 3000 outside the major. Counts are credit hours / 3 (COS 4081 Internship is 2 credits).",
+        "choices": {
+          "Foundations of Computing": {
+            "blocks": [
+              {
+                "courses": [
+                  "COS 3031",
+                  "COS 4040",
+                  "COS 4070",
+                  "COS 4081",
+                  "INF 2080",
+                  "MAT 2014",
+                  "MAT 2050"
+                ],
+                "count": 4
+              }
+            ]
+          },
+          "Software Development": {
+            "blocks": [
+              {
+                "courses": [
+                  "COS 2031",
+                  "COS 3040",
+                  "COS 4081",
+                  "INF 1030",
+                  "INF 2080",
+                  "INF 3035",
+                  "INF 3075"
+                ],
+                "count": 3
+              },
+              {
+                "courses": [
+                  "BUS 2060",
+                  "ENT 3000"
+                ],
+                "count": 1,
+                "counts_as_major_elective": false
+              }
+            ]
+          }
+        }
+      }
     },
     "Economics": {
       "diploma": "dual"
     },
     "European Studies": {
-      "diploma": "dual"
+      "diploma": "dual",
+      "source": "AY 2026-27 catalog pp.90-91: the parser runs the Required Language Proficiency list (MLL 1015-2057) and the honors text into the nine-credit block, so language courses counted as major electives; EUR 4092 does not count toward the major's credit hours. The language requirement is the `options` choice instead.",
+      "elective_requirements": [
+        {
+          "allowed_courses": [],
+          "courses_required": null,
+          "credits_required": 19,
+          "id": "european-studies-elective-1",
+          "is_total": true,
+          "label": "Elective Courses",
+          "rule_text": "Elective Courses (19 credit hours)"
+        },
+        {
+          "allowed_courses": [
+            "EUR 3003",
+            "EUR 3007",
+            "EUR 3020",
+            "EUR 3021",
+            "EUR 3022",
+            "POS 3007"
+          ],
+          "courses_required": null,
+          "credits_required": 10,
+          "id": "european-studies-elective-2",
+          "is_total": false,
+          "label": "Ten credit hours from the following:",
+          "rule_text": "Ten credit hours from the following: EUR 3003 Policies and Policy-Making in the EU (WIC) EUR 3007 Research Methods (also listed as POS 3007) EUR 3020 Internal Market and EU Competition Law EUR 3021 EU Project Writing EUR 3022 Lobbying and Advocacy in the European Union: Interest Groups and NGOs"
+        },
+        {
+          "allowed_courses": [
+            "EUR 4081",
+            "MLL 3001",
+            "MLL 3002",
+            "MLL 3003"
+          ],
+          "courses_required": null,
+          "credits_required": 9,
+          "id": "european-studies-elective-3",
+          "is_total": false,
+          "label": "Nine credit hours from the following:",
+          "rule_text": "Nine credit hours from the following: EUR 4081 Internship EUR 4[4-9]NN Topics in European Politics EUR 4[4-9]NN Topics in Areas Related to the European Union MLL 3001 Modern France—Society, Politics, and Culture MLL 3002 Modern Germany—Society, Politics, and Culture MLL 3003 Modern Spain—Society, Politics, and Culture"
+        }
+      ],
+      "options": {
+        "label": "Language (B1)",
+        "description": "The major needs intermediate (B1) proficiency in French, German, Spanish or Bulgarian, other than your mother tongue. Language professors waive the courses if you hold a B1 certificate (catalog pp.90-91).",
+        "required": true,
+        "multiple": false,
+        "counts_as_major_elective": false,
+        "requirement_label": "{choice} language proficiency (B1)",
+        "missing_message": "The European Studies major needs B1 proficiency in French, German, Spanish or Bulgarian; choose the language, or the waiver if you hold a B1 certificate (catalog p.90).",
+        "source": "AY 2026-27 catalog p.90: intermediate (B1) proficiency in French, German, Spanish or Bulgarian, outside the major's 28 credits; p.91: language professors waive the courses for a B1 certificate.",
+        "choices": {
+          "French": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 1015",
+                  "MLL 1016",
+                  "MLL 2015"
+                ],
+                "count": 3
+              },
+              {
+                "courses": [
+                  "MLL 2016",
+                  "MLL 2017"
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "German": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 1025",
+                  "MLL 1026",
+                  "MLL 2025"
+                ],
+                "count": 3
+              },
+              {
+                "courses": [
+                  "MLL 2026",
+                  "MLL 2027"
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "Spanish": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 1055",
+                  "MLL 1056",
+                  "MLL 2055"
+                ],
+                "count": 3
+              },
+              {
+                "courses": [
+                  "MLL 2056",
+                  "MLL 2057"
+                ],
+                "count": 1
+              }
+            ]
+          },
+          "Bulgarian": {
+            "blocks": [
+              {
+                "courses": [
+                  "MLL 1035",
+                  "MLL 1036",
+                  "MLL 2035"
+                ],
+                "count": 3
+              }
+            ]
+          },
+          "Waived (B1 certificate)": {
+            "blocks": []
+          }
+        }
+      }
     },
     "History and Civilizations": {
       "diploma": "dual"

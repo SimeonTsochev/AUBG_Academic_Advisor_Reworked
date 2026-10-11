@@ -2,14 +2,31 @@ import type { FailedCourse, ManualCreditEntry, RetakeEntry } from "./types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+/** Options a major offers, e.g. a Computer Science concentration or the European Studies language. */
+export interface ProgramOptions {
+  label: string;
+  required: boolean;
+  multiple: boolean;
+  choices: string[];
+  description?: string | null;
+}
+
+export interface ProgramInfo {
+  diploma?: "dual" | "single";
+  options?: ProgramOptions;
+}
+
+/** Per major, the chosen options (e.g. { "European Studies": ["French"] }). */
+export type ProgramOptionSelection = Record<string, string[]>;
+
 export interface UploadCatalogResponse {
   catalog_id: string;
   catalog_year?: string | null;
   majors: string[];
   minors: string[];
   excel_only_codes?: string[];
-  /** Per major; "dual" majors lead to a US and a Bulgarian diploma (catalog p.72). */
-  program_info?: Record<string, { diploma?: "dual" | "single" }>;
+  /** Per major: diploma type ("dual" = US + Bulgarian, catalog p.72) and the options a student chooses. */
+  program_info?: Record<string, ProgramInfo>;
   courses: Record<string, string>; // code -> title (best-effort)
   course_meta?: Record<string, {
     title?: string | null;
@@ -277,6 +294,7 @@ export interface ProgramSnapshotPayload {
   minors: string[];
   businessConcentration?: string | null;
   economicsIntermediateChoice?: "ECO 3001" | "ECO 3002" | null;
+  programOptions?: ProgramOptionSelection;
   completedCourses: string[];
   inProgressCourses: string[];
   failedCourses?: FailedCourse[];
@@ -315,6 +333,7 @@ export interface GeneratePlanRequest {
   majors: string[];
   minors: string[];
   business_concentration?: string | null;
+  program_options?: ProgramOptionSelection;
   completed_courses: string[];
   manual_credits?: ManualCreditEntry[];
   retake_courses?: string[];
@@ -403,6 +422,7 @@ export interface GraduationChecks {
   residency: { aubg_credits: number; required: number };
   retakes: { count: number; limit: number };
   double_counting: { programs: string[]; courses: string[]; limit: number }[];
+  program_options: ProgramOptionSelection;
 }
 
 export interface GeneratePlanResponse {

@@ -12,6 +12,8 @@ interface AdvisorHeaderProps {
   majors: string[];
   minors: string[];
   businessConcentration: string | null;
+  /** Chosen major options, already labelled, e.g. "Concentration: Software Development". */
+  optionLabels?: string[];
   canDownload: boolean;
   share: ShareToken;
   onBack: () => void;
@@ -41,6 +43,7 @@ export function AdvisorHeader({
   majors,
   minors,
   businessConcentration,
+  optionLabels = [],
   canDownload,
   share,
   onBack,
@@ -68,6 +71,9 @@ export function AdvisorHeader({
               {businessConcentration && businessConcentration !== 'General' && (
                 <span className="badge badge-gold">{businessConcentration} concentration</span>
               )}
+              {optionLabels.map((label) => (
+                <span key={`option:${label}`} className="badge badge-gold">{label}</span>
+              ))}
               {minors.map((minor) => (
                 <span key={`minor:${minor}`} className="badge badge-neutral">Minor: {minor}</span>
               ))}

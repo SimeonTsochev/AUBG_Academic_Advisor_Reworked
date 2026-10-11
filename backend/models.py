@@ -11,7 +11,8 @@ class UploadCatalogResponse(BaseModel):
     course_meta: Dict[str, Dict] = Field(default_factory=dict)
     gen_ed: Dict[str, Dict] = Field(default_factory=dict)
     excel_only_codes: List[str] = Field(default_factory=list)
-    # Per major: {"diploma": "dual" | "single"} (catalog p.72).
+    # Per major: {"diploma": "dual" | "single"} (catalog p.72) and the options it offers,
+    # {"label", "description", "required", "multiple", "choices": [names]}.
     program_info: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -70,6 +71,9 @@ class GeneratePlanRequest(BaseModel):
     majors: List[str] = Field(default_factory=list)
     minors: List[str] = Field(default_factory=list)
     business_concentration: Optional[str] = None
+    # Per major, the chosen options it offers (catalog majors.<name>.options): a Computer Science
+    # concentration, the European Studies language.
+    program_options: Dict[str, List[str]] = Field(default_factory=dict)
     completed_courses: List[str] = Field(default_factory=list)
     manual_credits: List[ManualCredit] = Field(default_factory=list)
     retake_courses: List[str] = Field(default_factory=list)
@@ -257,6 +261,8 @@ class GraduationChecks(BaseModel):
     residency: ResidencyCheck
     retakes: RetakeCheck
     double_counting: List[SharedCourses] = Field(default_factory=list)
+    # Per major offering options: the valid chosen options (e.g. {"European Studies": ["French"]}).
+    program_options: Dict[str, List[str]] = Field(default_factory=dict)
 
 
 class GeneratePlanResponse(BaseModel):

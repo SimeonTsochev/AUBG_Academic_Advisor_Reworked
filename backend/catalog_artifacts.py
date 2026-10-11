@@ -236,9 +236,12 @@ def _apply_program_policy(programs: Dict[str, Any], overrides: Dict[str, Any]) -
             )
             target["elective_requirements"] = existing_blocks
 
-        # Program facts the PDF parser does not extract: "dual" or "single" diploma (catalog p.72).
+        # Program facts the PDF parser does not extract: "dual" or "single" diploma (catalog p.72), and
+        # options the student chooses (a CS concentration, the European Studies language).
         if override.get("diploma") in ("dual", "single"):
             target["diploma"] = override["diploma"]
+        if isinstance(override.get("options"), dict):
+            target["options"] = deepcopy(override["options"])
 
 
 def apply_policy_overrides(

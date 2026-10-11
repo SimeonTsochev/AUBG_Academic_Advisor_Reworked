@@ -52,6 +52,23 @@ describe("static requirement pages", () => {
     expect(plannerLink(csMajor)).toBe("/?major=Computer%20Science");
   });
 
+  it("shows the diploma type and the options a major offers", () => {
+    const html = programPage(csMajor, data);
+    expect(html).toContain("dual-diploma major");
+    expect(html).toContain("<h2>Concentrations</h2>");
+    expect(html).toContain("<h3>Foundations of Computing</h3>");
+    expect(html).toContain(">BUS 2060<");
+
+    const european = data.programs.find((p) => p.kind === "major" && p.name === "European Studies")!;
+    const europeanHtml = programPage(european, data);
+    expect(europeanHtml).toContain("<h2>Language (B1)</h2>");
+    expect(europeanHtml).toContain(">MLL 1015<");
+    expect(europeanHtml).not.toContain("<h3>Waived (B1 certificate)</h3>");
+
+    const psychology = data.programs.find((p) => p.kind === "major" && p.name === "Psychology")!;
+    expect(programPage(psychology, data)).toContain("single-diploma major");
+  });
+
   it("summarises requirements from the data", () => {
     expect(
       requirementSummary({

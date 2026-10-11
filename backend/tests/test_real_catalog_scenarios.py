@@ -55,6 +55,16 @@ class Scenario:
     result: Dict = field(default_factory=dict)
 
 
+def _required_options(catalog: Dict, majors: List[str]) -> Dict[str, List[str]]:
+    """The first real choice for each required major option (French for the European Studies language)."""
+    chosen = {}
+    for major in majors:
+        options = (catalog.get("majors", {}).get(major) or {}).get("options") or {}
+        if options.get("required"):
+            chosen[major] = [next(c for c, entry in options["choices"].items() if entry.get("blocks"))]
+    return chosen
+
+
 def _plan(catalog: Dict, majors: List[str], minors: List[str], completed: Set[str], **kwargs) -> Dict:
     return generate_plan(
         catalog=catalog,
@@ -64,6 +74,7 @@ def _plan(catalog: Dict, majors: List[str], minors: List[str], completed: Set[st
         max_credits_per_semester=MAX_CREDITS,
         start_term_season=START_SEASON,
         start_term_year=START_YEAR,
+        program_options=_required_options(catalog, majors),
         **kwargs,
     )
 
@@ -143,7 +154,9 @@ class RealCatalogScenarioTests(IsolatedTestCase):
             with self.subTest(s.label):
                 planned = {c["code"] for t in s.result["semester_plan"] for c in _real_courses(t)}
                 taken = s.completed | planned
-                slots = build_requirement_slots(self.catalog, s.majors, s.minors)
+                slots = build_requirement_slots(
+                    self.catalog, s.majors, s.minors, program_options=_required_options(self.catalog, s.majors)
+                )
                 selection = select_courses_for_slots(self.catalog, slots, taken)
                 unmet = sorted(
                     {sid for sid, code in selection["slot_assignment"].items() if code not in taken}

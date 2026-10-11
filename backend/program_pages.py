@@ -113,9 +113,32 @@ def _program(catalog: Dict[str, Any], kind: str, name: str) -> Dict[str, Any]:
         "kind": kind,
         "name": name,
         "slug": slugify(name),
+        "diploma": data.get("diploma") if kind == "major" else None,
         "required": _courses(catalog, required),
         "choices": choices,
         "electives": electives,
+        "options": _options(catalog, data.get("options")),
+    }
+
+
+def _options(catalog: Dict[str, Any], options: Any) -> Dict[str, Any] | None:
+    """A major's student-chosen options (CS concentrations, the European Studies language)."""
+    if not isinstance(options, dict) or not options.get("choices"):
+        return None
+    return {
+        "label": options.get("label"),
+        "description": options.get("description"),
+        "required": bool(options.get("required")),
+        "choices": [
+            {
+                "name": choice,
+                "blocks": [
+                    {"count": int(block.get("count") or 0), "courses": _courses(catalog, block.get("courses") or [])}
+                    for block in (entry or {}).get("blocks") or []
+                ],
+            }
+            for choice, entry in options["choices"].items()
+        ],
     }
 
 

@@ -7,6 +7,7 @@ import {
   getProgramSnapshot,
   loadDefaultCatalog,
   type PlanOverrides,
+  type ProgramOptionSelection,
   type ProgramSnapshotPayload,
   type ProgramSnapshotSwappedElective,
   type UploadCatalogResponse,
@@ -29,6 +30,7 @@ interface AcademicSelection {
   minors: string[];       // supports multiple minors
   businessConcentration: string | null;
   economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
+  programOptions: ProgramOptionSelection;
   completedCourses: string[];
   inProgressCourses: string[];
   failedCourses: FailedCourse[];
@@ -79,6 +81,17 @@ const toStringMap = (value: unknown): Record<string, string> => {
     if (typeof entry === 'string' && entry.trim().length > 0) {
       out[key] = entry;
     }
+  });
+  return out;
+};
+
+// Per major, the chosen options; the backend ignores majors or choices it does not offer.
+const toProgramOptions = (value: unknown): ProgramOptionSelection => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: ProgramOptionSelection = {};
+  Object.entries(value as Record<string, unknown>).forEach(([major, choices]) => {
+    const valid = toStringArray(choices);
+    if (valid.length > 0) out[major] = valid;
   });
   return out;
 };
@@ -249,6 +262,7 @@ const normalizeProgramSnapshotPayload = (value: unknown): ProgramSnapshotPayload
       ? (businessConcentrationRaw ?? 'General')
       : null,
     economicsIntermediateChoice,
+    programOptions: toProgramOptions(raw.programOptions),
     completedCourses: toStringArray(raw.completedCourses),
     inProgressCourses: toStringArray(raw.inProgressCourses),
     failedCourses: normalizeFailedCourses(raw.failedCourses),
@@ -308,6 +322,7 @@ export default function App() {
     minors: [],
     businessConcentration: null,
     economicsIntermediateChoice: null,
+    programOptions: {},
     completedCourses: [],
     inProgressCourses: [],
     failedCourses: [],
@@ -383,6 +398,7 @@ export default function App() {
           minors: normalized.minors,
           businessConcentration: normalized.businessConcentration,
           economicsIntermediateChoice: normalized.economicsIntermediateChoice ?? null,
+          programOptions: normalized.programOptions ?? {},
           completedCourses: normalized.completedCourses,
           inProgressCourses: normalized.inProgressCourses,
           failedCourses: normalized.failedCourses ?? [],
