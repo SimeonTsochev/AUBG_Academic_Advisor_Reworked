@@ -107,6 +107,14 @@ class AcademicRecordTests(IsolatedTestCase):
         errors, _ = self._record([grade("STA 1005", "A")], semester_plan=[{"term": "Fall 2026", "credits": 20}], earned=40)
         self.assertTrue(any("Dean of Faculty" in e for e in errors))
 
+    def test_overloads_are_one_error_per_rule_and_first_year_comes_first(self):
+        terms = [{"term": t, "credits": 20} for t in ("Fall 2026", "Spring 2027", "Fall 2027")]
+        errors, _ = self._record([grade("STA 1005", "C")], semester_plan=terms, earned=10)
+        # Fall 2026 starts with 10 earned credits (first year); after it the student has 30.
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(errors[0].startswith("Fall 2026 has more than 17 credits; first-year students"))
+        self.assertTrue(errors[1].startswith("Spring 2027 and Fall 2027 have more than 19 credits"))
+
     def test_generate_plan_returns_the_record(self):
         with patch.object(degree_engine, "_current_start_term", return_value=("Fall", 2026)):
             plan = generate_plan(

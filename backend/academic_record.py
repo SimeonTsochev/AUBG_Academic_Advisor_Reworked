@@ -76,6 +76,51 @@ def honors_outlook(gpa: float | None, attempted: int, points: float, remaining_c
     return outlook
 
 
+def _terms_phrase(terms: List[str]) -> str:
+    names = terms[0] if len(terms) == 1 else ", ".join(terms[:-1]) + " and " + terms[-1]
+    return f"{names} {'has' if len(terms) == 1 else 'have'}"
+
+
+def _load_errors(
+    catalog: Dict, semester_plan: List[Dict], occupied: Dict[str, int], earned: int, gpa: float | None
+) -> List[str]:
+    """One error per broken course-load rule (pp.65-66), naming the terms that break it."""
+    # Like residency, the load rules only apply to a catalog that states the degree's size.
+    if not catalog.get("degree_total_credits"):
+        return []
+    first_year: List[str] = []
+    low_gpa: List[str] = []
+    above_max: List[str] = []
+    for term in semester_plan:
+        label = term.get("term") or ""
+        load = int(term.get("credits") or 0) + int(occupied.get(label, 0) or 0)
+        if load > STANDARD_MAX_LOAD and earned < FIRST_YEAR_CREDITS:
+            first_year.append(label)
+        elif load > OVERLOAD_MAX_LOAD:
+            above_max.append(label)
+        elif load > STANDARD_MAX_LOAD and gpa is not None and gpa < OVERLOAD_GPA:
+            low_gpa.append(label)
+        earned += load
+    lower = f"Lower the max credits per semester to {STANDARD_MAX_LOAD}."
+    errors = []
+    if first_year:
+        errors.append(
+            f"{_terms_phrase(first_year)} more than {STANDARD_MAX_LOAD} credits; first-year students cannot "
+            f"take an overload (catalog p.65). {lower}"
+        )
+    if low_gpa:
+        errors.append(
+            f"{_terms_phrase(low_gpa)} more than {STANDARD_MAX_LOAD} credits; that needs a cumulative GPA of "
+            f"at least {OVERLOAD_GPA:.3f} (yours is {gpa:.3f}, catalog p.66). {lower}"
+        )
+    if above_max:
+        errors.append(
+            f"{_terms_phrase(above_max)} more than {OVERLOAD_MAX_LOAD} credits, which needs the Dean of "
+            f"Faculty's permission (catalog p.66)."
+        )
+    return errors
+
+
 def academic_record(
     catalog: Dict,
     grades: List[Dict],
@@ -156,28 +201,7 @@ def academic_record(
             )
 
     max_load = OVERLOAD_MAX_LOAD if gpa is not None and gpa >= OVERLOAD_GPA else STANDARD_MAX_LOAD
-    occupied = occupied_credits_by_term or {}
-    earned = earned_credits
-    # Like residency, the load rules only apply to a catalog that states the degree's size.
-    for term in semester_plan if catalog.get("degree_total_credits") else []:
-        label = term.get("term") or ""
-        load = int(term.get("credits") or 0) + int(occupied.get(label, 0) or 0)
-        if load > OVERLOAD_MAX_LOAD:
-            errors.append(
-                f"{label} has {load} credits; more than {OVERLOAD_MAX_LOAD} needs the Dean of Faculty's "
-                "permission (catalog p.66)."
-            )
-        elif load > STANDARD_MAX_LOAD and earned < FIRST_YEAR_CREDITS:
-            errors.append(
-                f"{label} has {load} credits; first-year students cannot take more than "
-                f"{STANDARD_MAX_LOAD} (catalog p.65)."
-            )
-        elif load > STANDARD_MAX_LOAD and gpa is not None and gpa < OVERLOAD_GPA:
-            errors.append(
-                f"{label} has {load} credits; more than {STANDARD_MAX_LOAD} needs a cumulative GPA of at least "
-                f"{OVERLOAD_GPA:.3f} (yours is {gpa:.3f}, catalog p.66)."
-            )
-        earned += load
+    errors.extend(_load_errors(catalog, semester_plan, occupied_credits_by_term or {}, earned_credits, gpa))
 
     record = {
         "has_grades": bool(latest),

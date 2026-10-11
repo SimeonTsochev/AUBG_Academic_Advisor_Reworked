@@ -5799,7 +5799,13 @@ def generate_plan(
         aubg_credits=_projected_degree_credits(
             catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset
         ) - total_manual_credits,
-        retakes=normalized_retakes,
+        # The frontend sends retakes as `is_retake` override adds, not as retake_courses.
+        retakes=normalized_retakes | {
+            course["code"]
+            for term in semester_plan
+            for course in term.get("courses", []) or []
+            if course.get("is_retake") and isinstance(course.get("code"), str)
+        },
         program_options=program_options,
     )
     validation_errors.extend(graduation_errors)

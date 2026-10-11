@@ -86,6 +86,20 @@ class GraduationCheckTests(IsolatedTestCase):
         # Transferred courses never count as WICs (catalog p.80), so the GenEd WICs are gone too.
         self.assertTrue(any("writing-intensive" in e for e in plan["validation_errors"]))
 
+    def test_retakes_planned_as_overrides_count(self):
+        # The frontend plans a retake as an override add with is_retake, not via retake_courses.
+        retaken = ["STA 1005", "ECO 1001", "ECO 1002", "ENG 1001"]
+        plan = self._plan(
+            ["Economics"],
+            completed_courses=set(retaken),
+            overrides={"add": [
+                {"term": "Spring 2027", "code": code, "instance_id": f"retake-{code}", "is_retake": True}
+                for code in retaken
+            ]},
+        )
+        self.assertEqual(plan["graduation_checks"]["retakes"]["count"], 4)
+        self.assertTrue(any("repeat at most 3" in e for e in plan["validation_errors"]))
+
     def test_more_than_three_retakes(self):
         self.assertEqual(retake_check({"A", "B", "C"})[0], [])
         self.assertEqual(len(retake_check({"A", "B", "C", "D"})[0]), 1)
