@@ -88,6 +88,22 @@ class GraduationCheckTests(IsolatedTestCase):
         # Transferred courses never count as WICs (catalog p.80), so the GenEd WICs are gone too.
         self.assertTrue(any("writing-intensive" in e for e in plan["validation_errors"]))
 
+    def test_full_time_minimum_is_twelve_credits(self):
+        # Catalog p.57: full-time status takes at least 12 credits a semester.
+        baseline = self._plan(["Economics"])
+        term = next(
+            t for t in baseline["semester_plan"]
+            if t["credits"] == 15 and all(c["code"].startswith("FREE ELECTIVE") for c in t["courses"])
+        )
+        electives = [{"term": term["term"], "code": c["code"], "instance_id": c["instance_id"]} for c in term["courses"]]
+
+        def below_minimum(removed):
+            plan = self._plan(["Economics"], overrides={"remove": removed})
+            return [e for e in plan["validation_errors"] if "below the minimum credit load" in e]
+
+        self.assertEqual(below_minimum(electives[:1]), [])  # 12 credits
+        self.assertEqual(len(below_minimum(electives[:2])), 1)  # 9 credits
+
     def test_retakes_planned_as_overrides_count(self):
         # The frontend plans a retake as an override add with is_retake, not via retake_courses.
         retaken = ["STA 1005", "ECO 1001", "ECO 1002", "ENG 1001"]

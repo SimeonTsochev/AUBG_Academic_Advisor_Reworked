@@ -29,7 +29,11 @@ from excel_course_catalog import (
     get_course_codes as get_excel_course_codes,
 )
 
-MIN_CREDITS_PER_TERM = 14
+# Full-time status takes at least 12 credits a semester (AY 2026-27 catalog p.57); a plan below it is
+# reported. The planner itself fills semesters with free electives up to PLANNING_MIN_CREDITS_PER_TERM,
+# so changing the minimum never reshuffles existing plans (and the edits saved against them).
+MIN_CREDITS_PER_TERM = 12
+PLANNING_MIN_CREDITS_PER_TERM = 14
 # Course load (AY 2026-27 catalog p.65-66): plans use the standard maximum of 17; 18-19 credits need a
 # GPA of 3.300 and no first-year standing, more needs the Dean, and no one may take more than 22.
 STANDARD_MAX_CREDITS_PER_TERM = 17
@@ -5530,7 +5534,7 @@ def generate_plan(
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
     max_credits = max(14, int(max_credits_per_semester))
-    min_credits = min(MIN_CREDITS_PER_TERM, max_credits)
+    min_credits = min(PLANNING_MIN_CREDITS_PER_TERM, max_credits)
     target_credits = min(max_credits, 15)
 
     semester_result = generate_semester_plan(
@@ -5780,7 +5784,7 @@ def generate_plan(
         semester_plan=semester_plan,
         completed_courses=completed_courses,
         start_term=(base_season, base_year),
-        min_credits=min_credits,
+        min_credits=min(MIN_CREDITS_PER_TERM, max_credits),
         max_credits=ABSOLUTE_MAX_CREDITS_PER_TERM if degree_total_credits else max_credits,
         strict_prereqs=strict_prereqs,
         slots=planning_slots,

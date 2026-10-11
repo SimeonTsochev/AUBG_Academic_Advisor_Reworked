@@ -41,7 +41,7 @@ import { ordinal, semesterOfStudy, standingRequirement } from '../utils/standing
 import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
 import { describeFailedAttempt, resolveActiveAttempts } from '../utils/retakes';
 import { summarizeElectiveRequirements } from '../utils/electiveProgress';
-import { MIN_CREDITS_PER_TERM, STANDARD_MAX_CREDITS } from '../constants/academic';
+import { MIN_CREDITS_PER_TERM, PLANNING_MIN_CREDITS, STANDARD_MAX_CREDITS } from '../constants/academic';
 
 const SNAPSHOT_STORAGE_DISABLED_SESSION_KEY = 'programSnapshotStorageDisabled';
 
@@ -463,7 +463,8 @@ export function MainAdvisorScreen({
     previousRetakeEntries: RetakeEntry[];
   } | null>(null);
 
-  const minCreditsPerTerm = MIN_CREDITS_PER_TERM;
+  // Filling and placement follow the planner; warnings use the catalog's full-time minimum.
+  const minCreditsPerTerm = PLANNING_MIN_CREDITS;
   const createInstanceId = () =>
     (globalThis.crypto && "randomUUID" in globalThis.crypto)
       ? globalThis.crypto.randomUUID()
@@ -5132,7 +5133,7 @@ export function MainAdvisorScreen({
     const credits = target.credits ?? getCourseCredits(target.code);
     const termCredits = term ? (termCreditsMap[term] ?? 0) : 0;
     const afterCredits = Math.max(0, termCredits - credits);
-    const belowMin = term && target.status !== 'completed' && afterCredits < minCreditsPerTerm;
+    const belowMin = term && target.status !== 'completed' && afterCredits < MIN_CREDITS_PER_TERM;
     const genEdTags = getCourseGenEdTags(target.code);
     const downstream: string[] = [];
     if (term && plan?.semester_plan) {
@@ -5167,7 +5168,7 @@ export function MainAdvisorScreen({
       genEdTags,
       downstream: Array.from(new Set(downstream))
     };
-  }, [pendingRemoval, courseObjects, termCreditsMap, minCreditsPerTerm, removedCourses, removedCodeSet]);
+  }, [pendingRemoval, courseObjects, termCreditsMap, removedCourses, removedCodeSet]);
 
   const validationErrors = plan?.is_valid === false ? plan.validation_errors ?? [] : [];
   const remainingTerms = (plan?.semester_plan ?? []).filter(
@@ -5755,7 +5756,7 @@ export function MainAdvisorScreen({
                           style={{ background: 'var(--neutral-cream)', borderColor: 'var(--neutral-border)', color: 'var(--navy-dark)' }}
                         >
                           {pendingRemovalDetails.term} would drop to {pendingRemovalDetails.afterCredits} credits, below the
-                          {` ${minCreditsPerTerm}`} credit minimum.
+                          {` ${MIN_CREDITS_PER_TERM}`}-credit full-time minimum.
                         </div>
                       )}
                       {pendingRemovalDetails.downstream.length > 0 && (
