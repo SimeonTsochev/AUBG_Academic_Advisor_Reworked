@@ -14,7 +14,7 @@ from _isolation import IsolatedTestCase  # noqa: E402
 import degree_engine  # noqa: E402
 from catalog_cache import getCatalogCache  # noqa: E402
 from degree_engine import generate_plan  # noqa: E402
-from elective_rules import pattern_regex  # noqa: E402
+from elective_rules import CourseSet, pattern_regex  # noqa: E402
 
 
 def grade(code, letter, term="Fall 2025"):
@@ -55,6 +55,16 @@ class ProgramRuleTests(IsolatedTestCase):
         self.assertTrue(pattern_regex("COS L[1-2]NN").match("COS 3150"))
         self.assertTrue(pattern_regex("MLL L098").match("MLL 4098"))
         self.assertTrue(pattern_regex("EUR 4NNN").match("EUR 4401"))
+
+    def test_course_sets_are_members_less_filters(self):
+        level_rule = CourseSet.parse({"min_level": 3000})  # names no members: every course at 3000+
+        self.assertTrue(level_rule.contains(self.catalog, "ECO 3001"))
+        self.assertFalse(level_rule.contains(self.catalog, "ECO 2001"))
+        union = CourseSet.parse({"any_of": [{"courses_in": ["ECO 2001"]}, {"prefixes": ["JMC"]}], "except": ["JMC 1050"]})
+        self.assertTrue(union.contains(self.catalog, "ECO 2001"))
+        self.assertTrue(union.contains(self.catalog, "JMC 2010"))
+        self.assertFalse(union.contains(self.catalog, "JMC 1050"))  # filters apply to the whole set
+        self.assertFalse(union.contains(self.catalog, "ECO 3001"))
 
     # --- elective sub-rules --------------------------------------------------------------------
 

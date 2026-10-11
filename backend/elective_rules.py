@@ -15,11 +15,11 @@ A rule:
      "any_of": [{course set}, ...],           # union of course sets, e.g. listed courses or tagged topics
      "groups": {name: {course set}},          # at_least_in_one_group only
      "label": "student-facing wording"}
-A course belongs to a rule's set when it is listed, matches a pattern or has one of the prefixes (all
-three are optional; a rule with none of them, e.g. a level rule, covers every counted course), is not
-in `except` or under an excluded prefix, its number is at least `min_level`, and, with
-`and_excel_tags`, the Excel catalog gives it one of those tags (an MLL topics course in the German
-focus, say: the code alone does not tell the language).
+A rule's course set (a `CourseSet`) has members and filters. Members: listed codes, patterns,
+prefixes and the `any_of` sets (a union); a set that names no members, e.g. a level rule, covers
+every counted course. Filters apply to the whole set: not in `except` or under an excluded prefix,
+a number of at least `min_level`, and, with `and_excel_tags`, one of those Excel tags (an MLL topics
+course in the German focus, say: the code alone does not tell the language).
 
 `at_most` caps what courses contribute (credits beyond the cap do not count); `at_least` rules
 must be met; `at_least_in_one_group` needs the amount from a single group (Sustainability Studies).
@@ -29,7 +29,8 @@ waived course is "replaced with an elective" in the same language).
 from __future__ import annotations
 
 import re
-from typing import Dict, Iterable, List, Set, Tuple
+from dataclasses import dataclass, replace
+from typing import Dict, FrozenSet, Iterable, List, Set, Tuple
 
 from degree_engine import _course_credits, _course_number, _excel_course_record
 
@@ -54,51 +55,109 @@ def pattern_regex(pattern: str) -> re.Pattern:
     return re.compile(rf"^{re.escape(prefix)} {''.join(parts)}$")
 
 
-def _course_set_matcher(catalog: Dict, spec: Dict):
-    if spec.get("any_of"):
-        parts = [_course_set_matcher(catalog, part) for part in spec["any_of"]]
-        outer = _course_set_matcher(catalog, {k: v for k, v in spec.items() if k != "any_of"})
-        has_own_set = bool(spec.get("courses_in") or spec.get("patterns") or spec.get("prefixes"))
-        if has_own_set:
-            return lambda code: outer(code) or any(part(code) for part in parts)
-        # The outer spec only filters (except, min_level): it is an open set otherwise.
-        return lambda code: outer(code) and any(part(code) for part in parts)
-    listed = {str(c).strip().upper() for c in spec.get("courses_in") or []}
-    patterns = [pattern_regex(p) for p in spec.get("patterns") or []]
-    prefixes = tuple(f"{p.upper()} " for p in spec.get("prefixes") or [])
-    excluded = {str(c).strip().upper() for c in spec.get("except") or []}
-    excluded_prefixes = tuple(f"{p.upper()} " for p in spec.get("exclude_prefixes") or [])
-    required_tags = set(spec.get("and_excel_tags") or [])
-    min_level = int(spec.get("min_level") or 0)
-    open_set = not (listed or patterns or prefixes)
+def _codes(values: Iterable) -> FrozenSet[str]:
+    return frozenset(str(c).strip().upper() for c in values or [])
 
-    def matches(code: str) -> bool:
-        if code in excluded or (excluded_prefixes and code.startswith(excluded_prefixes)):
+
+def _prefixes(values: Iterable) -> Tuple[str, ...]:
+    return tuple(f"{p.upper()} " for p in values or [])
+
+
+@dataclass(frozen=True)
+class CourseSet:
+    listed: FrozenSet[str]
+    patterns: Tuple[re.Pattern, ...]
+    prefixes: Tuple[str, ...]
+    any_of: Tuple["CourseSet", ...]
+    excluded: FrozenSet[str]
+    excluded_prefixes: Tuple[str, ...]
+    min_level: int
+    excel_tags: FrozenSet[str]
+
+    @classmethod
+    def parse(cls, spec: Dict) -> "CourseSet":
+        return cls(
+            listed=_codes(spec.get("courses_in")),
+            patterns=tuple(pattern_regex(p) for p in spec.get("patterns") or []),
+            prefixes=_prefixes(spec.get("prefixes")),
+            any_of=tuple(cls.parse(part) for part in spec.get("any_of") or []),
+            excluded=_codes(spec.get("except")),
+            excluded_prefixes=_prefixes(spec.get("exclude_prefixes")),
+            min_level=int(spec.get("min_level") or 0),
+            excel_tags=frozenset(spec.get("and_excel_tags") or []),
+        )
+
+    @property
+    def names_members(self) -> bool:
+        return bool(self.listed or self.patterns or self.prefixes or self.any_of)
+
+    def contains(self, catalog: Dict, code: str) -> bool:
+        if code in self.excluded or code.startswith(self.excluded_prefixes):
             return False
-        if min_level and (_course_number(code) or 0) < min_level:
+        if self.min_level and (_course_number(code) or 0) < self.min_level:
             return False
-        if required_tags:
+        if self.excel_tags:
             record = _excel_course_record(catalog, code)
-            if not required_tags & set(record.get("area_of_study_tags") or record.get("tags") or []):
+            if not self.excel_tags & set(record.get("area_of_study_tags") or record.get("tags") or []):
                 return False
-        if open_set:
+        if not self.names_members:
             return True
-        return code in listed or code.startswith(prefixes) or any(p.match(code) for p in patterns)
+        return (
+            code in self.listed
+            or code.startswith(self.prefixes)
+            or any(p.match(code) for p in self.patterns)
+            or any(part.contains(catalog, code) for part in self.any_of)
+        )
 
-    return matches
+
+@dataclass(frozen=True)
+class ElectiveRule:
+    kind: str
+    unit: str
+    """"courses" (counts courses with credit) or "credits"."""
+    amount: int
+    courses: CourseSet
+    groups: Tuple[CourseSet, ...]
+    """`at_least_in_one_group` only."""
+    plus_waived: bool
+    label: str
+
+    @classmethod
+    def parse(cls, spec: Dict) -> "ElectiveRule":
+        return cls(
+            kind=spec.get("kind") or "",
+            unit="courses" if spec.get("courses") else "credits",
+            amount=int(spec.get("courses") or spec.get("credits") or 0),
+            courses=CourseSet.parse(spec),
+            groups=tuple(CourseSet.parse(g) for g in (spec.get("groups") or {}).values()),
+            plus_waived=bool(spec.get("plus_waived")),
+            label=spec.get("label") or "",
+        )
+
+    def measure(self, codes: Iterable[str], credit: Dict[str, int]) -> int:
+        if self.unit == "courses":
+            return sum(1 for c in codes if credit[c] > 0)
+        return sum(credit[c] for c in codes)
+
+    def status(self, counted: int, required: int, met: bool) -> Dict:
+        return {
+            "label": self.label,
+            "kind": self.kind,
+            "unit": self.unit,
+            "required": required,
+            "counted": counted,
+            "met": met,
+        }
 
 
 def pool_matcher(catalog: Dict, rules: Iterable[Dict], pools: Iterable[Dict] = ()):
-    """Courses the rules (and the program's `elective_pool`s) name are eligible electives."""
-    specs = [r for r in rules if r.get("courses_in") or r.get("patterns") or r.get("prefixes") or r.get("any_of")]
-    specs += [g for r in rules for g in (r.get("groups") or {}).values()]
-    specs += [p for p in pools if p]
-    matchers = [_course_set_matcher(catalog, {k: v for k, v in s.items() if k != "min_level"}) for s in specs]
-    return lambda code: any(m(code) for m in matchers)
-
-
-def _measure(rule: Dict, codes: Iterable[str], credit: Dict[str, int]) -> int:
-    return sum(1 for c in codes if credit[c] > 0) if rule.get("courses") else sum(credit[c] for c in codes)
+    """Courses the rules (and the program's `elective_pool`s) name are eligible electives. A level
+    minimum limits what counts toward its rule, not which courses are electives."""
+    sets = [s for s in (CourseSet.parse(r) for r in rules) if s.names_members]
+    sets += [CourseSet.parse(g) for r in rules for g in (r.get("groups") or {}).values()]
+    sets += [CourseSet.parse(p) for p in pools if p]
+    sets = [replace(s, min_level=0) for s in sets]
+    return lambda code: any(s.contains(catalog, code) for s in sets)
 
 
 def evaluate(
@@ -117,18 +176,18 @@ def evaluate(
     waived = waived or set()
     order = sorted(courses, key=lambda c: (c not in completed, c))
     credit = {c: _course_credits(catalog, c) for c in order}
+    parsed = [ElectiveRule.parse(r) for r in rules]
     statuses: List[Dict] = []
 
-    for rule in rules:
-        if rule.get("kind") != "at_most":
+    for rule in parsed:
+        if rule.kind != "at_most":
             continue
-        matches = _course_set_matcher(catalog, rule)
-        members = [c for c in order if matches(c)]
-        cap = int(rule.get("courses") or rule.get("credits") or 0)
-        raw = len(members) if rule.get("courses") else sum(credit[c] for c in members)
+        members = [c for c in order if rule.courses.contains(catalog, c)]
+        cap = rule.amount
+        raw = len(members) if rule.unit == "courses" else sum(credit[c] for c in members)
         used = 0
         for code in members:
-            if rule.get("courses"):
+            if rule.unit == "courses":
                 if used >= cap:
                     credit[code] = 0
                 elif credit[code] > 0:
@@ -138,37 +197,22 @@ def evaluate(
                 used += allowed
                 credit[code] = allowed
         # A cap never fails: credits beyond it simply do not count (the card says so).
-        statuses.append({**_status(rule, raw, cap, met=True), "over_cap": raw > cap})
+        statuses.append({**rule.status(raw, cap, met=True), "over_cap": raw > cap})
 
-    for rule in rules:
-        kind = rule.get("kind")
-        required = int(rule.get("courses") or rule.get("credits") or 0)
-        if rule.get("plus_waived") and not rule.get("courses"):
-            required += extra_credits
-        if kind == "at_least":
-            matches = _course_set_matcher(catalog, rule)
-            counted = _measure(rule, [c for c in order if matches(c)], credit)
-            statuses.append(_status(rule, counted, required, met=counted >= required))
-        elif kind == "at_least_in_one_group":
-            best = 0
-            for group in (rule.get("groups") or {}).values():
-                matches = _course_set_matcher(catalog, group)
-                best = max(best, _measure(rule, [c for c in order if matches(c)], credit))
-            statuses.append(_status(rule, best, required, met=best >= required))
+    for rule in parsed:
+        required = rule.amount + (extra_credits if rule.plus_waived and rule.unit == "credits" else 0)
+        if rule.kind == "at_least":
+            counted = rule.measure([c for c in order if rule.courses.contains(catalog, c)], credit)
+            statuses.append(rule.status(counted, required, met=counted >= required))
+        elif rule.kind == "at_least_in_one_group":
+            best = max(
+                (rule.measure([c for c in order if group.contains(catalog, c)], credit) for group in rule.groups),
+                default=0,
+            )
+            statuses.append(rule.status(best, required, met=best >= required))
     for code in waived & set(order):
         credit[code] = 0
     return credit, statuses
-
-
-def _status(rule: Dict, counted: int, required: int, met: bool) -> Dict:
-    return {
-        "label": rule.get("label") or "",
-        "kind": rule.get("kind"),
-        "unit": "courses" if rule.get("courses") else "credits",
-        "required": required,
-        "counted": counted,
-        "met": met,
-    }
 
 
 def deficit_credits(statuses: List[Dict], unit: str = "credits") -> int:
