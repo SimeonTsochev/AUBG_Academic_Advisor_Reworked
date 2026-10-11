@@ -10,6 +10,7 @@ import os
 import threading
 
 from catalog_cache import getCatalogCache
+from catalog_options import options_offered, placement_tests, program_data
 from business_concentrations import classify_business_course
 from degree_engine import STANDARD_MAX_CREDITS_PER_TERM, _current_start_term, generate_plan
 from pdf_export import plan_to_pdf_bytes
@@ -108,28 +109,27 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
     )
 
 
-def _program_info(catalog: Dict[str, Any], kind: str = "majors") -> Dict[str, Dict[str, Any]]:
-    """What the setup screen shows per program: diploma type (majors), the options a student chooses
-    and the placement tests that can waive a course."""
+def _program_info(catalog: Dict[str, Any], kind: str) -> Dict[str, Dict[str, Any]]:
+    """What the setup screen shows per program (`kind` "major" or "minor"): diploma type (majors),
+    the options a student chooses and the placement tests that can waive a course."""
     info: Dict[str, Dict[str, Any]] = {}
-    for name, data in (catalog.get(kind) or {}).items():
-        if not isinstance(data, dict):
-            continue
+    for name in catalog.get(f"{kind}s") or {}:
         entry: Dict[str, Any] = {}
-        if data.get("diploma"):
-            entry["diploma"] = data["diploma"]
-        options = data.get("options")
-        if isinstance(options, dict) and options.get("choices"):
+        diploma = program_data(catalog, kind, name).get("diploma")
+        if diploma:
+            entry["diploma"] = diploma
+        options = options_offered(catalog, kind, name)
+        if options is not None and options.choices:
             entry["options"] = {
-                "label": options.get("label") or "Option",
-                "required": bool(options.get("required")),
-                "multiple": bool(options.get("multiple")),
-                "choices": list(options["choices"]),
-                "description": options.get("description"),
+                "label": options.label or "Option",
+                "required": options.required,
+                "multiple": options.multiple,
+                "choices": list(options.choices),
+                "description": options.description,
             }
-        waivers = [w for w in data.get("placement_waivers") or [] if isinstance(w, dict) and w.get("course")]
-        if waivers:
-            entry["placement_waivers"] = [{"course": w["course"], "label": w.get("label") or w["course"]} for w in waivers]
+        tests = placement_tests(catalog, kind, name)
+        if tests:
+            entry["placement_waivers"] = [{"course": test.course, "label": test.label} for test in tests]
         if entry:
             info[name] = entry
     return info
@@ -422,8 +422,8 @@ def load_default_catalog():
         course_meta=_catalog_course_meta_for_response(catalog),
         gen_ed=catalog.get("gen_ed", {}),
         excel_only_codes=excel_only_codes,
-        program_info=_program_info(catalog),
-        minor_info=_program_info(catalog, "minors"),
+        program_info=_program_info(catalog, "major"),
+        minor_info=_program_info(catalog, "minor"),
     )
 
 

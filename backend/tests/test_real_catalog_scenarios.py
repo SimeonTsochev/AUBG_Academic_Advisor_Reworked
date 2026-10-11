@@ -23,6 +23,7 @@ from _isolation import IsolatedTestCase, load_real_excel_index  # noqa: E402
 import degree_engine  # noqa: E402
 import excel_course_catalog  # noqa: E402
 from catalog_cache import getCatalogCache  # noqa: E402
+from catalog_options import options_offered  # noqa: E402
 from degree_engine import (  # noqa: E402
     _course_credits,
     _course_prereq_expr,
@@ -59,9 +60,9 @@ def _required_options(catalog: Dict, majors: List[str]) -> Dict[str, List[str]]:
     """The first real choice for each required major option (French for the European Studies language)."""
     chosen = {}
     for major in majors:
-        options = (catalog.get("majors", {}).get(major) or {}).get("options") or {}
-        if options.get("required"):
-            chosen[major] = [next(c for c, entry in options["choices"].items() if entry.get("blocks"))]
+        options = options_offered(catalog, "major", major)
+        if options is not None and options.required:
+            chosen[major] = [next(choice.name for choice in options.choices.values() if choice.blocks)]
     return chosen
 
 

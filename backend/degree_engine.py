@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from functools import lru_cache, wraps
-from typing import Any, Dict, Iterable, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 import datetime
 import logging
 import math
@@ -10,7 +10,9 @@ import re
 import statistics
 import uuid
 
+import catalog_options
 import excel_course_catalog
+from course_codes import normalize_course_code as _normalize_course_code
 
 from excel_catalog import (
     PROGRAM_TAG_ALIASES,
@@ -137,14 +139,6 @@ BUSINESS_ADMIN_THESIS_PROJECT_ELECTIVE_CAP = 3
 
 
 @lru_cache(maxsize=8192)
-def _normalize_course_code(code: str) -> str:
-    code = code.strip().upper()
-    m = re.match(r"^([A-Z]{3})\s?(\d{3,4})$", code)
-    if not m:
-        return code
-    return f"{m.group(1)} {m.group(2)}"
-
-
 def _norm_minor_name(value: object) -> str:
     text = str(value).strip().lower()
     # Remove parenthetical aliases like "(COS)" to match stored UI/program labels.
@@ -895,50 +889,6 @@ def _current_course_code(catalog: Dict, code: str) -> str:
     normalized = _normalize_course_code(code)
     renumbering = catalog.get("course_renumbering") or {}
     return _normalize_course_code(renumbering.get(normalized, normalized))
-
-
-def _preferred_option_courses(
-    catalog: Dict, majors: List[str], minors: List[str], program_options: Dict[str, List[str]] | None
-) -> Set[str]:
-    """Courses a chosen option's blocks `prefer` when the planner picks among them: Data Science
-    prefers INF 4080 and MAT 2001 over a fourth COS course, which the IS elective cap would not count."""
-    preferred: Set[str] = set()
-    for kind, names in (("majors", majors), ("minors", minors)):
-        for name in names:
-            choices = ((catalog.get(kind, {}).get(name) or {}).get("options") or {}).get("choices") or {}
-            for choice in (program_options or {}).get(name) or []:
-                for block in (choices.get(choice) or {}).get("blocks") or []:
-                    preferred |= {_normalize_course_code(c) for c in block.get("prefer") or []}
-    return preferred
-
-
-def _offered_placement_waivers(
-    catalog: Dict, majors: List[str], minors: List[str], requested: Iterable[str] | None
-) -> Set[str]:
-    """Requested placement waivers that one of the selected programs offers (catalog pp.86, 95, 105, 126)."""
-    offered = {
-        _normalize_course_code(entry.get("course") or "")
-        for kind, names in (("majors", majors), ("minors", minors))
-        for name in names
-        for entry in ((catalog.get(kind, {}).get(name) or {}).get("placement_waivers") or [])
-        if isinstance(entry, dict)
-    }
-    return {_normalize_course_code(c) for c in requested or [] if isinstance(c, str)} & offered
-
-
-def _placement_elective_credits(
-    catalog: Dict, majors: List[str], minors: List[str], waived: Set[str]
-) -> Dict[Tuple[str, str], int]:
-    """Elective credits a program adds for each course a placement test waived ("students who pass
-    the placement test may choose another course from the list of electives", p.86)."""
-    extra: Dict[Tuple[str, str], int] = {}
-    for kind, names in (("major", majors), ("minor", minors)):
-        for name in names:
-            for entry in (catalog.get(f"{kind}s", {}).get(name) or {}).get("placement_waivers") or []:
-                code = _normalize_course_code((entry or {}).get("course") or "")
-                if code in waived and entry.get("replace_with_elective"):
-                    extra[(name, kind)] = extra.get((name, kind), 0) + _course_credits(catalog, code)
-    return extra
 
 
 def _make_warning(warning_type: str, course: str | None = None, **fields: object) -> Dict:
@@ -2388,43 +2338,33 @@ def build_requirement_slots(
                 **option,
             })
 
-    def add_program_option_slots(program: str, program_type: str, data: Dict, fixed_seen: Set[str]) -> None:
-        """Slots for the options chosen for a program. A block's `role` says what its courses are:
+    def add_program_option_slots(program: str, program_type: str, fixed_seen: Set[str]) -> None:
+        """Slots for the options chosen for a program. A block's role says what its courses are:
         "elective" (tagged `concentration`, so elective progress counts them as the program's
         electives), "required" (the program's own required courses once the choice is made, e.g. an
         MLC language focus) or "collateral" (outside the program's credits, e.g. the European Studies
-        language). Without a role, `counts_as_major_elective` picks elective or collateral."""
-        options = data.get("options")
-        if not isinstance(options, dict):
+        language)."""
+        options = catalog_options.options_offered(catalog, program_type, program)
+        if options is None:
             return
-        choices = options.get("choices") or {}
-        for choice in (program_options or {}).get(program) or []:
-            entry = choices.get(choice)
-            if not isinstance(entry, dict):
-                continue
-            option_label = str(options.get("requirement_label") or "{choice}").format(choice=choice)
-            for index, block in enumerate(entry.get("blocks") or []):
-                courses = [_normalize_course_code(c) for c in block.get("courses") or [] if isinstance(c, str)]
-                count = int(block.get("count") or 0)
-                role = block.get("role") or (
-                    "elective"
-                    if block.get("counts_as_major_elective", options.get("counts_as_major_elective"))
-                    else "collateral"
-                )
-                if role == "elective":
-                    tags: Dict[str, Any] = {"concentration": choice}
-                elif role == "required":
+        for choice in options.chosen((program_options or {}).get(program) or []):
+            option_label = options.slot_label(choice.name)
+            for index, block in enumerate(choice.blocks):
+                if block.role == "elective":
+                    tags: Dict[str, Any] = {"concentration": choice.name}
+                elif block.role == "required":
                     tags = {"option_label": option_label}
                 else:
                     tags = {"option_label": option_label, "collateral": True}
-                if count >= len(courses):
-                    for course in courses:
+                if block.count >= len(block.courses):
+                    for course in block.courses:
                         if course not in fixed_seen:
                             fixed_seen.add(course)
                             add_fixed_course(course, program, program_type, **tags)
                 else:
                     add_choice_group(
-                        courses, count, program, program_type, f"{option_label} ({index + 1})", **tags
+                        list(block.courses), block.count, program, program_type,
+                        f"{option_label} ({index + 1})", **tags,
                     )
 
     def parse_requirements(program_data: Dict) -> Tuple[List[str], List[Dict]]:
@@ -2544,7 +2484,7 @@ def build_requirement_slots(
         for group in choices:
             add_choice_group(group["courses"], group["count"], major, "major", group["label"])
         add_program_option_slots(
-            major, "major", data,
+            major, "major",
             {_normalize_course_code(c) for c in fixed + concentration_courses if isinstance(c, str)},
         )
 
@@ -2630,7 +2570,7 @@ def build_requirement_slots(
         for group in choices:
             add_choice_group(group["courses"], group["count"], minor, "minor", group["label"])
         add_program_option_slots(
-            minor, "minor", data, {_normalize_course_code(c) for c in fixed if isinstance(c, str)}
+            minor, "minor", {_normalize_course_code(c) for c in fixed if isinstance(c, str)}
         )
 
     for course in sorted(set(catalog.get("foundation_courses", []) or [])):
@@ -5576,7 +5516,7 @@ def generate_plan(
     if waived_eng1000 and "ENG 1000" in catalog_courses:
         completed_courses.add("ENG 1000")
         waived_courses.add("ENG 1000")
-    placement_waived = _offered_placement_waivers(catalog, majors, minors, placement_waivers)
+    placement_waived = catalog_options.offered_placement_waivers(catalog, majors, minors, placement_waivers)
     for code in placement_waived:
         if code in catalog_courses:
             completed_courses.add(code)
@@ -5604,7 +5544,9 @@ def generate_plan(
         catalog, majors, minors, business_concentration=business_concentration, program_options=program_options
     )
     planning_slots = _slots_after_manual_credit_reduction(slots, manual_credit_breakdown)
-    preferred_courses = set(preferred_courses or []) | _preferred_option_courses(catalog, majors, minors, program_options)
+    preferred_courses = set(preferred_courses or []) | catalog_options.preferred_courses(
+        catalog, majors, minors, program_options
+    )
     base_season, base_year = _normalize_start_term(start_term_season, start_term_year)
     max_credits = max(14, int(max_credits_per_semester))
     min_credits = min(PLANNING_MIN_CREDITS_PER_TERM, max_credits)

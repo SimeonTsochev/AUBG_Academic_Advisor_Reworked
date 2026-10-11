@@ -16,6 +16,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Set, Tuple
 
+from catalog_options import chosen_choices
 from degree_engine import (
     _catalog_courses,
     _counted_credits_with_caps,
@@ -116,16 +117,17 @@ def _own_requirement_courses(program: str, slots: Dict, taken: Set[str]) -> Set[
     return own
 
 
-def _program_rules(program_data: Dict, chosen_options: List[str]) -> Tuple[List[Dict], List[Dict]]:
+def _program_rules(
+    catalog: Dict, program: str, program_type: str, program_options: Dict[str, List[str]] | None
+) -> Tuple[List[Dict], List[Dict]]:
     """The program's elective rules and pools plus those of the options the student chose (an MLC focus)."""
+    program_data = (catalog.get(f"{program_type}s") or {}).get(program) or {}
     rules = [r for r in program_data.get("elective_rules") or [] if isinstance(r, dict)]
     pools = [program_data["elective_pool"]] if isinstance(program_data.get("elective_pool"), dict) else []
-    choices = ((program_data.get("options") or {}).get("choices") or {})
-    for choice in chosen_options:
-        entry = choices.get(choice) or {}
-        rules += [r for r in entry.get("elective_rules") or [] if isinstance(r, dict)]
-        if isinstance(entry.get("elective_pool"), dict):
-            pools.append(entry["elective_pool"])
+    for choice in chosen_choices(catalog, program_type, program, program_options):
+        rules += choice.elective_rules
+        if choice.elective_pool is not None:
+            pools.append(choice.elective_pool)
     return rules, pools
 
 
@@ -159,7 +161,7 @@ def compute_elective_progress(
         extra = int((extra_elective_credits or {}).get((program, program_type), 0) or 0)
         if credits_required is not None:
             credits_required += extra
-        rules, pools = _program_rules(program_data, (program_options or {}).get(program, []))
+        rules, pools = _program_rules(catalog, program, program_type, program_options)
         in_rule_pool = pool_matcher(catalog, rules, pools)
         # Programs whose electives depend on a choice (an MLC language focus) count only the courses
         # their rules and pools name, never the broad Excel tags or subject matchers.

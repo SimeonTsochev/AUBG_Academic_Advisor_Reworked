@@ -9,6 +9,7 @@ from __future__ import annotations
 from itertools import combinations
 from typing import Dict, Iterable, List, Set, Tuple
 
+from catalog_options import options_offered, selected_programs
 from plan_state import PlanState
 from degree_engine import (
     _catalog_courses,
@@ -126,18 +127,16 @@ def program_options_check(
     focus pp.102, 124) needs a choice."""
     errors: List[str] = []
     chosen: Dict[str, List[str]] = {}
-    for kind, names in (("major", majors), ("minor", minors)):
-        for name in names:
-            options = (catalog.get(f"{kind}s", {}).get(name) or {}).get("options")
-            if not isinstance(options, dict):
-                continue
-            valid = [c for c in (program_options or {}).get(name) or [] if c in (options.get("choices") or {})]
-            chosen[name] = valid
-            if options.get("required") and not valid:
-                errors.append(
-                    options.get("missing_message")
-                    or f"Choose a {str(options.get('label') or 'option').lower()} for the {name} {kind}."
-                )
+    for kind, name in selected_programs(majors, minors):
+        options = options_offered(catalog, kind, name)
+        if options is None:
+            continue
+        chosen[name] = [choice.name for choice in options.chosen((program_options or {}).get(name) or [])]
+        if options.required and not chosen[name]:
+            errors.append(
+                options.missing_message
+                or f"Choose a {str(options.label or 'option').lower()} for the {name} {kind}."
+            )
     return errors, chosen
 
 

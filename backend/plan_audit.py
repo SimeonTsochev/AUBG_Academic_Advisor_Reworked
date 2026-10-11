@@ -7,15 +7,16 @@ rows, elective progress, the graduation checks and the GPA record, plus their er
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from academic_record import academic_record
+from catalog_options import placement_tests, selected_programs
 from degree_engine import (
     _apply_manual_credit_progress,
     _category_credit_progress,
     _completed_credit_total,
+    _course_credits,
     _is_business_administration_major,
-    _placement_elective_credits,
 )
 from elective_progress import compute_elective_progress
 from graduation_checks import graduation_checks
@@ -62,11 +63,20 @@ def _elective_progress(state: PlanState) -> List[Dict]:
         planned=state.planned,
         manual_major_elective_credits=state.manual_credit_breakdown.get("major_electives", {}),
         program_options=state.program_options,
-        extra_elective_credits=_placement_elective_credits(
-            state.catalog, state.majors, state.minors, state.placement_waived
-        ),
+        extra_elective_credits=_placement_elective_credits(state),
         waived=state.placement_waived,
     )
+
+
+def _placement_elective_credits(state: PlanState) -> Dict[Tuple[str, str], int]:
+    """Elective credits a program adds for each course a placement test waived ("students who pass
+    the placement test may choose another course from the list of electives", p.86)."""
+    extra: Dict[Tuple[str, str], int] = {}
+    for kind, name in selected_programs(state.majors, state.minors):
+        for test in placement_tests(state.catalog, kind, name):
+            if test.course in state.placement_waived and test.replace_with_elective:
+                extra[(name, kind)] = extra.get((name, kind), 0) + _course_credits(state.catalog, test.course)
+    return extra
 
 
 def _category_progress(state: PlanState, elective_progress: List[Dict]) -> Dict[str, Dict]:

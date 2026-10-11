@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from business_concentrations import available_business_concentrations
+from catalog_options import options_offered
 from degree_engine import build_requirement_slots
 
 PROGRAM_PAGES_ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "frontend" / "seo" / "programs.json"
@@ -114,7 +115,7 @@ def _program(catalog: Dict[str, Any], kind: str, name: str) -> Dict[str, Any]:
         "choices": choices,
         "electives": electives,
         "elective_rules": _rule_labels(data.get("elective_rules")),
-        "options": _options(catalog, data.get("options")),
+        "options": _options(catalog, kind, name),
     }
 
 
@@ -123,24 +124,22 @@ def _rule_labels(rules: Any) -> List[str]:
     return [r["label"] for r in rules or [] if isinstance(r, dict) and r.get("label")]
 
 
-def _options(catalog: Dict[str, Any], options: Any) -> Dict[str, Any] | None:
-    """A major's student-chosen options (CS concentrations, the European Studies language)."""
-    if not isinstance(options, dict) or not options.get("choices"):
+def _options(catalog: Dict[str, Any], kind: str, name: str) -> Dict[str, Any] | None:
+    """A program's student-chosen options (CS concentrations, the European Studies language)."""
+    options = options_offered(catalog, kind, name)
+    if options is None or not options.choices:
         return None
     return {
-        "label": options.get("label"),
-        "description": options.get("description"),
-        "required": bool(options.get("required")),
+        "label": options.label,
+        "description": options.description,
+        "required": options.required,
         "choices": [
             {
-                "name": choice,
-                "blocks": [
-                    {"count": int(block.get("count") or 0), "courses": _courses(catalog, block.get("courses") or [])}
-                    for block in (entry or {}).get("blocks") or []
-                ],
-                "rules": _rule_labels((entry or {}).get("elective_rules")),
+                "name": choice.name,
+                "blocks": [{"count": block.count, "courses": _courses(catalog, block.courses)} for block in choice.blocks],
+                "rules": _rule_labels(choice.elective_rules),
             }
-            for choice, entry in options["choices"].items()
+            for choice in options.choices.values()
         ],
     }
 
