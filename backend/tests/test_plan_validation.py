@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 
 CURRENT_DIR = os.path.dirname(__file__)
@@ -10,6 +11,7 @@ if BACKEND_DIR not in sys.path:
 
 from _isolation import IsolatedTestCase  # noqa: E402
 
+import degree_engine  # noqa: E402
 from degree_engine import generate_plan, validate_plan, _min_credits_for_course  # noqa: E402
 
 
@@ -315,26 +317,28 @@ class PlanValidationTests(IsolatedTestCase):
         catalog["course_meta"]["ART 1000"]["semester_availability"] = ["Spring 2026"]
         catalog["excel_integrity"] = {"excel_only": ["SCI 1010"]}
 
-        plan = generate_plan(
-            catalog=catalog,
-            majors=["Computer Science"],
-            minors=[],
-            completed_courses=set(),
-            max_credits_per_semester=16,
-            start_term_season="Fall",
-            start_term_year=2025,
-            overrides={
-                "add": [
-                    {
-                        "term": "Spring 2026",
-                        "code": "SCI 1010",
-                        "instance_id": "test-sci-1010",
-                    }
-                ],
-                "remove": [],
-                "move": [],
-            },
-        )
+        # Spring 2026 must still be ahead of the plan start.
+        with patch.object(degree_engine, "_current_start_term", return_value=("Fall", 2025)):
+            plan = generate_plan(
+                catalog=catalog,
+                majors=["Computer Science"],
+                minors=[],
+                completed_courses=set(),
+                max_credits_per_semester=16,
+                start_term_season="Fall",
+                start_term_year=2025,
+                overrides={
+                    "add": [
+                        {
+                            "term": "Spring 2026",
+                            "code": "SCI 1010",
+                            "instance_id": "test-sci-1010",
+                        }
+                    ],
+                    "remove": [],
+                    "move": [],
+                },
+            )
 
         warnings = plan.get("warnings", [])
         self.assertTrue(
@@ -389,13 +393,40 @@ class PlanValidationTests(IsolatedTestCase):
             overrides=overrides,
         )
 
-    def test_remove_scoped_to_a_term_never_deletes_the_course_elsewhere(self):
+    def test_remove_scoped_to_a_term_follows_a_course_the_planner_moved(self):
+        # Edits are saved against an older plan; if the course now sits in another term, remove it there.
         baseline = self._sample_plan()
         planned_in = next(t["term"] for t in baseline["semester_plan"] if any(c["code"] == "CS 1100" for c in t["courses"]))
         other_term = next(t["term"] for t in baseline["semester_plan"] if t["term"] != planned_in)
         plan = self._sample_plan({"remove": [{"term": other_term, "code": "CS 1100"}]})
-        self.assertTrue(any(c["code"] == "CS 1100" for t in plan["semester_plan"] for c in t["courses"]))
-        self.assertTrue(any(w["type"] == "OVERRIDE_REMOVE_NOT_FOUND" for w in plan["warnings"]))
+        self.assertFalse(any(c["code"] == "CS 1100" for t in plan["semester_plan"] for c in t["courses"]))
+        self.assertTrue(any(
+            w["type"] == "OVERRIDE_REMOVE_RELOCATED" and w["term"] == planned_in and w["from"] == other_term
+            for w in plan["warnings"]
+        ))
+
+    def test_remove_of_a_renumbered_free_elective_removes_one_in_that_term(self):
+        baseline = self._sample_plan()
+        term = next(
+            t for t in baseline["semester_plan"] if any(c["code"].startswith("FREE ELECTIVE") for c in t["courses"])
+        )
+        count = sum(1 for c in term["courses"] if c["code"].startswith("FREE ELECTIVE"))
+        plan = self._sample_plan({"remove": [{"term": term["term"], "code": "FREE ELECTIVE 99"}]})
+        after = next(t for t in plan["semester_plan"] if t["term"] == term["term"])
+        self.assertEqual(sum(1 for c in after["courses"] if c["code"].startswith("FREE ELECTIVE")), count - 1)
+        self.assertFalse(any(w["type"] == "OVERRIDE_REMOVE_NOT_FOUND" for w in plan["warnings"]))
+
+    def test_add_or_move_before_the_plan_start_is_skipped(self):
+        # Terms before the start are history; a stale edit there must not reopen them.
+        baseline = self._sample_plan()
+        planned_in = next(t["term"] for t in baseline["semester_plan"] if any(c["code"] == "CS 1100" for c in t["courses"]))
+        plan = self._sample_plan({
+            "add": [{"term": "Spring 2025", "code": "ART 1000", "instance_id": "early-add"}],
+            "move": [{"from_term": planned_in, "to_term": "Spring 2025", "code": "CS 1100"}],
+        })
+        self.assertNotIn("Spring 2025", [t["term"] for t in plan["semester_plan"]])
+        self.assertEqual(sum(1 for w in plan["warnings"] if w["type"] == "OVERRIDE_TERM_BEFORE_START"), 2)
+        self.assertFalse(any("earlier than the start term" in e for e in plan["validation_errors"]))
 
     def test_add_or_move_to_an_invalid_term_label_is_rejected(self):
         baseline = self._sample_plan()

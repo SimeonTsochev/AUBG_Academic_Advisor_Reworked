@@ -5627,6 +5627,7 @@ def generate_plan(
             allowed_auto=allowed_auto,
             retake_courses=normalized_retakes,
             occupied_credits_by_term=occupied_credits_by_term,
+            start_term_label=f"{base_season} {base_year}",
         )
         _ensure_instance_ids(semester_plan)
 
@@ -5855,6 +5856,7 @@ def _apply_plan_overrides(
     allowed_auto: Set[str],
     retake_courses: Set[str] | None,
     occupied_credits_by_term: Dict[str, int] | None = None,
+    start_term_label: str | None = None,
 ) -> Tuple[List[Dict], List[Dict]]:
     """Apply user overrides (add/remove/move) to a generated semester_plan.
 
@@ -5917,11 +5919,24 @@ def _apply_plan_overrides(
 
     override_warnings: List[Dict] = []
     suppressed_terms: Set[str] = set()
+    start_idx = _term_label_index(start_term_label) if start_term_label else None
+
+    def before_start(term_label: str) -> bool:
+        # Terms before the plan's start are history (completed or in progress), not plannable.
+        return start_idx is not None and start_idx != 999999 and _term_label_index(term_label) < start_idx
+
+    def drop_course(term_obj: Dict, course_obj: Dict) -> None:
+        term_obj["courses"] = [c for c in term_obj["courses"] if c is not course_obj]
+        if course_obj.get("type") == "FREE_ELECTIVE" or _is_free_elective(str(course_obj.get("code", ""))):
+            suppressed_terms.add(term_obj["term"])
 
     # Normalize overrides
     adds = overrides.get("add") or []
     removes = overrides.get("remove") or []
     moves = overrides.get("move") or []
+    # Terms that lost a course the student removed elsewhere; refill them even if a free
+    # elective was also removed there, or the relocated removal leaves them underloaded.
+    relocated_into: Set[str] = set()
 
     # Apply removals (by term if provided, otherwise anywhere)
     for r in removes:
@@ -5981,10 +5996,34 @@ def _apply_plan_overrides(
                     new_courses.append(c)
                 t["courses"] = new_courses
 
+        # Edits are saved against the plan as it looked then; regenerating can move a course to
+        # another term or renumber free-elective placeholders. Follow the edit to where it went,
+        # but only when that is unambiguous.
+        if not removed_any and code and term:
+            if _is_free_elective(code):
+                same_term = term_map.get(term)
+                placeholder = next(
+                    (c for c in (same_term or {}).get("courses", []) if _is_free_elective(str(c.get("code", "")))),
+                    None,
+                )
+                if placeholder is not None:
+                    drop_course(same_term, placeholder)
+                    removed_any = True
+            else:
+                found = [(t, c) for t in semester_plan for c in t["courses"] if c.get("code") == code]
+                if len(found) == 1 and not found[0][1].get("is_retake"):
+                    drop_course(*found[0])
+                    removed_any = True
+                    relocated_into.add(found[0][0]["term"])
+                    override_warnings.append(
+                        _make_warning("OVERRIDE_REMOVE_RELOCATED", course=code, term=found[0][0]["term"], **{"from": term})
+                    )
+
         if not removed_any:
             override_warnings.append(
                 _make_warning("OVERRIDE_REMOVE_NOT_FOUND", course=code or removed_code, term=term)
             )
+    suppressed_terms -= relocated_into
 
     # Apply moves
     for mv in moves:
@@ -6000,6 +6039,11 @@ def _apply_plan_overrides(
             )
             continue
         to_term = _canonical_term_label(to_term)
+        if before_start(to_term):
+            override_warnings.append(
+                _make_warning("OVERRIDE_TERM_BEFORE_START", course=code, term=to_term, **{"from": from_term, "to": to_term})
+            )
+            continue
         if from_term not in term_map or to_term not in term_map:
             if from_term not in term_map:
                 override_warnings.append(
@@ -6098,6 +6142,9 @@ def _apply_plan_overrides(
             override_warnings.append(_make_warning("OVERRIDE_INVALID_TERM", course=code, term=term))
             continue
         term = _canonical_term_label(term)
+        if before_start(term):
+            override_warnings.append(_make_warning("OVERRIDE_TERM_BEFORE_START", course=code, term=term))
+            continue
         normalized_code = _normalize_course_code(code)
         if not is_retake and normalized_code in completed_courses and normalized_code not in retake_set:
             override_warnings.append(_make_warning("OVERRIDE_ADD_ALREADY_COMPLETED", course=code, term=term))
