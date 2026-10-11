@@ -331,6 +331,7 @@ class AcademicRecord(BaseModel):
     majors: List[MajorRecord] = Field(default_factory=list)
     max_load: int
     remaining_credits: int
+    ungraded_courses: List[str] = Field(default_factory=list)
 
 
 class GeneratePlanResponse(BaseModel):

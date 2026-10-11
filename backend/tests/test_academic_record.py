@@ -141,3 +141,17 @@ class AcademicRecordTests(IsolatedTestCase):
         self.assertEqual(record["gpa"], round((3 * 4.0 + 3 * 3.33) / 6, 3))
         self.assertEqual(record["majors"][0]["courses"], ["ECO 1001"])
         self.assertGreater(record["remaining_credits"], 0)
+
+    def test_completed_courses_without_a_grade_are_listed(self):
+        with patch.object(degree_engine, "_current_start_term", return_value=("Fall", 2026)):
+            plan = generate_plan(
+                catalog=self.catalog,
+                majors=["Business Administration"],
+                minors=[],
+                completed_courses={"BUS 1001", "BUS 2001", "AUB 1000"},
+                start_term_season="Fall",
+                start_term_year=2026,
+                grades=[grade("BUS 2001", "B")],
+            )
+        # AUB 1000 carries no credit; BUS 1001 has credit but the import read no grade for it.
+        self.assertEqual(plan["academic_record"]["ungraded_courses"], ["BUS 1001"])

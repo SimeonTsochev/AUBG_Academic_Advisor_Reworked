@@ -8,7 +8,7 @@ import { PlanAlerts } from './advisor/PlanAlerts';
 import { ProgramOptionPrompt } from './advisor/ProgramOptionPrompt';
 import { DiplomaNote } from './advisor/DiplomaNote';
 import { majorsMissingRequiredOption, normalizeProgramOptions, selectedProgramInfo } from '../utils/programOptions';
-import { loadGrades, saveGrades, toGradeEntries, type GradeMap } from '../utils/grades';
+import { loadGrades, saveGrades, toGradeEntries, withGrade, type GradeMap } from '../utils/grades';
 import { RequirementsTab } from './advisor/RequirementsTab';
 import { SummaryStrip } from './advisor/SummaryStrip';
 import type { Course, Progress, ElectiveSuggestion, FailedCourse, ManualCreditEntry, RetakeEntry } from '../types';
@@ -263,7 +263,7 @@ export function MainAdvisorScreen({
   const majorsNeedingOption = majorsMissingRequiredOption(selectedPrograms, optionInfo, programOptions);
   // Transcript grades for GPA. Private: stored in this browser under the share token and sent with
   // plan requests, but never part of the snapshot payload, so a shared link does not reveal them.
-  const [grades] = useState<GradeMap>(() =>
+  const [grades, setGrades] = useState<GradeMap>(() =>
     initialGrades && Object.keys(initialGrades).length > 0 ? initialGrades : loadGrades(initialSnapshotToken),
   );
 
@@ -4798,9 +4798,10 @@ export function MainAdvisorScreen({
     const fallbackCompleted = Array.from(unique).reduce((sum, code) => {
       return sum + (catalog.course_meta?.[code]?.credits ?? 3);
     }, 0);
+    // The backend counts each earned course once; in-progress courses are not earned yet.
     const completed = plan?.summary?.completed_credits ?? fallbackCompleted;
-    const total = Math.max(plan?.summary?.total_required_credits ?? 0, 120);
-    return { completed, total: total || 1 };
+    const total = plan?.summary?.degree_total_credits || 120;
+    return { completed, total, inProgress: plan?.summary?.in_progress_credits ?? 0 };
   }, [catalog.course_meta, effectiveCompleted, effectiveInProgress, plan?.summary]);
 
   const smartMinorSuggestions: ApiMinorSuggestion[] = useMemo(() => {
@@ -5222,6 +5223,7 @@ export function MainAdvisorScreen({
         {plan && (
           <SummaryStrip
             completedCredits={totalCredits.completed}
+            inProgressCredits={totalCredits.inProgress}
             projectedCredits={Number(plan.summary?.projected_credits ?? 0)}
             degreeCredits={Number(plan.summary?.degree_total_credits || 120)}
             remainingTerms={remainingTerms}
@@ -6677,6 +6679,8 @@ export function MainAdvisorScreen({
                   concentrationAudit={plan?.business_concentration_audit ?? null}
                   minorSuggestions={smartMinorSuggestions}
                   academicRecord={plan?.academic_record ?? null}
+                  grades={grades}
+                  onSetGrade={(code, grade) => setGrades((prev) => withGrade(prev, code, grade, effectiveCompletedOverrides[code]))}
                 />
               </div>
             )}

@@ -267,6 +267,7 @@ def academic_record(
     occupied_credits_by_term: Dict[str, int] | None = None,
     in_progress_credits: int = 0,
     minors: List[str] | None = None,
+    completed_courses: Set[str] | None = None,
 ) -> Tuple[List[str], Dict]:
     """Errors and the student's GPA record. `earned_credits`: credits earned before the plan starts."""
     latest = latest_grades(catalog, grades)
@@ -358,5 +359,10 @@ def academic_record(
         "majors": major_records,
         "max_load": max_load,
         "remaining_credits": remaining_credits,
+        # Completed AUBG courses with credit but no grade (a transcript row the import missed):
+        # the GPA leaves them out until the student adds the grade.
+        "ungraded_courses": sorted(
+            c for c in completed_courses or set() if c not in latest and _course_credits(catalog, c) > 0
+        ) if latest else [],
     }
     return errors, record

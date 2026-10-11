@@ -572,7 +572,13 @@ def _merge_parsed_courses(
         term=preferred.term or other.term,
         page_number=preferred.page_number,
         text_confidence=max(preferred.text_confidence, other.text_confidence),
-        grade=preferred.grade,
+        # The same attempt can appear twice (a term section and a summary): keep whichever row read a
+        # grade. A different status or term is another attempt, whose grade must not carry over.
+        grade=preferred.grade or (
+            other.grade
+            if left.status == right.status and (not preferred.term or not other.term or preferred.term == other.term)
+            else None
+        ),
     )
 
 

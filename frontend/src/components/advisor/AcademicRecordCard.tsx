@@ -1,11 +1,34 @@
-import { Award } from 'lucide-react';
+import { useState } from 'react';
+import { Award, CircleAlert } from 'lucide-react';
 import type { AcademicRecord } from '../../api';
-import { formatGpa } from '../../utils/grades';
+import { formatGpa, GRADE_CHOICES, type GradeMap } from '../../utils/grades';
+
+function GradeSelect({ code, value, onChange }: { code: string; value: string; onChange: (grade: string | null) => void }) {
+  return (
+    <select
+      className="input setup-number"
+      aria-label={`Grade for ${code}`}
+      value={value}
+      onChange={(event) => onChange(event.target.value || null)}
+    >
+      <option value="">No grade</option>
+      {GRADE_CHOICES.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
+    </select>
+  );
+}
 
 const MAJOR_GPA_MINIMUM = 2.5;
 
+interface AcademicRecordCardProps {
+  record: AcademicRecord | null;
+  grades: GradeMap;
+  onSetGrade: (code: string, grade: string | null) => void;
+}
+
 /** GPA, GPA in each major, Latin honors outlook and Dean's List terms (catalog pp.59-60). */
-export function AcademicRecordCard({ record }: { record: AcademicRecord | null }) {
+export function AcademicRecordCard({ record, grades, onSetGrade }: AcademicRecordCardProps) {
+  const [editing, setEditing] = useState(false);
+  const ungraded = record?.ungraded_courses ?? [];
   return (
     <section className="card card-pad stack-4" aria-labelledby="academic-record-title">
       <header className="flex items-center gap-3">
@@ -68,6 +91,42 @@ export function AcademicRecordCard({ record }: { record: AcademicRecord | null }
               {record.terms.filter((term) => term.deans_list).map((term) => (
                 <span key={term.term} className="badge badge-success">Dean's List · {term.term}</span>
               ))}
+            </div>
+          )}
+
+          {ungraded.length > 0 && (
+            <div className="alert alert-warning stack-2" role="status">
+              <CircleAlert aria-hidden="true" />
+              <div className="min-w-0 stack-2">
+                <p className="alert-title">Completed without a grade</p>
+                <p className="text-sm">The transcript import found no grade for these, so the GPA leaves them out. Add them:</p>
+                <ul className="requirement-list">
+                  {ungraded.map((code) => (
+                    <li key={code}>
+                      <span className="font-semibold">{code}</span>
+                      <GradeSelect code={code} value="" onChange={(grade) => onSetGrade(code, grade)} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {Object.keys(grades).length > 0 && (
+            <div className="stack-2">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
+                {editing ? 'Done editing grades' : 'Edit grades'}
+              </button>
+              {editing && (
+                <ul className="requirement-list">
+                  {Object.entries(grades).sort(([a], [b]) => a.localeCompare(b)).map(([code, entry]) => (
+                    <li key={code}>
+                      <span><span className="font-semibold">{code}</span>{entry.term ? <span className="muted"> · {entry.term}</span> : null}</span>
+                      <GradeSelect code={code} value={entry.grade} onChange={(grade) => onSetGrade(code, grade)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

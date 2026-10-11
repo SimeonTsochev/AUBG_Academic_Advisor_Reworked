@@ -2,6 +2,8 @@ import { CalendarRange, CheckCircle2, ListChecks, TriangleAlert } from 'lucide-r
 
 interface SummaryStripProps {
   completedCredits: number;
+  /** This semester's courses, not earned yet. */
+  inProgressCredits?: number;
   /** Completed plus planned credits; what the plan reaches at graduation. */
   projectedCredits: number;
   degreeCredits: number;
@@ -13,6 +15,7 @@ interface SummaryStripProps {
 /** Four numbers a student checks first: progress, plan total, time left, problems. */
 export function SummaryStrip({
   completedCredits,
+  inProgressCredits = 0,
   projectedCredits,
   degreeCredits,
   remainingTerms,
@@ -30,7 +33,9 @@ export function SummaryStrip({
         <div className="progress" aria-hidden="true">
           <div className="progress-fill" style={{ width: `${percent}%` }} />
         </div>
-        <span className="stat-hint num">{completedCredits} of {degreeCredits} credits earned</span>
+        <span className="stat-hint num">
+          {completedCredits} of {degreeCredits} credits earned{inProgressCredits ? `, ${inProgressCredits} in progress` : ''}
+        </span>
       </div>
 
       <div className="card stat">

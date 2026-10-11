@@ -94,6 +94,17 @@ export function gradesFromTranscript(
   return out;
 }
 
+/** Grades a student can enter by hand (catalog p.59): the letter grades and P. */
+export const GRADE_CHOICES = ['A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'F', 'P'];
+
+/** The map after the student sets (or, with null, clears) a course's grade. */
+export function withGrade(grades: GradeMap, code: string, grade: string | null, term?: string | null): GradeMap {
+  const next = { ...grades };
+  if (grade) next[code] = { grade, term: term ?? grades[code]?.term ?? null };
+  else delete next[code];
+  return next;
+}
+
 export function toGradeEntries(grades: GradeMap): GradeEntry[] {
   return Object.entries(grades).map(([code, { grade, term }]) => ({ code, grade, term: term ?? null }));
 }

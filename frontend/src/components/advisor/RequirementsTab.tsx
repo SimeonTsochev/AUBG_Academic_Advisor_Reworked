@@ -4,6 +4,7 @@ import type { AcademicRecord, GeneratePlanResponse, MinorSuggestion } from '../.
 import type { Progress } from '../../types';
 import type { ElectiveRequirementSummary } from '../../utils/electiveProgress';
 import { AcademicRecordCard } from './AcademicRecordCard';
+import type { GradeMap } from '../../utils/grades';
 import { ElectiveProgressCards } from './ElectiveProgressCards';
 import { ProgressDashboard } from '../ProgressDashboard';
 
@@ -12,13 +13,15 @@ type ConcentrationAudit = NonNullable<GeneratePlanResponse['business_concentrati
 interface RequirementsTabProps {
   electiveRequirements: ElectiveRequirementSummary[];
   progress: Progress[];
-  totalCredits: { completed: number; total: number };
+  totalCredits: { completed: number; total: number; inProgress?: number };
   catalogYear: string;
   genEdNeeds: { label: string; need: number }[];
   wic: { required: number; completed: number; need: number };
   concentrationAudit: GeneratePlanResponse['business_concentration_audit'];
   minorSuggestions: MinorSuggestion[];
   academicRecord: AcademicRecord | null;
+  grades: GradeMap;
+  onSetGrade: (code: string, grade: string | null) => void;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -202,6 +205,8 @@ export function RequirementsTab({
   concentrationAudit,
   minorSuggestions,
   academicRecord,
+  grades,
+  onSetGrade,
 }: RequirementsTabProps) {
   const showConcentration = !!concentrationAudit?.selected && concentrationAudit.selected !== 'General';
   return (
@@ -212,7 +217,7 @@ export function RequirementsTab({
         {showConcentration && concentrationAudit && <ConcentrationCard audit={concentrationAudit} />}
       </div>
       <div className="stack-4">
-        <AcademicRecordCard record={academicRecord} />
+        <AcademicRecordCard record={academicRecord} grades={grades} onSetGrade={onSetGrade} />
         <GenEdCard genEdNeeds={genEdNeeds} wic={wic} />
         <MinorSuggestionsCard suggestions={minorSuggestions} />
       </div>

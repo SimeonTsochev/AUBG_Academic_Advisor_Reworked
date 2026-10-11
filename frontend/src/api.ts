@@ -463,6 +463,8 @@ export interface AcademicRecord {
   majors: { major: string; gpa: number | null; credits: number; courses: string[] }[];
   max_load: number;
   remaining_credits: number;
+  /** Completed courses with credit but no grade (the transcript import missed it). */
+  ungraded_courses?: string[];
 }
 
 /** Catalog graduation rules outside the requirement slots (backend graduation_checks.py). */

@@ -226,3 +226,20 @@ class ProgramRuleTests(IsolatedTestCase):
         plan = self._plan(["Economics"], ["Literature"],
                           overrides={"add": [{"term": "Fall 2026", "code": "ENG 3088", "instance_id": "early"}]})
         self.assertTrue(any("ENG 2010 must be completed before 3000-level courses" in e for e in plan["validation_errors"]))
+
+    # --- degree progress -----------------------------------------------------------------------
+
+    def test_progress_rows_include_electives_and_count_each_course_once(self):
+        completed = {"BUS 1001", "BUS 2001", "ECO 1001", "ECO 1002", "JMC 1041", "JMC 2000"}
+        plan = self._plan(
+            ["Business Administration", "Journalism and Mass Communication"], ["Economics"],
+            completed=completed | {"BUS 2020"}, in_progress_courses={"BUS 2020"}, business_concentration="Marketing",
+        )
+        progress = plan["category_progress"]
+        # Catalog totals: Business 37 (p.83; Marketing courses are its electives), JMC 37 (p.98), Economics minor 18.
+        self.assertEqual(progress["majors"]["Business Administration"], {"required": 37, "completed": 6})
+        self.assertEqual(progress["majors"]["Journalism and Mass Communication"]["required"], 37)
+        self.assertEqual(progress["minors"]["Economics"]["required"], 18)
+        # Earned credits count each completed course once and leave the in-progress BUS 2020 out.
+        self.assertEqual(plan["summary"]["completed_credits"], 18)
+        self.assertEqual(plan["summary"]["in_progress_credits"], 3)

@@ -3,7 +3,8 @@ import { BadgeCheck, TrendingUp } from 'lucide-react';
 
 interface ProgressDashboardProps {
   progress: Progress[];
-  totalCredits: { completed: number; total: number };
+  /** Earned credits (each course once), this semester's in-progress credits, and the degree total. */
+  totalCredits: { completed: number; total: number; inProgress?: number };
   catalogYear?: string | null;
 }
 
@@ -24,7 +25,9 @@ export function ProgressDashboard({ progress, totalCredits, catalogYear }: Progr
         <span className="icon-tile" aria-hidden="true"><TrendingUp /></span>
         <div>
           <h2 id="degree-progress-title" className="section-title">Degree progress</h2>
-          <p className="section-subtitle">Credits earned from completed courses and transfer credit.</p>
+          <p className="section-subtitle">
+            Credits earned from completed courses and transfer credit; courses in progress count once they are completed.
+          </p>
         </div>
       </header>
 
@@ -38,7 +41,10 @@ export function ProgressDashboard({ progress, totalCredits, catalogYear }: Progr
         <div className="progress" aria-hidden="true">
           <div className="progress-fill" style={{ width: `${overall}%` }} />
         </div>
-        <span className="text-sm muted num">{Math.max(0, totalCredits.total - totalCredits.completed)} credits remaining</span>
+        <span className="text-sm muted num">
+          {Math.max(0, totalCredits.total - totalCredits.completed)} credits remaining
+          {totalCredits.inProgress ? ` (${totalCredits.inProgress} in progress this semester)` : ''}
+        </span>
       </div>
 
       <ul className="progress-list">

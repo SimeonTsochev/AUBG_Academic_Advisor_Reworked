@@ -4951,6 +4951,8 @@ def _category_credit_progress(
         credits = _course_credits(catalog, assigned) if assigned else 3
 
         bucket: Dict[str, int] | None = None
+        if slot.get("concentration"):
+            continue  # concentration courses are the program's electives, counted with them
         if slot["type"] == "gened":
             bucket = gen_ed
         elif slot.get("owner") == "foundation":
@@ -5928,31 +5930,26 @@ def generate_plan(
     completed_count = len(completed_slots)
     remaining_count = max(0, total_required - completed_count)
     gen_ed_status = _gen_ed_status(slots, selection["slot_assignment"], effective_completed_courses)
+    # Progress counts what is done: the frontend also sends this semester's in-progress courses as
+    # completed (so the planner treats them as taken), but they are not earned yet.
+    in_progress_codes = {
+        _current_course_code(catalog, c) for c in (in_progress_courses or set()) if isinstance(c, str)
+    }
+    # A course planned again (a retake) carries its credits on the planned attempt: it counts once (p.67).
+    planned_again = {
+        c.get("code") for term in semester_plan for c in term.get("courses", []) or [] if isinstance(c, dict)
+    }
+    done_courses = (set(effective_completed_courses) | requested_completed) - in_progress_codes - planned_again
     category_progress = _category_credit_progress(
         catalog,
         slots,
         selection["slot_assignment"],
-        effective_completed_courses,
+        done_courses,
         waived_courses,
         selected_majors=majors,
         business_concentration=business_concentration,
     )
-    total_required_credits = (
-        sum(v.get("required", 0) for v in category_progress.get("majors", {}).values())
-        + sum(v.get("required", 0) for v in category_progress.get("minors", {}).values())
-        + int(category_progress.get("gen_ed", {}).get("required", 0) or 0)
-        + int(category_progress.get("foundation", {}).get("required", 0) or 0)
-        + sum(v.get("required", 0) for v in category_progress.get("options", {}).values())
-    )
-    total_completed_credits = (
-        sum(v.get("completed", 0) for v in category_progress.get("majors", {}).values())
-        + sum(v.get("completed", 0) for v in category_progress.get("minors", {}).values())
-        + int(category_progress.get("gen_ed", {}).get("completed", 0) or 0)
-        + int(category_progress.get("foundation", {}).get("completed", 0) or 0)
-        + sum(v.get("completed", 0) for v in category_progress.get("options", {}).values())
-    )
     _apply_manual_credit_progress(category_progress, manual_credit_breakdown)
-    total_completed_credits += total_manual_credits
 
     from elective_progress import compute_elective_progress  # imports this module's helpers
 
@@ -5973,6 +5970,26 @@ def generate_plan(
         extra_elective_credits=_placement_elective_credits(catalog, majors, minors, placement_waived),
         waived=placement_waived,
     )
+    # Each program's progress row covers its electives too (Business has its own breakdown above).
+    for entry in elective_progress:
+        if entry["program_type"] == "major" and _is_business_administration_major(entry["program"]):
+            continue
+        group = category_progress.setdefault("majors" if entry["program_type"] == "major" else "minors", {})
+        bucket = group.setdefault(entry["program"], {"required": 0, "completed": 0})
+        required = int(entry.get("credits_required") or 0) or 3 * int(entry.get("courses_required") or 0)
+        done_credits = sum(int(c.get("credits") or 0) for c in entry.get("courses") or [] if c.get("code") in done_courses)
+        bucket["required"] += required
+        bucket["completed"] = min(bucket["required"], bucket["completed"] + min(required, done_credits))
+    total_required_credits = (
+        sum(v.get("required", 0) for v in category_progress.get("majors", {}).values())
+        + sum(v.get("required", 0) for v in category_progress.get("minors", {}).values())
+        + int(category_progress.get("gen_ed", {}).get("required", 0) or 0)
+        + int(category_progress.get("foundation", {}).get("required", 0) or 0)
+        + sum(v.get("required", 0) for v in category_progress.get("options", {}).values())
+    )
+    # Credits actually earned: each completed course once (categories overlap, e.g. ECO 1001 counts
+    # for the Economics minor and GenEd), placement waivers earn none, transfer credits count.
+    earned_credits = _completed_credit_total(catalog, done_courses - waived_courses) + total_manual_credits
 
     from academic_record import academic_record  # imports this module's helpers
 
@@ -5987,6 +6004,7 @@ def generate_plan(
         occupied_credits_by_term=occupied_credits_by_term,
         in_progress_credits=_completed_credit_total(catalog, normalized_in_progress),
         minors=minors,
+        completed_courses=done_courses - waived_courses,
     )
     if record_errors:
         is_valid = False
@@ -6023,7 +6041,8 @@ def generate_plan(
             "completed": completed_count,
             "remaining": remaining_count,
             "total_required_credits": int(total_required_credits),
-            "completed_credits": int(total_completed_credits),
+            "completed_credits": int(earned_credits),
+            "in_progress_credits": _completed_credit_total(catalog, in_progress_codes),
             "degree_total_credits": int(degree_total_credits or 0),
             "projected_credits": _projected_degree_credits(
                 catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset

@@ -247,3 +247,28 @@ class TranscriptImportTests(IsolatedTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TranscriptMergeTests(IsolatedTestCase):
+    def _course(self, status, term, grade):
+        from transcript_import import ParsedTranscriptCourse
+
+        return ParsedTranscriptCourse(
+            raw_code="BUS 1001", normalized_code="BUS 1001", raw_title=None, status=status,
+            term=term, page_number=1, text_confidence=1.0, grade=grade,
+        )
+
+    def test_a_duplicate_row_without_a_grade_keeps_the_grade(self):
+        from transcript_import import _merge_parsed_courses
+
+        graded = self._course("completed", "Spring 2026", "B+")
+        bare = self._course("completed", "Spring 2026", None)
+        self.assertEqual(_merge_parsed_courses(graded, bare).grade, "B+")
+        self.assertEqual(_merge_parsed_courses(bare, graded).grade, "B+")
+
+    def test_a_retake_never_inherits_the_earlier_grade(self):
+        from transcript_import import _merge_parsed_courses
+
+        failed = self._course("failed", "Fall 2025", "F")
+        current = self._course("in_progress", "Fall 2026", None)
+        self.assertIsNone(_merge_parsed_courses(failed, current).grade)

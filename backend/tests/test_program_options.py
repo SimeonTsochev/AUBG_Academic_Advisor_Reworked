@@ -72,7 +72,8 @@ class ProgramOptionTests(IsolatedTestCase):
 
     def test_language_progress_is_its_own_row_not_the_majors_credits(self):
         progress = self._plan("European Studies", ["French"])["category_progress"]
-        self.assertEqual(progress["majors"]["European Studies"]["required"], 9)
+        # The major's own 28 credits (required courses and electives, catalog p.90), without the language.
+        self.assertEqual(progress["majors"]["European Studies"]["required"], 28)
         language = progress["options"]["European Studies: French language proficiency (B1)"]
         self.assertEqual((language["program"], language["required"]), ("European Studies", 12))
 
