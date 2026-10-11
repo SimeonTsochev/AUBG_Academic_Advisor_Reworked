@@ -15,6 +15,9 @@ from business_concentrations import classify_business_course
 from degree_engine import STANDARD_MAX_CREDITS_PER_TERM, _current_start_term, generate_plan
 from pdf_export import plan_to_pdf_bytes
 from models import (
+    PlacementWaiverInfo,
+    ProgramInfo,
+    ProgramOptionsInfo,
     UploadCatalogResponse,
     TranscriptImportResponse,
     TranscriptImportTextRequest,
@@ -109,28 +112,27 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
     )
 
 
-def _program_info(catalog: Dict[str, Any], kind: str) -> Dict[str, Dict[str, Any]]:
+def _program_info(catalog: Dict[str, Any], kind: str) -> Dict[str, ProgramInfo]:
     """What the setup screen shows per program (`kind` "major" or "minor"): diploma type (majors),
     the options a student chooses and the placement tests that can waive a course."""
-    info: Dict[str, Dict[str, Any]] = {}
+    info: Dict[str, ProgramInfo] = {}
     for name in catalog.get(f"{kind}s") or {}:
-        entry: Dict[str, Any] = {}
-        diploma = program_data(catalog, kind, name).get("diploma")
-        if diploma:
-            entry["diploma"] = diploma
         options = options_offered(catalog, kind, name)
-        if options is not None and options.choices:
-            entry["options"] = {
-                "label": options.label or "Option",
-                "required": options.required,
-                "multiple": options.multiple,
-                "choices": list(options.choices),
-                "description": options.description,
-            }
-        tests = placement_tests(catalog, kind, name)
-        if tests:
-            entry["placement_waivers"] = [{"course": test.course, "label": test.label} for test in tests]
-        if entry:
+        entry = ProgramInfo(
+            diploma=program_data(catalog, kind, name).get("diploma") or None,
+            options=ProgramOptionsInfo(
+                label=options.label or "Option",
+                required=options.required,
+                multiple=options.multiple,
+                choices=list(options.choices),
+                description=options.description,
+            ) if options is not None and options.choices else None,
+            placement_waivers=[
+                PlacementWaiverInfo(course=test.course, label=test.label)
+                for test in placement_tests(catalog, kind, name)
+            ],
+        )
+        if entry.diploma or entry.options or entry.placement_waivers:
             info[name] = entry
     return info
 

@@ -18,8 +18,8 @@ export interface PlacementWaiver {
 }
 
 export interface ProgramInfo {
-  diploma?: "dual" | "single";
-  options?: ProgramOptions;
+  diploma?: "dual" | "single" | null;
+  options?: ProgramOptions | null;
   placement_waivers?: PlacementWaiver[];
 }
 
@@ -475,9 +475,9 @@ export interface GraduationChecks {
   retakes: { count: number; limit: number };
   double_counting: { programs: string[]; courses: string[]; limit: number }[];
   program_options: ProgramOptionSelection;
-  internships?: { courses: string[]; credits: number; limit: number };
-  independent_study?: { count: number; limit: number };
-  sequence?: { program: string; before: string; courses: string[] }[];
+  internships: { courses: string[]; credits: number; limit: number };
+  independent_study: { count: number; limit: number };
+  sequence: { program: string; before: string; courses: string[] }[];
 }
 
 export interface GeneratePlanResponse {

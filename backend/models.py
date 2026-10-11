@@ -2,6 +2,29 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Any, List, Optional, Dict, Literal
 
+class ProgramOptionsInfo(BaseModel):
+    """Options a program offers (catalog_options.py), e.g. a Computer Science concentration or the
+    European Studies language."""
+    label: str
+    required: bool
+    multiple: bool
+    choices: List[str]
+    description: Optional[str] = None
+
+
+class PlacementWaiverInfo(BaseModel):
+    """A course a placement test can waive (catalog pp.86, 95, 105, 126)."""
+    course: str
+    label: str
+
+
+class ProgramInfo(BaseModel):
+    """What the setup screen shows for a program."""
+    diploma: Optional[Literal["dual", "single"]] = None  # majors only (catalog p.72)
+    options: Optional[ProgramOptionsInfo] = None
+    placement_waivers: List[PlacementWaiverInfo] = Field(default_factory=list)
+
+
 class UploadCatalogResponse(BaseModel):
     catalog_id: str
     catalog_year: Optional[str] = None
@@ -11,11 +34,9 @@ class UploadCatalogResponse(BaseModel):
     course_meta: Dict[str, Dict] = Field(default_factory=dict)
     gen_ed: Dict[str, Dict] = Field(default_factory=dict)
     excel_only_codes: List[str] = Field(default_factory=list)
-    # Per major: {"diploma": "dual" | "single"} (catalog p.72), the options it offers,
-    # {"label", "description", "required", "multiple", "choices": [names]}, and its placement
-    # waivers [{"course", "label"}]. `minor_info` is the same for minors (no diploma).
-    program_info: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    minor_info: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    # Per major: diploma type, options and placement tests. `minor_info` is the same for minors.
+    program_info: Dict[str, ProgramInfo] = Field(default_factory=dict)
+    minor_info: Dict[str, ProgramInfo] = Field(default_factory=dict)
 
 
 class TranscriptImportMatchCandidate(BaseModel):
@@ -279,6 +300,24 @@ class SharedCourses(BaseModel):
     limit: int
 
 
+class InternshipCheck(BaseModel):
+    courses: List[str] = Field(default_factory=list)
+    credits: int
+    limit: int
+
+
+class IndependentStudyCheck(BaseModel):
+    count: int
+    limit: int
+
+
+class SequenceIssue(BaseModel):
+    """Courses planned before the course a program's `sequence_rules` put first."""
+    program: str
+    before: str
+    courses: List[str]
+
+
 class GraduationChecks(BaseModel):
     """Catalog graduation rules outside the requirement slots (graduation_checks.py)."""
     wic: WicCheck
@@ -288,9 +327,9 @@ class GraduationChecks(BaseModel):
     double_counting: List[SharedCourses] = Field(default_factory=list)
     # Per program offering options: the valid chosen options (e.g. {"European Studies": ["French"]}).
     program_options: Dict[str, List[str]] = Field(default_factory=dict)
-    internships: Dict[str, Any] = Field(default_factory=dict)
-    independent_study: Dict[str, Any] = Field(default_factory=dict)
-    sequence: List[Dict[str, Any]] = Field(default_factory=list)
+    internships: InternshipCheck
+    independent_study: IndependentStudyCheck
+    sequence: List[SequenceIssue] = Field(default_factory=list)
 
 
 class TermRecord(BaseModel):
