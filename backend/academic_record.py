@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Set, Tuple
 
+from plan_state import PlanState
 from degree_engine import (
     ABSOLUTE_MAX_CREDITS_PER_TERM,
     STANDARD_MAX_CREDITS_PER_TERM,
+    _completed_credit_total,
     _course_credits,
     _current_course_code,
     _term_label_index,
@@ -256,21 +258,15 @@ def _independent_study_errors(
     return errors
 
 
-def academic_record(
-    catalog: Dict,
-    grades: List[Dict],
-    majors: List[str],
-    slots: Dict,
-    elective_progress: List[Dict],
-    semester_plan: List[Dict],
-    earned_credits: int,
-    occupied_credits_by_term: Dict[str, int] | None = None,
-    in_progress_credits: int = 0,
-    minors: List[str] | None = None,
-    completed_courses: Set[str] | None = None,
-) -> Tuple[List[str], Dict]:
-    """Errors and the student's GPA record. `earned_credits`: credits earned before the plan starts."""
-    latest = latest_grades(catalog, grades)
+def academic_record(state: PlanState, elective_progress: List[Dict]) -> Tuple[List[str], Dict]:
+    """Errors and the student's GPA record."""
+    catalog, slots, semester_plan = state.catalog, state.slots, state.semester_plan
+    majors, minors = state.majors, state.minors
+    occupied_credits_by_term = state.occupied_credits_by_term
+    earned_credits = state.earned_before_plan
+    in_progress_credits = _completed_credit_total(catalog, state.in_progress_in_pool)
+    completed_courses = state.done - state.waived
+    latest = latest_grades(catalog, state.grades)
     graded = {code: entry for code, entry in latest.items() if entry["grade"] in GRADE_POINTS}
     gpa, attempted, points = _gpa(
         (_course_credits(catalog, code), GRADE_POINTS[entry["grade"]]) for code, entry in graded.items()
@@ -334,7 +330,7 @@ def academic_record(
             )
         errors.extend(_grade_rule_errors(
             catalog,
-            [(m, "major") for m in majors] + [(m, "minor") for m in minors or []],
+            [(m, "major") for m in majors] + [(m, "minor") for m in minors],
             graded,
             gpa,
             planned,
@@ -342,11 +338,11 @@ def academic_record(
             {record["major"]: record["gpa"] for record in major_records},
         ))
     errors.extend(_independent_study_errors(
-        catalog, semester_plan, occupied_credits_by_term or {}, earned_credits, gpa
+        catalog, semester_plan, occupied_credits_by_term, earned_credits, gpa
     ))
 
     max_load = OVERLOAD_MAX_LOAD if gpa is not None and gpa >= OVERLOAD_GPA else STANDARD_MAX_LOAD
-    errors.extend(_load_errors(catalog, semester_plan, occupied_credits_by_term or {}, earned_credits, gpa))
+    errors.extend(_load_errors(catalog, semester_plan, occupied_credits_by_term, earned_credits, gpa))
 
     record = {
         "has_grades": bool(latest),
@@ -362,7 +358,7 @@ def academic_record(
         # Completed AUBG courses with credit but no grade (a transcript row the import missed):
         # the GPA leaves them out until the student adds the grade.
         "ungraded_courses": sorted(
-            c for c in completed_courses or set() if c not in latest and _course_credits(catalog, c) > 0
+            c for c in completed_courses if c not in latest and _course_credits(catalog, c) > 0
         ) if latest else [],
     }
     return errors, record

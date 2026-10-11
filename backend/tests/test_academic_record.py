@@ -12,6 +12,7 @@ from _isolation import IsolatedTestCase  # noqa: E402
 
 import degree_engine  # noqa: E402
 from academic_record import academic_record, honors_outlook, latest_grades  # noqa: E402
+from plan_state import PlanState  # noqa: E402
 from catalog_cache import getCatalogCache  # noqa: E402
 from degree_engine import build_requirement_slots, generate_plan  # noqa: E402
 
@@ -30,15 +31,16 @@ class AcademicRecordTests(IsolatedTestCase):
 
     def _record(self, grades, majors=(), semester_plan=(), earned=0, options=None):
         slots = build_requirement_slots(self.catalog, list(majors), [], program_options=options)
-        return academic_record(
-            self.catalog,
-            grades=grades,
+        state = PlanState(
+            catalog=self.catalog,
             majors=list(majors),
+            minors=[],
             slots=slots,
-            elective_progress=[],
             semester_plan=list(semester_plan),
-            earned_credits=earned,
+            grades=grades,
+            credit_offset=earned,  # nothing completed: the credits earned before the plan
         )
+        return academic_record(state, elective_progress=[])
 
     def test_gpa_weights_grades_by_credits(self):
         # ENG 1001 is 4 credits, STA 1005 is 3: (4 * 4.0 + 3 * 3.0) / 7.

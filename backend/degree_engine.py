@@ -5872,43 +5872,6 @@ def generate_plan(
             "raise the credit load per semester or review the prerequisites."
         )
 
-    from graduation_checks import graduation_checks  # imports this module's helpers
-
-    plan_courses = requested_completed | {
-        _current_course_code(catalog, code) for code in (in_progress_courses or set()) if isinstance(code, str)
-    } | {
-        course["code"]
-        for term in semester_plan
-        for course in term.get("courses", []) or []
-        if isinstance(course.get("code"), str) and not _is_free_elective(course["code"])
-    }
-    graduation_errors, graduation_details = graduation_checks(
-        catalog,
-        majors=majors,
-        slots=slots,
-        courses=plan_courses,
-        aubg_credits=_projected_degree_credits(
-            catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset
-        ) - total_manual_credits,
-        # The frontend sends retakes as `is_retake` override adds, not as retake_courses.
-        retakes=normalized_retakes | {
-            course["code"]
-            for term in semester_plan
-            for course in term.get("courses", []) or []
-            if course.get("is_retake") and isinstance(course.get("code"), str)
-        },
-        program_options=program_options,
-        minors=minors,
-        semester_plan=semester_plan,
-        completed=requested_completed,
-    )
-    validation_errors.extend(graduation_errors)
-    is_valid = True
-    validation_errors_out: List[str] = []
-    if validation_errors:
-        is_valid = False
-        validation_errors_out = validation_errors
-
     _annotate_unlocks(catalog, semester_plan)
 
     if excel_elective_tags:
@@ -5930,85 +5893,34 @@ def generate_plan(
     completed_count = len(completed_slots)
     remaining_count = max(0, total_required - completed_count)
     gen_ed_status = _gen_ed_status(slots, selection["slot_assignment"], effective_completed_courses)
-    # Progress counts what is done: the frontend also sends this semester's in-progress courses as
-    # completed (so the planner treats them as taken), but they are not earned yet.
-    in_progress_codes = {
-        _current_course_code(catalog, c) for c in (in_progress_courses or set()) if isinstance(c, str)
-    }
-    # A course planned again (a retake) carries its credits on the planned attempt: it counts once (p.67).
-    planned_again = {
-        c.get("code") for term in semester_plan for c in term.get("courses", []) or [] if isinstance(c, dict)
-    }
-    done_courses = (set(effective_completed_courses) | requested_completed) - in_progress_codes - planned_again
-    category_progress = _category_credit_progress(
-        catalog,
-        slots,
-        selection["slot_assignment"],
-        done_courses,
-        waived_courses,
-        selected_majors=majors,
-        business_concentration=business_concentration,
-    )
-    _apply_manual_credit_progress(category_progress, manual_credit_breakdown)
 
-    from elective_progress import compute_elective_progress  # imports this module's helpers
+    # The catalog rules beyond the requirement slots, from one snapshot of the finished plan.
+    from plan_audit import audit_plan  # plan_audit builds on this module's helpers
+    from plan_state import PlanState
 
-    elective_progress = compute_elective_progress(
-        catalog,
-        programs=[(name, "major") for name in majors] + [(name, "minor") for name in minors],
-        slots=slots,
-        # Every completed course, including topics courses outside the planning pool (POS 4400).
-        completed=set(effective_completed_courses) | requested_completed,
-        planned={
-            course["code"]
-            for term in semester_plan
-            for course in term.get("courses", [])
-            if not _is_free_elective(course.get("code") or "")
-        },
-        manual_major_elective_credits=manual_credit_breakdown.get("major_electives", {}),
-        program_options=program_options,
-        extra_elective_credits=_placement_elective_credits(catalog, majors, minors, placement_waived),
-        waived=placement_waived,
-    )
-    # Each program's progress row covers its electives too (Business has its own breakdown above).
-    for entry in elective_progress:
-        if entry["program_type"] == "major" and _is_business_administration_major(entry["program"]):
-            continue
-        group = category_progress.setdefault("majors" if entry["program_type"] == "major" else "minors", {})
-        bucket = group.setdefault(entry["program"], {"required": 0, "completed": 0})
-        required = int(entry.get("credits_required") or 0) or 3 * int(entry.get("courses_required") or 0)
-        done_credits = sum(int(c.get("credits") or 0) for c in entry.get("courses") or [] if c.get("code") in done_courses)
-        bucket["required"] += required
-        bucket["completed"] = min(bucket["required"], bucket["completed"] + min(required, done_credits))
-    total_required_credits = (
-        sum(v.get("required", 0) for v in category_progress.get("majors", {}).values())
-        + sum(v.get("required", 0) for v in category_progress.get("minors", {}).values())
-        + int(category_progress.get("gen_ed", {}).get("required", 0) or 0)
-        + int(category_progress.get("foundation", {}).get("required", 0) or 0)
-        + sum(v.get("required", 0) for v in category_progress.get("options", {}).values())
-    )
-    # Credits actually earned: each completed course once (categories overlap, e.g. ECO 1001 counts
-    # for the Economics minor and GenEd), placement waivers earn none, transfer credits count.
-    earned_credits = _completed_credit_total(catalog, done_courses - waived_courses) + total_manual_credits
-
-    from academic_record import academic_record  # imports this module's helpers
-
-    record_errors, record = academic_record(
-        catalog,
-        grades=list(grades or []),
+    audit = audit_plan(PlanState(
+        catalog=catalog,
         majors=majors,
-        slots=slots,
-        elective_progress=elective_progress,
-        semester_plan=semester_plan,
-        earned_credits=_completed_credit_total(catalog, completed_courses) + credit_offset,
-        occupied_credits_by_term=occupied_credits_by_term,
-        in_progress_credits=_completed_credit_total(catalog, normalized_in_progress),
         minors=minors,
-        completed_courses=done_courses - waived_courses,
-    )
-    if record_errors:
-        is_valid = False
-        validation_errors_out = [*validation_errors_out, *record_errors]
+        slots=slots,
+        semester_plan=semester_plan,
+        slot_assignment=selection["slot_assignment"],
+        business_concentration=business_concentration,
+        reported_completed=requested_completed,
+        completed=completed_courses,
+        effective_completed=set(effective_completed_courses),
+        in_progress={_current_course_code(catalog, c) for c in (in_progress_courses or set()) if isinstance(c, str)},
+        in_progress_in_pool=normalized_in_progress,
+        waived=waived_courses,
+        placement_waived=placement_waived,
+        retake_requests=normalized_retakes,
+        program_options=dict(program_options or {}),
+        grades=list(grades or []),
+        occupied_credits_by_term=dict(occupied_credits_by_term or {}),
+        credit_offset=credit_offset,
+        manual_credit_breakdown=manual_credit_breakdown,
+    ))
+    validation_errors = validation_errors + audit.errors
 
     return {
         "majors": majors,
@@ -6031,7 +5943,7 @@ def generate_plan(
         "elective_course_codes": elective_course_codes,
         "excel_elective_tags": excel_elective_tags,
         "elective_placeholders": elective_placeholders,
-        "elective_progress": elective_progress,
+        "elective_progress": audit.elective_progress,
         "gened_discovery": {
             "case_studies_textual_analysis": case_studies,
         },
@@ -6040,22 +5952,22 @@ def generate_plan(
             "total_required": total_required,
             "completed": completed_count,
             "remaining": remaining_count,
-            "total_required_credits": int(total_required_credits),
-            "completed_credits": int(earned_credits),
-            "in_progress_credits": _completed_credit_total(catalog, in_progress_codes),
+            "total_required_credits": audit.total_required_credits,
+            "completed_credits": audit.earned_credits,
+            "in_progress_credits": audit.in_progress_credits,
             "degree_total_credits": int(degree_total_credits or 0),
             "projected_credits": _projected_degree_credits(
                 catalog, semester_plan, completed_courses, normalized_in_progress, credit_offset
             ),
         },
         "gen_ed_status": gen_ed_status,
-        "category_progress": category_progress,
+        "category_progress": audit.category_progress,
         "course_reasons": course_reasons,
         "warnings": warnings,
-        "is_valid": is_valid,
-        "validation_errors": validation_errors_out,
-        "graduation_checks": graduation_details,
-        "academic_record": record,
+        "is_valid": not validation_errors,
+        "validation_errors": validation_errors,
+        "graduation_checks": audit.graduation_checks,
+        "academic_record": audit.academic_record,
     }
 
 def _prereq_codes_in(expr: object) -> Set[str]:

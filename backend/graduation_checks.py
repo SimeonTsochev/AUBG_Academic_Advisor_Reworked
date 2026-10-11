@@ -1,7 +1,7 @@
 """Graduation rules the requirement slots do not express (AY 2026-27 catalog pp.55, 61-63, 67, 72, 122).
 
 Each check looks at the whole plan (completed, in-progress and planned courses) and returns a
-student-facing error when the plan breaks the rule; `generate_plan` adds the errors to its
+student-facing error when the plan breaks the rule; plan_audit.py adds the errors to the plan's
 validation errors and returns the details as `graduation_checks`.
 """
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 from itertools import combinations
 from typing import Dict, Iterable, List, Set, Tuple
 
+from plan_state import PlanState
 from degree_engine import (
     _catalog_courses,
     _course_credits,
@@ -205,31 +206,21 @@ def sequence_check(
     return errors, details
 
 
-def graduation_checks(
-    catalog: Dict,
-    majors: List[str],
-    slots: Dict,
-    courses: Set[str],
-    aubg_credits: int,
-    retakes: Set[str],
-    program_options: Dict[str, List[str]] | None = None,
-    minors: List[str] | None = None,
-    semester_plan: List[Dict] | None = None,
-    completed: Set[str] | None = None,
-) -> Tuple[List[str], Dict]:
-    """`courses`: every completed, in-progress and planned course code (no placeholders)."""
+def graduation_checks(state: PlanState) -> Tuple[List[str], Dict]:
+    """Every check's errors, and the details per check."""
+    catalog, courses = state.catalog, state.courses
     errors: List[str] = []
     checks: Dict = {}
     for key, (check_errors, details) in (
         ("wic", wic_check(catalog, courses)),
-        ("dual_diploma", dual_diploma_check(catalog, majors)),
-        ("residency", residency_check(catalog, aubg_credits)),
-        ("retakes", retake_check(retakes)),
-        ("double_counting", double_counting_check(catalog, slots, courses)),
-        ("program_options", program_options_check(catalog, majors, minors or [], program_options)),
+        ("dual_diploma", dual_diploma_check(catalog, state.majors)),
+        ("residency", residency_check(catalog, state.aubg_credits)),
+        ("retakes", retake_check(state.retakes)),
+        ("double_counting", double_counting_check(catalog, state.slots, courses)),
+        ("program_options", program_options_check(catalog, state.majors, state.minors, state.program_options)),
         ("internships", internship_check(catalog, courses)),
-        ("independent_study", independent_study_check(catalog, semester_plan or [], completed or set())),
-        ("sequence", sequence_check(catalog, majors, minors or [], semester_plan or [], completed or set())),
+        ("independent_study", independent_study_check(catalog, state.semester_plan, state.reported_completed)),
+        ("sequence", sequence_check(catalog, state.majors, state.minors, state.semester_plan, state.reported_completed)),
     ):
         errors.extend(check_errors)
         checks[key] = details
