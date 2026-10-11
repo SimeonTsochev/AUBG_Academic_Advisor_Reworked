@@ -66,6 +66,13 @@ class ManualCredit(BaseModel):
     program: Optional[str] = None
     note: Optional[str] = None
 
+class GradeEntry(BaseModel):
+    """A transcript grade. Grades stay in the student's browser; they are only sent to compute GPA."""
+    code: str
+    grade: str
+    term: Optional[str] = None
+
+
 class GeneratePlanRequest(BaseModel):
     catalog_id: str
     majors: List[str] = Field(default_factory=list)
@@ -75,6 +82,7 @@ class GeneratePlanRequest(BaseModel):
     # concentration, the European Studies language.
     program_options: Dict[str, List[str]] = Field(default_factory=dict)
     completed_courses: List[str] = Field(default_factory=list)
+    grades: List[GradeEntry] = Field(default_factory=list)
     manual_credits: List[ManualCredit] = Field(default_factory=list)
     retake_courses: List[str] = Field(default_factory=list)
     # Courses the student picked for a "choose one" requirement (e.g. ECO 3002 for the Economics minor).
@@ -265,6 +273,46 @@ class GraduationChecks(BaseModel):
     program_options: Dict[str, List[str]] = Field(default_factory=dict)
 
 
+class TermRecord(BaseModel):
+    term: str
+    gpa: Optional[float] = None
+    credits: int
+    deans_list: bool
+
+
+class HonorsNext(BaseModel):
+    name: str
+    min_gpa: float
+    needed_average: Optional[float] = None
+    reachable: bool
+
+
+class HonorsOutlook(BaseModel):
+    current: Optional[str] = None
+    next: Optional[HonorsNext] = None
+
+
+class MajorRecord(BaseModel):
+    major: str
+    gpa: Optional[float] = None
+    credits: int
+    courses: List[str] = Field(default_factory=list)
+
+
+class AcademicRecord(BaseModel):
+    """GPA, honors and the course-load limit from the student's grades (academic_record.py)."""
+    has_grades: bool
+    gpa: Optional[float] = None
+    attempted_credits: int
+    quality_points: float
+    terms: List[TermRecord] = Field(default_factory=list)
+    presidents_list: bool
+    honors: HonorsOutlook
+    majors: List[MajorRecord] = Field(default_factory=list)
+    max_load: int
+    remaining_credits: int
+
+
 class GeneratePlanResponse(BaseModel):
     catalog_id: str
     catalog_year: Optional[str] = None
@@ -291,6 +339,7 @@ class GeneratePlanResponse(BaseModel):
     is_valid: bool = True
     validation_errors: List[str] = Field(default_factory=list)
     graduation_checks: Optional[GraduationChecks] = None
+    academic_record: Optional[AcademicRecord] = None
 
 
 class CreateSnapshotRequest(BaseModel):

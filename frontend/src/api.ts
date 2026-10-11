@@ -335,6 +335,8 @@ export interface GeneratePlanRequest {
   business_concentration?: string | null;
   program_options?: ProgramOptionSelection;
   completed_courses: string[];
+  /** Transcript grades for GPA; kept in the browser, never in a snapshot. */
+  grades?: GradeEntry[];
   manual_credits?: ManualCreditEntry[];
   retake_courses?: string[];
   /** The student's pick for a "choose one" requirement, e.g. ECO 3002 for the Economics minor. */
@@ -413,6 +415,29 @@ export interface PlanWarning {
   unmet?: string[];
   offered_terms?: string[];
   [key: string]: unknown;
+}
+
+export interface GradeEntry {
+  code: string;
+  grade: string;
+  term?: string | null;
+}
+
+/** GPA, honors and the course-load limit from the student's grades (backend academic_record.py). */
+export interface AcademicRecord {
+  has_grades: boolean;
+  gpa: number | null;
+  attempted_credits: number;
+  quality_points: number;
+  terms: { term: string; gpa: number | null; credits: number; deans_list: boolean }[];
+  presidents_list: boolean;
+  honors: {
+    current: string | null;
+    next: { name: string; min_gpa: number; needed_average: number | null; reachable: boolean } | null;
+  };
+  majors: { major: string; gpa: number | null; credits: number; courses: string[] }[];
+  max_load: number;
+  remaining_credits: number;
 }
 
 /** Catalog graduation rules outside the requirement slots (backend graduation_checks.py). */
@@ -505,6 +530,7 @@ export interface GeneratePlanResponse {
   is_valid?: boolean;
   validation_errors?: string[];
   graduation_checks?: GraduationChecks | null;
+  academic_record?: AcademicRecord | null;
   gened_discovery?: {
     case_studies_textual_analysis?: {
       code: string;

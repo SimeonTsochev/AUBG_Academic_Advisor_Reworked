@@ -13,6 +13,7 @@ import {
   type UploadCatalogResponse,
 } from './api';
 import type { FailedCourse, ManualCreditEntry, RetakeEntry } from './types';
+import type { GradeMap } from './utils/grades';
 import { normalizeFailedCourses } from './utils/retakes';
 import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from './constants/academic';
 
@@ -47,6 +48,8 @@ interface AcademicSelection {
   waivedMat1000: boolean;
   waivedEng1000: boolean;
 }
+
+type SetupResult = AcademicSelection & { grades?: GradeMap };
 
 const DEFAULT_MAX_CREDITS = 16;
 const DISCLAIMER_SESSION_KEY = 'disclaimerAccepted';
@@ -316,7 +319,9 @@ export default function App() {
   };
   const [restoredSnapshot, setRestoredSnapshot] = useState<ProgramSnapshotPayload | null>(null);
   const [restoredSnapshotToken, setRestoredSnapshotToken] = useState<string | null>(null);
-  const [pendingSelection, setPendingSelection] = useState<AcademicSelection | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<SetupResult | null>(null);
+  // Grades from the setup transcript import; kept apart from the selection so they never reach a snapshot.
+  const [setupGrades, setSetupGrades] = useState<GradeMap>({});
   const [selection, setSelection] = useState<AcademicSelection>({
     majors: [],
     minors: [],
@@ -457,14 +462,15 @@ export default function App() {
     }
   };
 
-  const openAdvisorWithSelection = (data: AcademicSelection) => {
+  const openAdvisorWithSelection = ({ grades, ...data }: SetupResult) => {
+    setSetupGrades(grades ?? {});
     setRestoredSnapshot(null);
     setRestoredSnapshotToken(null);
     setSelection((prev) => ({ ...prev, ...data }));
     setCurrentScreen('advisor');
   };
 
-  const handleSetupComplete = (data: AcademicSelection) => {
+  const handleSetupComplete = (data: SetupResult) => {
     if (disclaimerAccepted) {
       openAdvisorWithSelection(data);
       return;
@@ -523,6 +529,7 @@ export default function App() {
           selection={selection}
           initialSnapshot={restoredSnapshot}
           initialSnapshotToken={restoredSnapshotToken}
+          initialGrades={setupGrades}
           onBack={() => setCurrentScreen('setup')}
         />
       )}

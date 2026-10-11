@@ -7,6 +7,7 @@ import { AdvisorHeader } from './advisor/AdvisorHeader';
 import { PlanAlerts } from './advisor/PlanAlerts';
 import { ProgramOptionPrompt } from './advisor/ProgramOptionPrompt';
 import { majorsMissingRequiredOption, normalizeProgramOptions } from '../utils/programOptions';
+import { loadGrades, saveGrades, toGradeEntries, type GradeMap } from '../utils/grades';
 import { RequirementsTab } from './advisor/RequirementsTab';
 import { SummaryStrip } from './advisor/SummaryStrip';
 import type { Course, Progress, ElectiveSuggestion, FailedCourse, ManualCreditEntry, RetakeEntry } from '../types';
@@ -75,6 +76,8 @@ interface MainAdvisorScreenProps {
   };
   initialSnapshot?: ProgramSnapshotPayload | null;
   initialSnapshotToken?: string | null;
+  /** Grades from the setup transcript import; a restored plan reads this browser's stored grades instead. */
+  initialGrades?: GradeMap;
   onBack: () => void;
 }
 
@@ -236,6 +239,7 @@ export function MainAdvisorScreen({
   selection,
   initialSnapshot = null,
   initialSnapshotToken = null,
+  initialGrades,
   onBack,
 }: MainAdvisorScreenProps) {
   const SEMESTERS_PER_YEAR = 2;
@@ -249,6 +253,11 @@ export function MainAdvisorScreen({
     () => normalizeProgramOptions(selection.programOptions, selection.majors, catalog.program_info ?? {}),
   );
   const majorsNeedingOption = majorsMissingRequiredOption(selection.majors, catalog.program_info ?? {}, programOptions);
+  // Transcript grades for GPA. Private: stored in this browser under the share token and sent with
+  // plan requests, but never part of the snapshot payload, so a shared link does not reveal them.
+  const [grades] = useState<GradeMap>(() =>
+    initialGrades && Object.keys(initialGrades).length > 0 ? initialGrades : loadGrades(initialSnapshotToken),
+  );
 
   const addOverrideAdd = (
     term: string,
@@ -2187,6 +2196,7 @@ export function MainAdvisorScreen({
     initialSnapshotToken ? snapshotRelevantStateHash : null
   );
   const currentSnapshotTokenRef = useRef<string | null>(initialSnapshotToken);
+  const gradesTokenRef = useRef<string | null>(initialSnapshotToken);
   const initialSnapshotSettledRef = useRef(!initialSnapshotToken);
   const snapshotStorageUnavailableRef = useRef(readSnapshotStorageDisabled());
   const tokenCopyResetTimeoutRef = useRef<number | null>(null);
@@ -2199,6 +2209,13 @@ export function MainAdvisorScreen({
   useEffect(() => {
     setIsSnapshotHydrated(true);
   }, []);
+
+  // Keep this plan's grades under its newest share token (every saved edit gets a new one).
+  useEffect(() => {
+    if (!currentSnapshotToken) return;
+    saveGrades(currentSnapshotToken, grades, gradesTokenRef.current);
+    gradesTokenRef.current = currentSnapshotToken;
+  }, [currentSnapshotToken, grades]);
 
   useEffect(() => {
     return () => {
@@ -2314,6 +2331,7 @@ export function MainAdvisorScreen({
     minors: selection.minors,
     business_concentration: selection.businessConcentration,
     program_options: programOptions,
+    grades: toGradeEntries(grades),
     completed_courses: planningCompleted,
     manual_credits: manualCredits,
     retake_courses: [],
@@ -2335,6 +2353,7 @@ export function MainAdvisorScreen({
     catalog.catalog_id,
     selection,
     programOptions,
+    grades,
     planningCompleted,
     manualCredits,
     effectiveInProgress,
@@ -6630,6 +6649,7 @@ export function MainAdvisorScreen({
                   wic={wicRequirementStatus}
                   concentrationAudit={plan?.business_concentration_audit ?? null}
                   minorSuggestions={smartMinorSuggestions}
+                  academicRecord={plan?.academic_record ?? null}
                 />
               </div>
             )}

@@ -14,6 +14,7 @@ import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils
 import { extractTranscriptLinesFromImage, extractTranscriptLinesFromPdf } from '../utils/transcriptOcr';
 import { MAX_CREDITS_PER_TERM, MIN_CREDITS_PER_TERM } from '../constants/academic';
 import { majorsMissingRequiredOption, normalizeProgramOptions, toggleProgramOption } from '../utils/programOptions';
+import { gradesFromTranscript, type GradeMap } from '../utils/grades';
 import type { FailedCourse, ManualCreditEntry } from '../types';
 import {
   TranscriptImportReviewDialog,
@@ -92,6 +93,8 @@ interface AcademicSetupScreenProps {
     businessConcentration: string | null;
     economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
     programOptions: ProgramOptionSelection;
+    /** Transcript grades for GPA; the advisor keeps them in this browser, never in a snapshot. */
+    grades: GradeMap;
     completedCourses: string[];
     inProgressCourses: string[];
     failedCourses: FailedCourse[];
@@ -146,6 +149,7 @@ export function AcademicSetupScreen({
   // Not completed, so the plan schedules them again when a requirement still needs them.
   const [importedFailedCourses, setImportedFailedCourses] = useState<FailedCourse[]>([]);
   const [importedCompletedTerms, setImportedCompletedTerms] = useState<Record<string, string>>({});
+  const [importedGrades, setImportedGrades] = useState<GradeMap>({});
   const [importedInProgressTerms, setImportedInProgressTerms] = useState<Record<string, string>>({});
   const [transcriptImportPhase, setTranscriptImportPhase] = useState<TranscriptImportPhase>('idle');
   const [transcriptImportError, setTranscriptImportError] = useState<string | null>(null);
@@ -504,6 +508,7 @@ export function AcademicSetupScreen({
       }
     });
 
+    setImportedGrades((prev) => ({ ...prev, ...gradesFromTranscript(transcriptReviewEntries, normalizeCourseCode) }));
     setImportedCompletedCourses(Array.from(nextCompleted));
     setImportedInProgressCourses(Array.from(nextInProgress));
     setImportedFailedCourses(Array.from(nextFailed.values()));
@@ -593,6 +598,12 @@ export function AcademicSetupScreen({
       businessConcentration: businessMajorSelected ? businessConcentration : null,
       economicsIntermediateChoice,
       programOptions: selectedProgramOptions,
+      // Grades of courses still on the lists (a course removed by hand loses its grade).
+      grades: Object.fromEntries(
+        Object.entries(importedGrades).filter(
+          ([code]) => completedForPlan.includes(code) || importedFailedCourses.some((entry) => entry.code === code)
+        )
+      ),
       completedCourses: completedForPlan,
       inProgressCourses,
       // A course added by hand as completed or in progress overrides an earlier failed attempt.
@@ -1097,8 +1108,12 @@ export function AcademicSetupScreen({
                   }}
                   className="input setup-number"
                 />
-                <span className="text-sm muted">Typical range is 14-20.</span>
+                <span className="text-sm muted">15 is standard and 17 the usual maximum.</span>
               </div>
+              <p className="text-xs muted mt-3">
+                18-19 credits needs a cumulative GPA of 3.300 or more and is not allowed in your first year;
+                more than 19 needs the Dean of Faculty's permission (catalog pp.65-66).
+              </p>
             </div>
 
             {/* Continue */}

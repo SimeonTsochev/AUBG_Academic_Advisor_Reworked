@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Briefcase, CheckCircle2, ChevronDown, Lightbulb, PenLine, Shapes } from 'lucide-react';
-import type { GeneratePlanResponse, MinorSuggestion } from '../../api';
+import type { AcademicRecord, GeneratePlanResponse, MinorSuggestion } from '../../api';
 import type { Progress } from '../../types';
 import type { ElectiveRequirementSummary } from '../../utils/electiveProgress';
+import { AcademicRecordCard } from './AcademicRecordCard';
 import { ElectiveProgressCards } from './ElectiveProgressCards';
 import { ProgressDashboard } from '../ProgressDashboard';
 
@@ -17,6 +18,7 @@ interface RequirementsTabProps {
   wic: { required: number; completed: number; need: number };
   concentrationAudit: GeneratePlanResponse['business_concentration_audit'];
   minorSuggestions: MinorSuggestion[];
+  academicRecord: AcademicRecord | null;
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -199,6 +201,7 @@ export function RequirementsTab({
   wic,
   concentrationAudit,
   minorSuggestions,
+  academicRecord,
 }: RequirementsTabProps) {
   const showConcentration = !!concentrationAudit?.selected && concentrationAudit.selected !== 'General';
   return (
@@ -209,6 +212,7 @@ export function RequirementsTab({
         {showConcentration && concentrationAudit && <ConcentrationCard audit={concentrationAudit} />}
       </div>
       <div className="stack-4">
+        <AcademicRecordCard record={academicRecord} />
         <GenEdCard genEdNeeds={genEdNeeds} wic={wic} />
         <MinorSuggestionsCard suggestions={minorSuggestions} />
       </div>

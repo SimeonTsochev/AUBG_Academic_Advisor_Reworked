@@ -5451,7 +5451,9 @@ def generate_plan(
     in_progress_terms: Dict[str, str] | None = None,
     current_term_label: str | None = None,
     program_options: Dict[str, List[str]] | None = None,
+    grades: List[Dict[str, Any]] | None = None,
 ) -> Dict:
+    """`grades`: the student's transcript grades, [{code, grade, term}], for GPA and the load rules."""
     if not catalog.get("gen_ed", {}).get("rules"):
         raise ValueError("Gen Ed rules are missing from the catalog. Please re-upload a catalog with Gen Ed requirements.")
 
@@ -5868,6 +5870,23 @@ def generate_plan(
         manual_major_elective_credits=manual_credit_breakdown.get("major_electives", {}),
     )
 
+    from academic_record import academic_record  # imports this module's helpers
+
+    record_errors, record = academic_record(
+        catalog,
+        grades=list(grades or []),
+        majors=majors,
+        slots=slots,
+        elective_progress=elective_progress,
+        semester_plan=semester_plan,
+        earned_credits=_completed_credit_total(catalog, completed_courses) + credit_offset,
+        occupied_credits_by_term=occupied_credits_by_term,
+        in_progress_credits=_completed_credit_total(catalog, normalized_in_progress),
+    )
+    if record_errors:
+        is_valid = False
+        validation_errors_out = [*validation_errors_out, *record_errors]
+
     return {
         "majors": majors,
         "minors": minors,
@@ -5912,6 +5931,7 @@ def generate_plan(
         "is_valid": is_valid,
         "validation_errors": validation_errors_out,
         "graduation_checks": graduation_details,
+        "academic_record": record,
     }
 
 def _apply_plan_overrides(

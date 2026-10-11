@@ -89,6 +89,7 @@ def _generate_plan_for_request(catalog: Dict[str, Any], req: GeneratePlanRequest
         minors=req.minors,
         business_concentration=req.business_concentration,
         program_options=req.program_options,
+        grades=[entry.model_dump() for entry in req.grades],
         completed_courses=set(req.completed_courses),
         manual_credits=[entry.model_dump() for entry in req.manual_credits],
         retake_courses=set(req.retake_courses or []),
