@@ -37,8 +37,6 @@ OVERLOAD_GPA = 3.3
 OVERLOAD_MAX_LOAD = 19
 ABSOLUTE_MAX_LOAD = ABSOLUTE_MAX_CREDITS_PER_TERM
 FIRST_YEAR_CREDITS = 27  # sophomore standing (p.47)
-INDEPENDENT_STUDY_CREDITS = 30  # p.61: thirty credit hours and a cumulative GPA of 3.100
-INDEPENDENT_STUDY_GPA = 3.1
 # Grades below a minimum letter ("C or higher", Finance minor p.117).
 GRADE_ORDER = ["F", "X", "U", "D", "D+", "C-", "C", "C+", "B-", "B", "B+", "A-", "A"]
 
@@ -227,37 +225,6 @@ def _grade_rule_errors(
     return errors
 
 
-def _independent_study_errors(
-    catalog: Dict, semester_plan: List[Dict], occupied: Dict[str, int], earned: int, gpa: float | None
-) -> List[str]:
-    """Independent study needs thirty earned credits and a cumulative GPA of 3.100 (p.61)."""
-    from graduation_checks import is_independent_study
-
-    if not _enforces_academic_policies(catalog):
-        return []
-    too_early: List[str] = []
-    studies: List[str] = []
-    for term in semester_plan:
-        label = term.get("term") or ""
-        codes = [c["code"] for c in term.get("courses") or [] if is_independent_study(catalog, c["code"])]
-        studies += codes
-        if codes and earned < INDEPENDENT_STUDY_CREDITS:
-            too_early += [f"{code} in {label}" for code in codes]
-        earned += int(term.get("credits") or 0) + int(occupied.get(label, 0) or 0)
-    errors = []
-    if too_early:
-        errors.append(
-            f"Independent study needs {INDEPENDENT_STUDY_CREDITS} earned credits first: {', '.join(too_early)} "
-            "comes too early (catalog p.61)."
-        )
-    if studies and gpa is not None and gpa < INDEPENDENT_STUDY_GPA:
-        errors.append(
-            f"Independent study ({', '.join(studies)}) needs a cumulative GPA of at least "
-            f"{INDEPENDENT_STUDY_GPA:.3f}; yours is {gpa:.3f} (catalog p.61)."
-        )
-    return errors
-
-
 def academic_record(state: PlanState, elective_progress: List[Dict]) -> Tuple[List[str], Dict]:
     """Errors and the student's GPA record."""
     catalog, slots, semester_plan = state.catalog, state.slots, state.semester_plan
@@ -337,10 +304,6 @@ def academic_record(state: PlanState, elective_progress: List[Dict]) -> Tuple[Li
             program_courses,
             {record["major"]: record["gpa"] for record in major_records},
         ))
-    errors.extend(_independent_study_errors(
-        catalog, semester_plan, occupied_credits_by_term, earned_credits, gpa
-    ))
-
     max_load = OVERLOAD_MAX_LOAD if gpa is not None and gpa >= OVERLOAD_GPA else STANDARD_MAX_LOAD
     errors.extend(_load_errors(catalog, semester_plan, occupied_credits_by_term, earned_credits, gpa))
 

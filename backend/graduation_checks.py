@@ -10,12 +10,11 @@ from itertools import combinations
 from typing import Dict, Iterable, List, Set, Tuple
 
 from catalog_options import options_offered, selected_programs
+from course_kinds import independent_study_check, internship_check
 from plan_state import PlanState
 from degree_engine import (
     _catalog_courses,
-    _course_credits,
     _course_is_wic,
-    _course_name,
     _course_number,
     _enforces_academic_policies,
     select_courses_for_slots,
@@ -29,18 +28,6 @@ RETAKE_LIMIT = 3
 # Two majors may share three required courses; any other pair of programs two (p.55).
 SHARED_COURSE_LIMIT_TWO_MAJORS = 3
 SHARED_COURSE_LIMIT = 2
-INTERNSHIP_CREDIT_LIMIT = 3  # academic internships (p.63)
-INDEPENDENT_STUDY_PER_TERM = 2  # p.61
-INDEPENDENT_STUDY_TOTAL = 5
-
-
-def is_internship(catalog: Dict, code: str) -> bool:
-    return "internship" in _course_name(catalog, code).lower() and _course_credits(catalog, code) > 0
-
-
-def is_independent_study(catalog: Dict, code: str) -> bool:
-    number = _course_number(code)
-    return (number is not None and number % 1000 == 98) or "independent study" in _course_name(catalog, code).lower()
 
 
 def _join(names: List[str]) -> str:
@@ -140,44 +127,6 @@ def program_options_check(
     return errors, chosen
 
 
-def internship_check(catalog: Dict, courses: Set[str]) -> Tuple[List[str], Dict]:
-    """At most three academic credits may come from internships (p.63)."""
-    internships = sorted(c for c in courses if is_internship(catalog, c))
-    credits = sum(_course_credits(catalog, c) for c in internships)
-    errors = []
-    if credits > INTERNSHIP_CREDIT_LIMIT:
-        errors.append(
-            f"{credits} credits of internships in the plan ({', '.join(internships)}); at most "
-            f"{INTERNSHIP_CREDIT_LIMIT} academic credits may come from internships (catalog p.63)."
-        )
-    return errors, {"courses": internships, "credits": credits, "limit": INTERNSHIP_CREDIT_LIMIT}
-
-
-def independent_study_check(
-    catalog: Dict, semester_plan: List[Dict], completed: Set[str]
-) -> Tuple[List[str], Dict]:
-    """No more than two independent studies in a semester and five in all (p.61)."""
-    planned_by_term = {
-        term.get("term") or "": [c["code"] for c in term.get("courses") or [] if is_independent_study(catalog, c["code"])]
-        for term in semester_plan
-    }
-    done = sorted(c for c in completed if is_independent_study(catalog, c))
-    total = len(done) + sum(len(codes) for codes in planned_by_term.values())
-    errors = []
-    crowded = [term for term, codes in planned_by_term.items() if len(codes) > INDEPENDENT_STUDY_PER_TERM]
-    if crowded:
-        errors.append(
-            f"{', '.join(crowded)} {'has' if len(crowded) == 1 else 'have'} more than {INDEPENDENT_STUDY_PER_TERM} "
-            "independent studies; a student may take at most two in a semester (catalog p.61)."
-        )
-    if total > INDEPENDENT_STUDY_TOTAL:
-        errors.append(
-            f"{total} independent studies in the plan; at most {INDEPENDENT_STUDY_TOTAL} are allowed in a "
-            "student's career (catalog p.61)."
-        )
-    return errors, {"count": total, "limit": INDEPENDENT_STUDY_TOTAL}
-
-
 def sequence_check(
     catalog: Dict, majors: List[str], minors: List[str], semester_plan: List[Dict], completed: Set[str]
 ) -> Tuple[List[str], List[Dict]]:
@@ -205,8 +154,8 @@ def sequence_check(
     return errors, details
 
 
-def graduation_checks(state: PlanState) -> Tuple[List[str], Dict]:
-    """Every check's errors, and the details per check."""
+def graduation_checks(state: PlanState, gpa: float | None) -> Tuple[List[str], Dict]:
+    """Every check's errors, and the details per check. `gpa`: the cumulative GPA (academic_record)."""
     catalog, courses = state.catalog, state.courses
     errors: List[str] = []
     checks: Dict = {}
@@ -218,7 +167,7 @@ def graduation_checks(state: PlanState) -> Tuple[List[str], Dict]:
         ("double_counting", double_counting_check(catalog, state.slots, courses)),
         ("program_options", program_options_check(catalog, state.majors, state.minors, state.program_options)),
         ("internships", internship_check(catalog, courses)),
-        ("independent_study", independent_study_check(catalog, state.semester_plan, state.reported_completed)),
+        ("independent_study", independent_study_check(state, gpa)),
         ("sequence", sequence_check(catalog, state.majors, state.minors, state.semester_plan, state.reported_completed)),
     ):
         errors.extend(check_errors)

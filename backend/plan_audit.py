@@ -25,7 +25,8 @@ from plan_state import PlanState
 @dataclass(frozen=True)
 class PlanAudit:
     errors: List[str]
-    """Graduation-check errors, then GPA and course-load errors (after validate_plan's own)."""
+    """Graduation-check errors (independent study eligibility among them), then GPA and course-load
+    errors (after validate_plan's own)."""
     graduation_checks: Dict
     elective_progress: List[Dict]
     category_progress: Dict[str, Dict]
@@ -36,10 +37,10 @@ class PlanAudit:
 
 
 def audit_plan(state: PlanState) -> PlanAudit:
-    graduation_errors, graduation_details = graduation_checks(state)
     elective_progress = _elective_progress(state)
     category_progress = _category_progress(state, elective_progress)
     record_errors, record = academic_record(state, elective_progress)
+    graduation_errors, graduation_details = graduation_checks(state, record["gpa"])
     return PlanAudit(
         errors=graduation_errors + record_errors,
         graduation_checks=graduation_details,
