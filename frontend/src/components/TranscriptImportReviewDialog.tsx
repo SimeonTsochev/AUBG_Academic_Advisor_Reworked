@@ -5,6 +5,7 @@ import {
   type SearchCoursesContext,
   type TranscriptImportCourse,
   type TranscriptImportMatchCandidate,
+  type TranscriptUnreadLine,
 } from '../api';
 
 export type TranscriptCourseStatus = TranscriptImportCourse['status'];
@@ -33,6 +34,7 @@ interface TranscriptImportReviewDialogProps {
   open: boolean;
   entries: TranscriptImportReviewEntry[];
   warnings: string[];
+  unreadLines: TranscriptUnreadLine[];
   searchContext: SearchCoursesContext;
   onCancel: () => void;
   onConfirm: () => void;
@@ -320,6 +322,7 @@ export function TranscriptImportReviewDialog({
   open,
   entries,
   warnings,
+  unreadLines,
   searchContext,
   onCancel,
   onConfirm,
@@ -424,6 +427,32 @@ export function TranscriptImportReviewDialog({
               style={{ borderColor: '#f59e0b', background: '#fffbeb', color: '#92400e' }}
             >
               {unresolvedCount} course{unresolvedCount === 1 ? '' : 's'} still need a catalog match or should be removed.
+            </div>
+          )}
+
+          {unreadLines.length > 0 && (
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <h4>Lines That Could Not Be Read</h4>
+                <div className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                  {unreadLines.length} line{unreadLines.length === 1 ? '' : 's'}
+                </div>
+              </div>
+              <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
+                These look like course rows, but the course code or grade could not be read, so they are not in the
+                lists below. Compare them with your transcript and add any missing course with the catalog search.
+              </p>
+              <ul
+                className="grid gap-1 px-4 py-3 rounded-xl border text-sm"
+                style={{ borderColor: '#fde68a', background: '#fffbeb', color: '#92400e' }}
+              >
+                {unreadLines.map((line, index) => (
+                  <li key={`${line.page_number}:${index}`} style={{ fontFamily: 'var(--font-mono, monospace)' }}>
+                    {line.text}
+                    {unreadLines.some((other) => other.page_number > 1) ? ` (page ${line.page_number})` : ''}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

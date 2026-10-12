@@ -152,7 +152,14 @@ export interface TranscriptImportResponse {
   /** Latest attempt not passed (F, W, WF, U, NP, NR, I): retaken by the plan when still required. */
   failed: TranscriptImportCourse[];
   unmatched: TranscriptImportCourse[];
+  /** Lines that look like course rows but could not be read (usually OCR damage). */
+  unread_lines?: TranscriptUnreadLine[];
   warnings: string[];
+}
+
+export interface TranscriptUnreadLine {
+  text: string;
+  page_number: number;
 }
 
 export interface TranscriptImportLineInput {

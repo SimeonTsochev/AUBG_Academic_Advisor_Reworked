@@ -58,12 +58,19 @@ class TranscriptImportCourse(BaseModel):
     match_candidates: List[TranscriptImportMatchCandidate] = Field(default_factory=list)
 
 
+class TranscriptUnreadLine(BaseModel):
+    text: str
+    page_number: int = 1
+
+
 class TranscriptImportResponse(BaseModel):
     completed: List[TranscriptImportCourse] = Field(default_factory=list)
     in_progress: List[TranscriptImportCourse] = Field(default_factory=list)
     # Latest attempt not passed (F, W, WF, U, NP, NR, I): not completed, so the plan retakes it if needed.
     failed: List[TranscriptImportCourse] = Field(default_factory=list)
     unmatched: List[TranscriptImportCourse] = Field(default_factory=list)
+    # Lines that look like course rows but could not be read (usually OCR damage); shown for manual entry.
+    unread_lines: List[TranscriptUnreadLine] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
 

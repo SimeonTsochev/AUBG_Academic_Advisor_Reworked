@@ -7,6 +7,8 @@ from typing import Any, Literal, Optional
 import re
 
 import pdfplumber
+from pdfminer.pdftypes import resolve1
+from pdfminer.psparser import LIT
 from rapidfuzz import fuzz
 
 from catalog_cache import getCatalogCache
@@ -56,6 +58,13 @@ _TABLE_HEADER_LINE_RE = re.compile(
     r"^(?:course|title|instructor|final\s+grade|course\s+credits|credits\s+earned)$",
     re.IGNORECASE,
 )
+# OCR can garble a course code past _COURSE_CODE_RE ("irv1008", "prvt010"). A line with such a token, or
+# ending like a course row (a grade and credits, or "In Progress"), that yields no course is reported so
+# the student knows which rows to add by hand.
+_GARBLED_CODE_RE = re.compile(r"[A-Za-z£€$]{1,5}\W{0,2}\d{3,4}\b")
+_COURSE_ROW_TAIL_RE = re.compile(r"(?:\b(?:[A-D][+-]?|F|P|W|WF)\s+\d+(?:\s+\d+)?|(?i:\bin\s*progr\w*))\W*$")
+_MAX_UNREAD_LINES = 20
+_FORM_XOBJECT = LIT("Form")
 
 _OCR_ENGINE: Any | None = None
 
@@ -105,6 +114,7 @@ def import_transcript_document(file_bytes: bytes, filename: str) -> dict[str, An
 
     response = build_transcript_import_response(parsed_courses)
     response["warnings"] = list(dict.fromkeys([*extraction_warnings, *response["warnings"]]))
+    response["unread_lines"] = _unread_lines_payload(lines)
     return response
 
 
@@ -127,6 +137,7 @@ def import_transcript_text_payload(
         )
 
     response = build_transcript_import_response(parsed_courses)
+    response["unread_lines"] = _unread_lines_payload(transcript_lines)
     if used_ocr:
         response["warnings"] = list(
             dict.fromkeys(
@@ -245,6 +256,28 @@ def build_transcript_import_response(parsed_courses: list[ParsedTranscriptCourse
         "unmatched": unmatched,
         "warnings": warnings,
     }
+
+
+def find_unread_course_lines(lines: list[TranscriptLine]) -> list[TranscriptLine]:
+    """Lines that look like course rows but that no course could be parsed from (see _GARBLED_CODE_RE)."""
+    unread: list[TranscriptLine] = []
+    for line in lines:
+        text = _normalize_space(_normalize_transcript_text(line.text))
+        if not text or _COURSE_CODE_RE.search(text):
+            continue  # a readable code: the parser either took the row or skipped it on purpose
+        if _extract_term_label(text) or _HEADER_NOISE_RE.search(text) or _is_course_table_header_line(text):
+            continue
+        if _looks_like_instructor_line(text):
+            continue
+        if _GARBLED_CODE_RE.search(text) or _COURSE_ROW_TAIL_RE.search(text):
+            unread.append(replace(line, text=text))
+            if len(unread) >= _MAX_UNREAD_LINES:
+                break
+    return unread
+
+
+def _unread_lines_payload(lines: list[TranscriptLine]) -> list[dict[str, Any]]:
+    return [{"text": line.text, "page_number": line.page_number} for line in find_unread_course_lines(lines)]
 
 
 def _catalog_search_space() -> list[CatalogSearchRecord]:
@@ -599,10 +632,25 @@ def _apply_term_to_recent_courses(
     return updated
 
 
+def _page_may_have_text(page: Any) -> bool:
+    """False when the page declares no fonts and no form XObjects, so it can hold no text.
+
+    A browser's "Print to PDF" of the student portal draws the transcript as thousands of vector paths;
+    laying those out to find no words took 5-9 s before the frontend could start OCR.
+    """
+    resources = resolve1(page.page_obj.resources) or {}
+    if resolve1(resources.get("Font")):
+        return True
+    xobjects = resolve1(resources.get("XObject")) or {}
+    return any((resolve1(xobject) or {}).get("Subtype") is _FORM_XOBJECT for xobject in xobjects.values())
+
+
 def _extract_pdf_text_lines(file_bytes: bytes) -> list[TranscriptLine]:
     extracted: list[TranscriptLine] = []
     with pdfplumber.open(BytesIO(file_bytes)) as pdf:
         for page_index, page in enumerate(pdf.pages, start=1):
+            if not _page_may_have_text(page):
+                continue
             words = page.extract_words(use_text_flow=True, keep_blank_chars=False) or []
             if words:
                 extracted.extend(_pdf_words_to_lines(page_index, words))

@@ -55,6 +55,19 @@ export async function extractTranscriptLinesFromImage(
   }
 }
 
+// 4x the PDF's 72 dpi (about 290 dpi, near tesseract's preferred 300). At 2x the portal transcript's
+// small table text lost half its rows and misread "2026" as "2028"; at 4x every row read correctly.
+const OCR_RENDER_SCALE = 4;
+// Keeps a page's canvas (4 bytes a pixel) within phone memory: a letter page at 4x is 2448x3168.
+const OCR_MAX_CANVAS_SIDE = 4000;
+
+/** Render scale for OCR of a page `width` x `height` PDF units: 4x, reduced for very large pages. */
+export function ocrRenderScale(width: number, height: number): number {
+  const longestSide = Math.max(width, height);
+  if (!Number.isFinite(longestSide) || longestSide <= 0) return OCR_RENDER_SCALE;
+  return Math.min(OCR_RENDER_SCALE, OCR_MAX_CANVAS_SIDE / longestSide);
+}
+
 // PDFs printed from a browser ("Microsoft Print to PDF") draw text as vector shapes, so the backend
 // finds no text layer. Render each page and OCR it in the browser instead.
 export async function extractTranscriptLinesFromPdf(
@@ -73,8 +86,8 @@ export async function extractTranscriptLinesFromPdf(
     const lines: TranscriptImportLineInput[] = [];
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
-      // 2x the PDF's 72 dpi: small table text is unreadable to tesseract at 1x.
-      const viewport = page.getViewport({ scale: 2 });
+      const unscaled = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: ocrRenderScale(unscaled.width, unscaled.height) });
       const canvas = document.createElement("canvas");
       canvas.width = Math.ceil(viewport.width);
       canvas.height = Math.ceil(viewport.height);
@@ -83,6 +96,9 @@ export async function extractTranscriptLinesFromPdf(
       lines.push(
         ...transcriptLinesFromOcrPage(result.data).map((line) => ({ ...line, page_number: pageNumber })),
       );
+      // Release the page's pixels before rendering the next one.
+      canvas.width = 0;
+      canvas.height = 0;
       page.cleanup();
     }
     return lines;

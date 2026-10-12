@@ -8,7 +8,9 @@ import {
   type ProgramInfo,
   type ProgramOptionSelection,
   type TranscriptImportCourse,
+  type TranscriptImportLineInput,
   type TranscriptImportResponse,
+  type TranscriptUnreadLine,
 } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { extractTranscriptLinesFromImage, extractTranscriptLinesFromPdf } from '../utils/transcriptOcr';
@@ -39,7 +41,7 @@ const BUSINESS_CONCENTRATION_OPTIONS = [
   'Tourism and Hospitality'
 ] as const;
 
-type TranscriptImportPhase = 'idle' | 'uploading' | 'extracting' | 'matching' | 'ready' | 'error';
+type TranscriptImportPhase = 'idle' | 'uploading' | 'extracting' | 'ocr' | 'matching' | 'ready' | 'error';
 
 const TRANSCRIPT_ACCEPT = '.pdf,.png,.jpg,.jpeg';
 const SUPPORTED_TRANSCRIPT_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
@@ -69,6 +71,8 @@ const transcriptStatusLabel = (phase: TranscriptImportPhase) => {
       return 'Uploading transcript...';
     case 'extracting':
       return 'Extracting transcript data...';
+    case 'ocr':
+      return 'Reading a scanned transcript (OCR). This can take up to a minute...';
     case 'matching':
       return 'Matching courses...';
     case 'ready':
@@ -165,6 +169,7 @@ export function AcademicSetupScreen({
   const [transcriptImportPhase, setTranscriptImportPhase] = useState<TranscriptImportPhase>('idle');
   const [transcriptImportError, setTranscriptImportError] = useState<string | null>(null);
   const [transcriptImportWarnings, setTranscriptImportWarnings] = useState<string[]>([]);
+  const [transcriptUnreadLines, setTranscriptUnreadLines] = useState<TranscriptUnreadLine[]>([]);
   const [selectedTranscriptName, setSelectedTranscriptName] = useState<string | null>(null);
   const [isTranscriptDragging, setIsTranscriptDragging] = useState(false);
   const [transcriptReviewEntries, setTranscriptReviewEntries] = useState<TranscriptImportReviewEntry[]>([]);
@@ -526,6 +531,7 @@ export function AcademicSetupScreen({
       Object.fromEntries(Object.entries(nextInProgressTerms).filter(([code]) => nextInProgress.has(code)))
     );
     setTranscriptImportWarnings([]);
+    setTranscriptUnreadLines([]);
     setTranscriptReviewEntries([]);
     setIsTranscriptReviewOpen(false);
     setTranscriptImportPhase('idle');
@@ -533,6 +539,7 @@ export function AcademicSetupScreen({
 
   const handleCancelTranscriptImport = () => {
     setTranscriptImportWarnings([]);
+    setTranscriptUnreadLines([]);
     setTranscriptReviewEntries([]);
     setIsTranscriptReviewOpen(false);
     setTranscriptImportPhase('idle');
@@ -548,18 +555,28 @@ export function AcademicSetupScreen({
 
     setTranscriptImportError(null);
     setTranscriptImportWarnings([]);
+    setTranscriptUnreadLines([]);
     setSelectedTranscriptName(file.name);
     queueTranscriptPhaseSequence();
+
+    // OCR in the browser takes tens of seconds, so say so instead of leaving the timed "Matching courses...".
+    const readWithOcr = async (extract: () => Promise<TranscriptImportLineInput[]>) => {
+      clearTranscriptPhaseTimers();
+      setTranscriptImportPhase('ocr');
+      const lines = await extract();
+      setTranscriptImportPhase('matching');
+      return lines;
+    };
 
     try {
       const response = isImageTranscriptFile(file)
         ? await importTranscriptText(
-            await extractTranscriptLinesFromImage(file),
+            await readWithOcr(() => extractTranscriptLinesFromImage(file)),
             { usedOcr: true }
           )
         : await importTranscript(file, catalogId).catch(async (serverError) => {
             // No text layer (e.g. a browser "Print to PDF" transcript): OCR the pages here instead.
-            const ocrLines = await extractTranscriptLinesFromPdf(file).catch(() => []);
+            const ocrLines = await readWithOcr(() => extractTranscriptLinesFromPdf(file)).catch(() => []);
             if (ocrLines.length === 0) throw serverError;
             return importTranscriptText(ocrLines, { usedOcr: true });
           });
@@ -569,6 +586,7 @@ export function AcademicSetupScreen({
         throw new Error('No course rows could be detected from this file. Please try another transcript or add courses manually.');
       }
       setTranscriptImportWarnings(response.warnings ?? []);
+      setTranscriptUnreadLines(response.unread_lines ?? []);
       setTranscriptReviewEntries(nextEntries);
       setTranscriptImportPhase('ready');
       setIsTranscriptReviewOpen(true);
@@ -845,9 +863,9 @@ export function AcademicSetupScreen({
 
         <header className="setup-header">
           <h1 className="setup-title">Academic setup</h1>
-          <p className="muted">A few details so the plan fits your programs, start term and completed courses.</p>
+          <p className="muted">A few details so the plan fits your completed courses, start term and programs.</p>
           <ol className="steps" aria-label="Setup progress">
-            {(['Programs', 'Completed courses'] as const).map((label, index) => {
+            {(['Completed courses', 'Programs'] as const).map((label, index) => {
               const number = (index + 1) as 1 | 2;
               const state = step === number ? 'current' : step > number ? 'done' : 'upcoming';
               return (
@@ -862,6 +880,309 @@ export function AcademicSetupScreen({
 
         {step === 1 && (
           <div className="stack-4">
+            {/* Completed courses */}
+            <div className="card card-pad setup-card">
+              <h2 className="section-title">Completed Courses</h2>
+              <p className="section-subtitle setup-card-intro">
+                Upload your transcript, search the catalog, or use both together. You can review and edit everything before continuing. Starting your first semester? Skip this step.
+              </p>
+              <div
+                className={`upload-zone${isTranscriptDragging ? ' dragging' : ''}`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsTranscriptDragging(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  setIsTranscriptDragging(false);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsTranscriptDragging(false);
+                  const file = event.dataTransfer.files?.[0] ?? null;
+                  void handleTranscriptFile(file);
+                }}
+              >
+                <span className="upload-zone-icon" aria-hidden="true"><FileUp /></span>
+                <div className="font-semibold">Upload your transcript</div>
+                <div className="text-sm muted">
+                  PDF, PNG or JPG. Completed, in-progress and not-passed courses are detected for you to review.
+                </div>
+                <input
+                  ref={transcriptInputRef}
+                  type="file"
+                  accept={TRANSCRIPT_ACCEPT}
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    void handleTranscriptFile(file);
+                    event.target.value = '';
+                  }}
+                />
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                  <button type="button" onClick={() => transcriptInputRef.current?.click()} className="btn btn-accent">
+                    <FileUp aria-hidden="true" />
+                    <span>Choose file</span>
+                  </button>
+                  <span className="text-sm muted">or drop it here</span>
+                </div>
+                {selectedTranscriptName && (
+                  <div className="text-sm mt-3 muted">Selected file: {selectedTranscriptName}</div>
+                )}
+                {transcriptStatusLabel(transcriptImportPhase) && (
+                  <div className="text-sm mt-3 muted" role="status">{transcriptStatusLabel(transcriptImportPhase)}</div>
+                )}
+                {transcriptImportError && (
+                  <div className="alert alert-danger mt-3" role="alert">
+                    <TriangleAlert aria-hidden="true" />
+                    <p>{transcriptImportError}</p>
+                  </div>
+                )}
+              </div>
+
+              {importedCompletedCourses.length > 0 && (
+                <div className="mt-4">
+                  <div className="chip-list-label">
+                    Imported completed courses:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {importedCompletedCourses.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => removeImportedCompletedCourse(code)}
+                        className="chip chip-success"
+                        title={`Remove ${code}`}
+                      >
+                        {code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {importedFailedCourses.length > 0 && (
+                <div className="mt-4">
+                  <div className="chip-list-label">
+                    Not passed, retaken if still required:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {importedFailedCourses.map((entry) => (
+                      <button
+                        key={entry.code}
+                        type="button"
+                        onClick={() =>
+                          setImportedFailedCourses((prev) => prev.filter((item) => item.code !== entry.code))
+                        }
+                        className="chip chip-danger"
+                        title="Remove imported course"
+                      >
+                        {entry.code}
+                        {entry.grade ? ` · ${entry.grade}` : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {importedInProgressCourses.length > 0 && (
+                <div className="mt-4">
+                  <div className="chip-list-label">
+                    Imported in-progress courses:
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {importedInProgressCourses.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => removeImportedInProgressCourse(code)}
+                        className="chip chip-info"
+                        title={`Remove ${code}`}
+                      >
+                        {code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="divider-label" aria-hidden="true">
+                <span>or search the catalog</span>
+              </div>
+
+              <div className="search-field">
+              <Search aria-hidden="true" className="search-field-icon" />
+              <input
+                value={courseQuery}
+                onChange={(e) => setCourseQuery(e.target.value)}
+                onKeyDown={handleCourseKeyDown}
+                placeholder="Search the full catalog (code or title)"
+                className="input"
+                aria-label="Search completed courses"
+                role="combobox"
+                aria-expanded={dropdownOpen}
+                aria-controls="completed-course-options"
+                aria-activedescendant={
+                  highlightedIndex >= 0 && highlightedIndex < rankedCourseEntries.length
+                    ? `completed-course-option-${normalizeCode(rankedCourseEntries[highlightedIndex].code)}`
+                    : undefined
+                }
+                aria-autocomplete="list"
+              />
+              </div>
+
+              {queryNormalized && (
+                <div
+                  id="completed-course-options"
+                  role="listbox"
+                  className="setup-results"
+                >
+                  {!canSearch && queryNormalized.length > 0 && (
+                    <div className="text-sm muted">
+                      Type at least 2 characters.
+                    </div>
+                  )}
+                  {canSearch && courseSearchLoading && (
+                    <div className="text-sm muted">
+                      Searching courses...
+                    </div>
+                  )}
+                  {canSearch && !courseSearchLoading && courseSearchError && (
+                    <div className="text-sm muted">
+                      {courseSearchError}
+                    </div>
+                  )}
+                  {canSearch && !courseSearchLoading && !courseSearchError && rankedCourseEntries.length === 0 && (
+                    <div className="text-sm muted">
+                      No matching courses.
+                    </div>
+                  )}
+                  {rankedCourseEntries.map((entry, idx) => {
+                    const code = entry.code;
+                    const title = entry.title;
+                    const selected = completedCourses.includes(code);
+                    const credits = typeof entry.credits === 'number' && entry.credits >= 0
+                      ? entry.credits
+                      : courseCredit(code);
+                    const genEdTags = (entry.gen_ed_tags ?? []).filter((tag) => typeof tag === 'string' && tag.trim().length > 0);
+                    const businessBadges = (entry.business_classification?.badges ?? []).filter(
+                      (badge): badge is string =>
+                        typeof badge === 'string'
+                        && badge.trim().length > 0
+                        && badge !== 'Required for BUS Core'
+                        && badge !== 'Counts as BUS elective'
+                    );
+                    const availability = getCourseAvailabilityInfo(entry, {
+                      mode: "completed",
+                      isExcelOnly: entry.is_excel_only === true,
+                      currentTermLabel,
+                      scheduleTerms
+                    });
+                    const hasWarning = Boolean(availability.warningLabel);
+                    const isActive = idx === highlightedIndex;
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        id={`completed-course-option-${normalizeCode(code)}`}
+                        role="option"
+                        aria-selected={isActive || selected}
+                        ref={(el) => {
+                          optionRefs.current[idx] = el;
+                        }}
+                        onMouseEnter={() => setHighlightedIndex(idx)}
+                        onClick={() => handleSelectCourse(entry)}
+                        className={`result-option${isActive ? ' is-active' : ''}${selected ? ' is-selected' : ''}`}
+                        title={
+                          hasWarning
+                            ? `${availability.warningLabel}. ${availability.detailsLabel}`
+                            : undefined
+                        }
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="course-code">{code}</span> <span className="course-name-inline">{title}</span>
+                          </div>
+                          {hasWarning && availability.warningLabel && (
+                            <span className="badge badge-warning">{availability.warningLabel}</span>
+                          )}
+                        </div>
+                        <div className="text-xs mt-1 muted num">{credits} credits</div>
+                        {genEdTags.length > 0 && (
+                          <div className="text-xs mt-1 muted">GenEd: {genEdTags.join(' · ')}</div>
+                        )}
+                        {businessBadges.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {businessBadges.map((badge) => (
+                              <span key={`${code}:${badge}`} className="badge badge-neutral">{badge}</span>
+                            ))}
+                          </div>
+                        )}
+                        {hasWarning && availability.detailsLabel && (
+                          <div className="text-xs mt-1 muted">{availability.detailsLabel}</div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {completedCourses.length > 0 && (
+                <div className="mt-4">
+                  <div className="chip-list-label">
+                    Selected courses (completed + in progress):
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {completedCourses.map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => setCompletedCourses(prev => prev.filter(c => c !== code))}
+                        className="chip"
+                        title={`Remove ${code}`}
+                      >
+                        {code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {manualInProgressCourses.length > 0 && (
+                <div className="mt-4">
+                  <div className="chip-list-label">
+                    Currently taking (auto-detected):
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {manualInProgressCourses.map((code) => (
+                      <span key={code} className="chip chip-info">{code}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Start term */}
+            <div className="card card-pad setup-card">
+              <h2 className="section-title">First semester at AUBG</h2>
+              <p className="section-subtitle setup-card-intro">
+                Select the semester you started studying.
+              </p>
+              <div className="setup-field">
+                <select
+                  className="input"
+                  value={startTermValue}
+                  onChange={(e) => setStartTermValue(e.target.value)}
+                >
+                  {termOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Waivers */}
             <div className="card card-pad setup-card">
               <h2 className="section-title">Foundation Course Waivers</h2>
@@ -888,27 +1209,18 @@ export function AcademicSetupScreen({
               </div>
             </div>
 
-            {/* Start term */}
-            <div className="card card-pad setup-card">
-              <h2 className="section-title">First semester at AUBG</h2>
-              <p className="section-subtitle setup-card-intro">
-                Select the semester you started studying.
-              </p>
-              <div className="setup-field">
-                <select
-                  className="input"
-                  value={startTermValue}
-                  onChange={(e) => setStartTermValue(e.target.value)}
-                >
-                  {termOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Continue */}
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setStep(2)} className="btn btn-primary btn-lg btn-forward">
+                <span>Continue</span>
+                <ArrowRight aria-hidden="true" />
+              </button>
             </div>
+          </div>
+        )}
 
+        {step === 2 && (
+          <div className="stack-4">
             {/* Majors */}
             <div className="card card-pad setup-card">
               <h2 className="section-title">Select Major(s)</h2>
@@ -1073,305 +1385,6 @@ export function AcademicSetupScreen({
               </div>
             )}
 
-            {/* Continue */}
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                disabled={!canSubmit}
-                className="btn btn-primary btn-lg btn-forward"
-              >
-                <span>Continue</span>
-                <ArrowRight aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="stack-4">
-            {/* Completed courses */}
-            <div className="card card-pad setup-card">
-              <h2 className="section-title">Completed Courses</h2>
-              <p className="section-subtitle setup-card-intro">
-                Search the entire catalog, import a transcript, or use both together. You can review and edit everything before continuing.
-              </p>
-              <div className="search-field">
-              <Search aria-hidden="true" className="search-field-icon" />
-              <input
-                value={courseQuery}
-                onChange={(e) => setCourseQuery(e.target.value)}
-                onKeyDown={handleCourseKeyDown}
-                placeholder="Search the full catalog (code or title)"
-                className="input"
-                aria-label="Search completed courses"
-                role="combobox"
-                aria-expanded={dropdownOpen}
-                aria-controls="completed-course-options"
-                aria-activedescendant={
-                  highlightedIndex >= 0 && highlightedIndex < rankedCourseEntries.length
-                    ? `completed-course-option-${normalizeCode(rankedCourseEntries[highlightedIndex].code)}`
-                    : undefined
-                }
-                aria-autocomplete="list"
-              />
-              </div>
-
-              {queryNormalized && (
-                <div
-                  id="completed-course-options"
-                  role="listbox"
-                  className="setup-results"
-                >
-                  {!canSearch && queryNormalized.length > 0 && (
-                    <div className="text-sm muted">
-                      Type at least 2 characters.
-                    </div>
-                  )}
-                  {canSearch && courseSearchLoading && (
-                    <div className="text-sm muted">
-                      Searching courses...
-                    </div>
-                  )}
-                  {canSearch && !courseSearchLoading && courseSearchError && (
-                    <div className="text-sm muted">
-                      {courseSearchError}
-                    </div>
-                  )}
-                  {canSearch && !courseSearchLoading && !courseSearchError && rankedCourseEntries.length === 0 && (
-                    <div className="text-sm muted">
-                      No matching courses.
-                    </div>
-                  )}
-                  {rankedCourseEntries.map((entry, idx) => {
-                    const code = entry.code;
-                    const title = entry.title;
-                    const selected = completedCourses.includes(code);
-                    const credits = typeof entry.credits === 'number' && entry.credits >= 0
-                      ? entry.credits
-                      : courseCredit(code);
-                    const genEdTags = (entry.gen_ed_tags ?? []).filter((tag) => typeof tag === 'string' && tag.trim().length > 0);
-                    const businessBadges = (entry.business_classification?.badges ?? []).filter(
-                      (badge): badge is string =>
-                        typeof badge === 'string'
-                        && badge.trim().length > 0
-                        && badge !== 'Required for BUS Core'
-                        && badge !== 'Counts as BUS elective'
-                    );
-                    const availability = getCourseAvailabilityInfo(entry, {
-                      mode: "completed",
-                      isExcelOnly: entry.is_excel_only === true,
-                      currentTermLabel,
-                      scheduleTerms
-                    });
-                    const hasWarning = Boolean(availability.warningLabel);
-                    const isActive = idx === highlightedIndex;
-                    return (
-                      <button
-                        key={code}
-                        type="button"
-                        id={`completed-course-option-${normalizeCode(code)}`}
-                        role="option"
-                        aria-selected={isActive || selected}
-                        ref={(el) => {
-                          optionRefs.current[idx] = el;
-                        }}
-                        onMouseEnter={() => setHighlightedIndex(idx)}
-                        onClick={() => handleSelectCourse(entry)}
-                        className={`result-option${isActive ? ' is-active' : ''}${selected ? ' is-selected' : ''}`}
-                        title={
-                          hasWarning
-                            ? `${availability.warningLabel}. ${availability.detailsLabel}`
-                            : undefined
-                        }
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="course-code">{code}</span> <span className="course-name-inline">{title}</span>
-                          </div>
-                          {hasWarning && availability.warningLabel && (
-                            <span className="badge badge-warning">{availability.warningLabel}</span>
-                          )}
-                        </div>
-                        <div className="text-xs mt-1 muted num">{credits} credits</div>
-                        {genEdTags.length > 0 && (
-                          <div className="text-xs mt-1 muted">GenEd: {genEdTags.join(' · ')}</div>
-                        )}
-                        {businessBadges.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {businessBadges.map((badge) => (
-                              <span key={`${code}:${badge}`} className="badge badge-neutral">{badge}</span>
-                            ))}
-                          </div>
-                        )}
-                        {hasWarning && availability.detailsLabel && (
-                          <div className="text-xs mt-1 muted">{availability.detailsLabel}</div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {completedCourses.length > 0 && (
-                <div className="mt-4">
-                  <div className="chip-list-label">
-                    Selected courses (completed + in progress):
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {completedCourses.map((code) => (
-                      <button
-                        key={code}
-                        type="button"
-                        onClick={() => setCompletedCourses(prev => prev.filter(c => c !== code))}
-                        className="chip"
-                        title={`Remove ${code}`}
-                      >
-                        {code}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {manualInProgressCourses.length > 0 && (
-                <div className="mt-4">
-                  <div className="chip-list-label">
-                    Currently taking (auto-detected):
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {manualInProgressCourses.map((code) => (
-                      <span key={code} className="chip chip-info">{code}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="divider-label" aria-hidden="true">
-                <span>or import a transcript</span>
-              </div>
-
-              <div
-                className={`upload-zone${isTranscriptDragging ? ' dragging' : ''}`}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setIsTranscriptDragging(true);
-                }}
-                onDragLeave={(event) => {
-                  event.preventDefault();
-                  setIsTranscriptDragging(false);
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  setIsTranscriptDragging(false);
-                  const file = event.dataTransfer.files?.[0] ?? null;
-                  void handleTranscriptFile(file);
-                }}
-              >
-                <span className="upload-zone-icon" aria-hidden="true"><FileUp /></span>
-                <div className="font-semibold">Upload your transcript</div>
-                <div className="text-sm muted">
-                  PDF, PNG or JPG. Completed, in-progress and not-passed courses are detected for you to review.
-                </div>
-                <input
-                  ref={transcriptInputRef}
-                  type="file"
-                  accept={TRANSCRIPT_ACCEPT}
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    void handleTranscriptFile(file);
-                    event.target.value = '';
-                  }}
-                />
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
-                  <button type="button" onClick={() => transcriptInputRef.current?.click()} className="btn btn-accent">
-                    <FileUp aria-hidden="true" />
-                    <span>Choose file</span>
-                  </button>
-                  <span className="text-sm muted">or drop it here</span>
-                </div>
-                {selectedTranscriptName && (
-                  <div className="text-sm mt-3 muted">Selected file: {selectedTranscriptName}</div>
-                )}
-                {transcriptStatusLabel(transcriptImportPhase) && (
-                  <div className="text-sm mt-3 muted" role="status">{transcriptStatusLabel(transcriptImportPhase)}</div>
-                )}
-                {transcriptImportError && (
-                  <div className="alert alert-danger mt-3" role="alert">
-                    <TriangleAlert aria-hidden="true" />
-                    <p>{transcriptImportError}</p>
-                  </div>
-                )}
-              </div>
-
-              {importedCompletedCourses.length > 0 && (
-                <div className="mt-4">
-                  <div className="chip-list-label">
-                    Imported completed courses:
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {importedCompletedCourses.map((code) => (
-                      <button
-                        key={code}
-                        type="button"
-                        onClick={() => removeImportedCompletedCourse(code)}
-                        className="chip chip-success"
-                        title={`Remove ${code}`}
-                      >
-                        {code}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {importedFailedCourses.length > 0 && (
-                <div className="mt-4">
-                  <div className="chip-list-label">
-                    Not passed, retaken if still required:
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {importedFailedCourses.map((entry) => (
-                      <button
-                        key={entry.code}
-                        type="button"
-                        onClick={() =>
-                          setImportedFailedCourses((prev) => prev.filter((item) => item.code !== entry.code))
-                        }
-                        className="chip chip-danger"
-                        title="Remove imported course"
-                      >
-                        {entry.code}
-                        {entry.grade ? ` · ${entry.grade}` : ''}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {importedInProgressCourses.length > 0 && (
-                <div className="mt-4">
-                  <div className="chip-list-label">
-                    Imported in-progress courses:
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {importedInProgressCourses.map((code) => (
-                      <button
-                        key={code}
-                        type="button"
-                        onClick={() => removeImportedInProgressCourse(code)}
-                        className="chip chip-info"
-                        title={`Remove ${code}`}
-                      >
-                        {code}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Back/Continue */}
             <div className="flex justify-between gap-3">
               <button type="button" onClick={() => setStep(1)} className="btn btn-outline btn-lg btn-back">
@@ -1390,6 +1403,7 @@ export function AcademicSetupScreen({
           open={isTranscriptReviewOpen}
           entries={transcriptReviewEntries}
           warnings={transcriptImportWarnings}
+          unreadLines={transcriptUnreadLines}
           searchContext={searchContext}
           onCancel={handleCancelTranscriptImport}
           onConfirm={handleConfirmTranscriptImport}

@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { transcriptLinesFromOcrPage } from "./transcriptOcr";
+import { ocrRenderScale, transcriptLinesFromOcrPage } from "./transcriptOcr";
+
+describe("ocrRenderScale", () => {
+  it("renders letter and A4 pages at 4x", () => {
+    expect(ocrRenderScale(612, 792)).toBe(4);
+    expect(ocrRenderScale(595, 842)).toBe(4);
+  });
+
+  it("scales very large pages down so the canvas stays within 4000 px", () => {
+    const scale = ocrRenderScale(1224, 1584);
+    expect(scale).toBeLessThan(4);
+    expect(Math.ceil(1584 * scale)).toBeLessThanOrEqual(4000);
+  });
+
+  it("falls back to 4x for a page with no size", () => {
+    expect(ocrRenderScale(0, 0)).toBe(4);
+    expect(ocrRenderScale(Number.NaN, 792)).toBe(4);
+  });
+});
 
 describe("transcriptLinesFromOcrPage", () => {
   it("reads lines and their confidence from tesseract v6 blocks", () => {
