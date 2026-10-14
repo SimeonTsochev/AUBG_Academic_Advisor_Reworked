@@ -1,8 +1,9 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { NO_PROGRAM_LINK, readProgramLink } from './utils/programLink';
 import { HowItWorksModal } from './components/HowItWorksModal';
 import { DisclaimerModal } from './components/DisclaimerModal';
+import { StudentProjectNotice } from './components/StudentProjectNotice';
 import {
   getProgramSnapshot,
   loadDefaultCatalog,
@@ -65,6 +66,26 @@ const persistDisclaimerAccepted = () => {
   if (typeof window === 'undefined') return;
   try {
     window.sessionStorage.setItem(DISCLAIMER_SESSION_KEY, 'true');
+  } catch {
+    // Ignore session storage failures and continue with in-memory state.
+  }
+};
+
+const STUDENT_NOTICE_SESSION_KEY = 'studentNoticeAcknowledged';
+
+const readStudentNoticeAcknowledged = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem(STUDENT_NOTICE_SESSION_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const persistStudentNoticeAcknowledged = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(STUDENT_NOTICE_SESSION_KEY, 'true');
   } catch {
     // Ignore session storage failures and continue with in-memory state.
   }
@@ -298,6 +319,13 @@ export default function App() {
   const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [disclaimerAccepted, setDisclaimerAccepted] = useState<boolean>(() => readDisclaimerAccepted());
+  const [studentNoticeAcknowledged, setStudentNoticeAcknowledged] = useState<boolean>(
+    () => readStudentNoticeAcknowledged(),
+  );
+  const handleStudentNoticeAcknowledge = useCallback(() => {
+    persistStudentNoticeAcknowledged();
+    setStudentNoticeAcknowledged(true);
+  }, []);
 
   const [catalog, setCatalog] = useState<UploadCatalogResponse | null>(null);
   // One shared catalog request: prefetched on load (which also wakes a cold backend), reused by
@@ -540,6 +568,10 @@ export default function App() {
 
       {showHowItWorks && (
         <HowItWorksModal onClose={() => setShowHowItWorks(false)} />
+      )}
+
+      {!studentNoticeAcknowledged && (
+        <StudentProjectNotice onAcknowledge={handleStudentNoticeAcknowledge} />
       )}
     </>
   );
