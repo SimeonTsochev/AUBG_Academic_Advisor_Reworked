@@ -232,6 +232,16 @@ class RealCatalogScenarioTests(IsolatedTestCase):
     def _fresh(self, major: str) -> Dict:
         return next(s.result for s in self.scenarios if s.majors == [major] and s.stage == 0)
 
+    def test_unlocks_only_name_courses_planned_later(self):
+        # "Prerequisite for X" on a course planned after X read like a violation (X's "A or B" was met by A).
+        for s in self.scenarios:
+            with self.subTest(s.label):
+                term_of = {c["code"]: i for i, t in enumerate(s.result["semester_plan"]) for c in t["courses"]}
+                for index, term in enumerate(s.result["semester_plan"]):
+                    for course in term["courses"]:
+                        early = [code for code in course.get("unlocks") or [] if term_of.get(code, -1) <= index]
+                        self.assertEqual(early, [], f"{course['code']} in {term['term']}")
+
     def test_removing_a_required_course_makes_the_plan_invalid(self):
         result = _plan(self.catalog, ["Computer Science"], [], set(), overrides={"remove": [{"code": "COS 2021"}]})
         self.assertIsNone(_term_of(result, "COS 2021"))
@@ -294,6 +304,42 @@ class RealCatalogScenarioTests(IsolatedTestCase):
         self.assertGreaterEqual(sum(_course_credits(self.catalog, c) for c in completed), 87)
         result = _plan(self.catalog, ["Computer Science"], [], completed)
         self.assertEqual(_term_of(result, "COS 4091"), result["semester_plan"][0]["term"])
+
+    def test_foundation_courses_the_student_is_past_are_not_planned(self):
+        # Passing ENG 1001 (ENG 1000's co-requisite) and taking "MAT 1000 or equivalent" courses means
+        # the placement put the student above ENG 1000 and MAT 1000; they used to be planned afterwards.
+        in_progress = {"MAT 1005", "PHY 1010"}
+        result = _plan(
+            self.catalog, ["Business Administration"], [], {"ENG 1001", "BUS 1001"} | in_progress,
+            in_progress_courses=in_progress,
+        )
+        self.assertIsNone(_term_of(result, "ENG 1000"))
+        self.assertIsNone(_term_of(result, "MAT 1000"))
+        self.assertIn("ENG 1000", result["completed_courses"])
+        # Waived, not earned: ENG 1001 and BUS 1001 only.
+        self.assertEqual(result["summary"]["completed_credits"], 7)
+
+    def test_nothing_is_added_to_a_term_the_student_is_registered_for(self):
+        # The current term's registration is done: a 6-credit load stays as registered and the missing
+        # credits go to later terms, not into it (the frontend sends in-progress courses as completed too).
+        in_progress = {"COS 2021", "STA 1005"}
+        completed = {"MAT 1003", "COS 1050", "ENG 1000", "ENG 1001", "BUS 1001"}
+        result = generate_plan(
+            catalog=self.catalog,
+            majors=["Computer Science"],
+            minors=[],
+            completed_courses=completed | in_progress,
+            in_progress_courses=in_progress,
+            current_term_label="Fall 2026",
+            start_term_season="Fall",
+            start_term_year=2026,
+            program_options=_required_options(self.catalog, ["Computer Science"]),
+            placement_waivers=["COS 1020"],
+        )
+        current = next((t for t in result["semester_plan"] if t["term"] == "Fall 2026"), None)
+        self.assertEqual(current["courses"] if current else [], [])
+        self.assertEqual(result["validation_errors"], [])
+        self.assertGreaterEqual(result["summary"]["projected_credits"], 120)
 
     def test_excel_only_courses_can_be_added_to_future_terms(self):
         # BUS 4482 (Excel-only, listed for Fall 2026) replaces an elective slot in a senior-year term,

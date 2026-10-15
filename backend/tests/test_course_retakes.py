@@ -185,7 +185,8 @@ class CourseRetakeTests(IsolatedTestCase):
         self.assertEqual(major_progress.get("required"), 6)
         self.assertEqual(major_progress.get("completed"), 0)
         self.assertEqual(plan.get("summary", {}).get("total_required_credits"), 6)
-        self.assertEqual(plan.get("summary", {}).get("completed_credits"), 0)
+        # The passed attempt's credits stay earned until the retake is actually taken (QA F15).
+        self.assertEqual(plan.get("summary", {}).get("completed_credits"), 3)
 
     def test_manual_multiple_retakes_only_latest_attempt_counts(self):
         catalog = build_retake_catalog()

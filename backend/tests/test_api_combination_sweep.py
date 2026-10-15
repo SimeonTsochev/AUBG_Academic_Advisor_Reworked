@@ -94,10 +94,6 @@ class _ApiCase(IsolatedTestCase):
 
 
 class ProgramCombinationSweepTests(_ApiCase):
-    # The Literature minor's ENG 2010-first rule (p.122) is checked at graduation but not scheduled;
-    # see test_literature_minor_schedules_eng_2010_before_3000_level_eng.
-    KNOWN_INVALID_MINORS = {"Literature"}
-
     def _combinations(self):
         majors = [m for m in self.info["majors"] if m != "Self-Designed Major"]
         minors = list(self.info["minors"])
@@ -117,15 +113,17 @@ class ProgramCombinationSweepTests(_ApiCase):
                     summary["projected_credits"],
                     sum(t["credits"] for t in plan["semester_plan"]) + summary["completed_credits"],
                 )
-                if not set(minors) & self.KNOWN_INVALID_MINORS:
-                    self.assertTrue(plan["is_valid"], plan["validation_errors"])
+                self.assertTrue(plan["is_valid"], plan["validation_errors"])
 
-    @unittest.expectedFailure
     def test_literature_minor_schedules_eng_2010_before_3000_level_eng(self):
-        # Computer Science + Literature minor plans ENG 2010 in the same term as ENG 3005 (a GenEd
-        # pick), so the student's untouched plan fails its own sequence rule.
+        # Computer Science + Literature minor used to plan ENG 2010 in the same term as ENG 3005 (a
+        # GenEd pick), so the student's untouched plan failed its own sequence rule (p.122).
         plan = self._generate(["Computer Science"], ["Literature"])
         self.assertTrue(plan["is_valid"], plan["validation_errors"])
+        term_of = {c["code"]: i for i, t in enumerate(plan["semester_plan"]) for c in t["courses"]}
+        later = [code for code, i in term_of.items() if code.startswith("ENG 3") or code.startswith("ENG 4")]
+        self.assertTrue(later)
+        self.assertTrue(all(term_of[code] > term_of["ENG 2010"] for code in later), term_of)
 
 
 class RandomEditWalkTests(_ApiCase):
@@ -192,6 +190,37 @@ class RandomEditWalkTests(_ApiCase):
             main.PLAN_CACHE.clear()
             fresh = self._generate(majors, minors, overrides)
             self.assertEqual(cached["semester_plan"], fresh["semester_plan"], "plans must not depend on the cache")
+
+    def test_moved_free_elective_placeholders_stay_where_the_student_put_them(self):
+        # Making room in a full semester used to take the student's own moved placeholder as the one to
+        # replace; a new placeholder of the same name then appeared elsewhere, with no warning (QA F2).
+        rng = random.Random(1)
+        for majors, minors in self.PROGRAMS[:3]:
+            overrides = {"add": [], "remove": [], "move": []}
+            placed = {}  # instance id -> (term, code)
+            for step in range(12):
+                plan = self._generate(majors, minors, overrides)
+                terms = [t["term"] for t in plan["semester_plan"]]
+                candidates = [
+                    (t["term"], c) for t in plan["semester_plan"] for c in t["courses"] if c["instance_id"] not in placed
+                ]
+                free = [p for p in candidates if p[1]["code"].startswith("FREE ELECTIVE")]
+                pool = free if rng.random() < 0.7 and free else candidates
+                term, course = rng.choice(pool)
+                if rng.random() < 0.8:
+                    target = rng.choice([t for t in terms if t != term])
+                    overrides["move"].append({"from_term": term, "to_term": target,
+                                              "instance_id": course["instance_id"], "code": course["code"]})
+                    placed[course["instance_id"]] = (target, course["code"])
+                else:
+                    overrides["remove"].append({"term": term, "instance_id": course["instance_id"], "code": course["code"]})
+                    placed.pop(course["instance_id"], None)
+                plan = self._generate(majors, minors, overrides)
+                warned = {w.get("course") for w in plan["warnings"] if str(w.get("type", "")).startswith("OVERRIDE")}
+                with self.subTest(majors=majors, minors=minors, step=step):
+                    for instance_id, (term, code) in placed.items():
+                        if code not in warned:
+                            self.assertEqual(self._locate(plan, instance_id), term, code)
 
 
 if __name__ == "__main__":

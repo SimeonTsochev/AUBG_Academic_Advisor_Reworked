@@ -1,4 +1,4 @@
-import { CalendarRange, CheckCircle2, ListChecks, TriangleAlert } from 'lucide-react';
+import { CalendarRange, CheckCircle2, ListChecks, ListTodo, TriangleAlert } from 'lucide-react';
 
 interface SummaryStripProps {
   completedCredits: number;
@@ -10,6 +10,9 @@ interface SummaryStripProps {
   remainingTerms: number;
   issueCount: number;
   onShowIssues: () => void;
+  /** Programs whose electives the plan does not cover yet (the student picks them). */
+  electivesToChoose: number;
+  onShowElectives: () => void;
 }
 
 /** Four numbers a student checks first: progress, plan total, time left, problems. */
@@ -21,6 +24,8 @@ export function SummaryStrip({
   remainingTerms,
   issueCount,
   onShowIssues,
+  electivesToChoose,
+  onShowElectives,
 }: SummaryStripProps) {
   const percent = degreeCredits > 0 ? Math.min(100, Math.round((completedCredits / degreeCredits) * 100)) : 0;
   const planCovers = projectedCredits >= degreeCredits;
@@ -66,6 +71,17 @@ export function SummaryStrip({
           </span>
           <span className="stat-value num">{issueCount}</span>
           <span className="stat-hint">Review in the plan</span>
+        </button>
+      ) : electivesToChoose > 0 ? (
+        <button type="button" className="card stat stat-button" onClick={onShowElectives}>
+          <span className="stat-label">
+            <ListTodo aria-hidden="true" />
+            Plan check
+          </span>
+          <span className="stat-value">Electives to choose</span>
+          <span className="stat-hint">
+            {electivesToChoose === 1 ? 'One program needs' : `${electivesToChoose} programs need`} more electives
+          </span>
         </button>
       ) : (
         <div className="card stat is-good">

@@ -84,8 +84,10 @@ class PlanState:
 
     @property
     def earned_credits(self) -> int:
-        """Credits earned so far, each course once; placement waivers earn none, transfer credits count."""
-        return _completed_credit_total(self.catalog, self.done - self.waived) + self.total_manual_credits
+        """Credits earned so far, each course once; placement waivers earn none, transfer credits count.
+        Unlike `done`, a course planned again as a retake keeps the credits it earned until the retake."""
+        earned = (self.effective_completed | self.reported_completed) - self.in_progress - self.waived
+        return _completed_credit_total(self.catalog, earned) + self.total_manual_credits
 
     @property
     def earned_before_plan(self) -> int:

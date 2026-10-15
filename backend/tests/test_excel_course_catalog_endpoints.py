@@ -72,6 +72,18 @@ class ExcelCourseCatalogEndpointsTests(IsolatedTestCase):
         self.assertEqual(meta["XYZ 1000"]["credits"], 0)
         self.assertEqual(meta["XYZ 1000"]["title"], "Orientation")
 
+    def test_course_meta_response_lists_the_terms_the_planner_accepts(self):
+        # The app blocks adds to a published term that does not list the course, as the planner does;
+        # a scheduled course listed in no published term must come back as [], not be left out.
+        load_course_catalog_from_data({"courses": [
+            {"code": "XYZ 1000", "title": "Listed", "credits": 3, "semester_availability": ["Fall 2026"]},
+            {"code": "XYZ 2000", "title": "Not listed", "credits": 3, "semester_availability": []},
+        ]})
+        meta = _catalog_course_meta_for_response({"course_meta": {"XYZ 3000": {"credits": 3}}})
+        self.assertEqual(meta["XYZ 1000"]["semester_availability"], ["Fall 2026"])
+        self.assertEqual(meta["XYZ 2000"]["semester_availability"], [])
+        self.assertNotIn("semester_availability", meta["XYZ 3000"])
+
     def test_courses_lookup_endpoint_normalizes_code(self):
         client = TestClient(app)
         response = client.get("/courses/BUS1001")

@@ -1,10 +1,26 @@
+import { useEffect } from 'react';
 import { X, CheckCircle2, Calendar, Award } from 'lucide-react';
 
 interface HowItWorksModalProps {
   onClose: () => void;
+  /** "Get Started": close and open the setup screen. */
+  onGetStarted: () => void;
 }
 
-export function HowItWorksModal({ onClose }: HowItWorksModalProps) {
+export function HowItWorksModal({ onClose, onGetStarted }: HowItWorksModalProps) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center p-6 z-50"
@@ -15,16 +31,22 @@ export function HowItWorksModal({ onClose }: HowItWorksModalProps) {
         className="max-w-3xl w-full rounded-xl shadow-2xl max-h-[90vh] overflow-y-auto"
         style={{ backgroundColor: 'var(--white)' }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="how-it-works-title"
       >
         <div className="p-8">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
-            <h2>How It Works</h2>
+            <h2 id="how-it-works-title">How It Works</h2>
             <button
+              type="button"
               onClick={onClose}
               className="btn btn-ghost btn-icon"
+              aria-label="Close"
+              autoFocus
             >
-              <X className="w-6 h-6" />
+              <X className="w-6 h-6" aria-hidden="true" />
             </button>
           </div>
 
@@ -109,7 +131,8 @@ export function HowItWorksModal({ onClose }: HowItWorksModalProps) {
 
           {/* CTA */}
           <button
-            onClick={onClose}
+            type="button"
+            onClick={onGetStarted}
             className="btn btn-primary btn-lg btn-block mt-6"
           >
             Get Started

@@ -124,6 +124,16 @@ class ElectiveProgressTests(IsolatedTestCase):
         econ = _by_program(result)["Economics"]
         self.assertIn({"code": "ECO 3011", "credits": 3, "completed": True}, econ["courses"])
 
+    def test_rule_labels_show_topic_ranges_not_catalog_patterns(self):
+        # "POS 4[4-9]NN" is the catalog's pattern; students read "POS 4400–4999".
+        result = generate_plan(
+            self.catalog, ["Political Science and International Relations"], [], set(),
+            start_term_season="Fall", start_term_year=2026,
+        )
+        labels = [rule["label"] for entry in result["elective_progress"] for rule in entry.get("rules") or []]
+        self.assertTrue(any("POS 4400–4999" in label for label in labels), labels)
+        self.assertEqual([label for label in labels if "[" in label], [])
+
 
 if __name__ == "__main__":
     unittest.main()

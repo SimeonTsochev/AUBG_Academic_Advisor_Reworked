@@ -5,3 +5,5 @@ export const PLANNING_MIN_CREDITS = 14;
 // The catalog's standard maximum course load (AY 2026-27 catalog p.65). The planner never plans an
 // overload; a student may add courses up to `academic_record.max_load` (19 with a GPA of 3.300+).
 export const STANDARD_MAX_CREDITS = 17;
+// Transfer credits that count toward a major's electives (catalog p.68; backend MAX_TRANSFER_MAJOR_CREDITS).
+export const MAX_TRANSFER_MAJOR_ELECTIVE_CREDITS = 18;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel, termToNumber } from "./term";
+import { applyRolloverIfNeeded, impliedEarlierStart, isEarlierTerm, previousTermLabel, termToNumber } from "./term";
 
 describe("termToNumber / isEarlierTerm", () => {
   it("orders Spring before Fall within a year and years ascending", () => {
@@ -58,5 +58,32 @@ describe("applyRolloverIfNeeded", () => {
       currentTermLabel: "Fall 2026",
     });
     expect(result.completedOverrides["COS 1020"]).toBe("Fall 2025");
+  });
+});
+
+describe("impliedEarlierStart", () => {
+  const base = { currentTerm: "Fall 2026", maxCreditsPerTerm: 17 };
+
+  it("never suggests a later start for a student who is behind", () => {
+    // Regression: 26 credits from a Fall 2025 transcript suggested "Spring 2025".
+    expect(
+      impliedEarlierStart({ ...base, chosenStart: "Fall 2025", completedCredits: 26, recordedTerms: ["Fall 2025", "Spring 2026"] })
+    ).toBeNull();
+  });
+
+  it("uses a course recorded before the chosen start", () => {
+    expect(
+      impliedEarlierStart({ ...base, chosenStart: "Fall 2026", completedCredits: 10, recordedTerms: ["Spring 2026"] })
+    ).toEqual({ term: "Spring 2026", reason: "recorded" });
+  });
+
+  it("uses credits that cannot fit in the semesters before now", () => {
+    // 40 credits need at least three earlier semesters at 17 credits each.
+    expect(
+      impliedEarlierStart({ ...base, chosenStart: "Fall 2026", completedCredits: 40, recordedTerms: [] })
+    ).toEqual({ term: "Spring 2025", reason: "credits" });
+    expect(
+      impliedEarlierStart({ ...base, chosenStart: "Fall 2025", completedCredits: 34, recordedTerms: [] })
+    ).toBeNull();
   });
 });

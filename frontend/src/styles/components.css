@@ -117,6 +117,19 @@
   border-radius: var(--radius-sm);
 }
 
+/* Touch screens: every button is at least the 44px a fingertip needs. */
+@media (pointer: coarse) {
+  .btn,
+  .btn-sm,
+  .btn-icon {
+    min-height: 44px;
+  }
+
+  .btn-icon {
+    min-width: 44px;
+  }
+}
+
 .btn-sm svg {
   width: 0.875rem;
   height: 0.875rem;

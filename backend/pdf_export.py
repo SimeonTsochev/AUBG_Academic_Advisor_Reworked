@@ -1,15 +1,21 @@
 from __future__ import annotations
 from typing import Any, Dict
 from io import BytesIO
+from xml.sax.saxutils import escape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib import colors
+
+# Rows for the student's own courses whose term is unknown (added by hand, not from a transcript).
+COMPLETED_TERM_UNKNOWN = "Completed"
 
 
 def _term_sort_key(term: str) -> tuple[int, int, str]:
     if not isinstance(term, str):
         return (9999, 9, "")
+    if term == COMPLETED_TERM_UNKNOWN:
+        return (0, 0, term)
     parts = term.strip().split()
     if len(parts) != 2 or not parts[1].isdigit():
         return (9999, 9, term)
@@ -68,10 +74,10 @@ def plan_to_pdf_bytes(plan: Dict) -> bytes:
     story.append(Paragraph("AUBG Degree Plan", styles["Title"]))
     story.append(Spacer(1, 12))
 
-    majors = ", ".join(plan.get("majors", [])) or "—"
-    minors = ", ".join(plan.get("minors", [])) or "—"
-    story.append(Paragraph(f"<b>Majors:</b> {majors}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Minors:</b> {minors}", styles["Normal"]))
+    majors = ", ".join(plan.get("majors", [])) or "None"
+    minors = ", ".join(plan.get("minors", [])) or "None"
+    story.append(Paragraph(f"<b>Majors:</b> {escape(majors)}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Minors:</b> {escape(minors)}", styles["Normal"]))
     story.append(Spacer(1, 12))
 
     summary = plan.get("summary", {})
@@ -85,6 +91,15 @@ def plan_to_pdf_bytes(plan: Dict) -> bytes:
     story.append(Paragraph("<b>Semester-by-semester plan</b>", styles["Heading2"]))
     data = [["Term", "Courses", "Credits"]]
     term_rows: Dict[str, Dict[str, Any]] = {}
+    # The student's completed and in-progress courses, so the PDF shows the whole degree like the screen.
+    for entry in plan.get("recorded_courses", []):
+        if not isinstance(entry, dict) or not entry.get("code"):
+            continue
+        term = entry.get("term") or COMPLETED_TERM_UNKNOWN
+        row = term_rows.setdefault(term, {"courses": [], "credits": 0, "in_progress": False})
+        row["courses"].append(str(entry["code"]))
+        row["credits"] += int(entry.get("credits", 0) or 0)
+        row["in_progress"] = row["in_progress"] or bool(entry.get("in_progress"))
     for sem in plan.get("semester_plan", []):
         if not isinstance(sem, dict):
             continue
@@ -111,11 +126,13 @@ def plan_to_pdf_bytes(plan: Dict) -> bytes:
         row["courses"].append(_manual_credit_label(entry))
         row["credits"] += int(entry.get("credits", 0) or 0)
 
+    # Paragraphs wrap inside the column; a plain string runs on into the credits column.
+    cell_style = ParagraphStyle("PlanCell", parent=styles["Normal"], fontSize=9, leading=11)
     for term in sorted(term_rows.keys(), key=_term_sort_key):
         row = term_rows[term]
         data.append([
-            term,
-            ", ".join([c for c in row.get("courses", []) if c]),
+            Paragraph(escape(f"{term} (in progress)" if row.get("in_progress") else term), cell_style),
+            Paragraph(escape(", ".join([c for c in row.get("courses", []) if c])), cell_style),
             str(int(row.get("credits", 0) or 0))
         ])
     table = Table(data, colWidths=[90, 360, 60])

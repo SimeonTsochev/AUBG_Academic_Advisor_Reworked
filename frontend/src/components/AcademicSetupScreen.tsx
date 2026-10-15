@@ -84,6 +84,27 @@ const transcriptStatusLabel = (phase: TranscriptImportPhase) => {
   }
 };
 
+/** What a plan was built from, when the student comes back from the plan to change it. */
+export interface SetupPrefill {
+  majors: string[];
+  minors: string[];
+  businessConcentration: string | null;
+  economicsIntermediateChoice: "ECO 3001" | "ECO 3002" | null;
+  programOptions: ProgramOptionSelection;
+  placementWaivers: string[];
+  grades?: GradeMap;
+  completedCourses: string[];
+  inProgressCourses: string[];
+  failedCourses: FailedCourse[];
+  manualCredits: ManualCreditEntry[];
+  inProgressOverrides?: Record<string, string>;
+  completedOverrides?: Record<string, string>;
+  startTermSeason: string;
+  startTermYear: number;
+  waivedMat1000: boolean;
+  waivedEng1000: boolean;
+}
+
 interface AcademicSetupScreenProps {
   catalogId?: string;
   catalogYear?: string;
@@ -127,6 +148,8 @@ interface AcademicSetupScreenProps {
   /** Programs preselected by a requirement-page link (`/?major=...`), already validated. */
   initialMajors?: string[];
   initialMinors?: string[];
+  /** Back from a plan: every choice and course the plan has, so the student only changes what they want. */
+  initialSelection?: SetupPrefill | null;
 }
 
 export function AcademicSetupScreen({
@@ -142,30 +165,47 @@ export function AcademicSetupScreen({
   onBack,
   initialMajors = [],
   initialMinors = [],
+  initialSelection = null,
 }: AcademicSetupScreenProps) {
   const MAX_PROGRAMS_PER_TYPE = 2;
+  const prefill = initialSelection;
   const [step, setStep] = useState<1 | 2>(1);
-  const [selectedMajors, setSelectedMajors] = useState<string[]>(initialMajors);
-  const [selectedMinors, setSelectedMinors] = useState<string[]>(initialMinors);
-  const [businessConcentration, setBusinessConcentration] = useState<string>('General');
-  const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(null);
-  const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>({});
-  const [placementWaivers, setPlacementWaivers] = useState<string[]>([]);
-  const [waivedMat1000, setWaivedMat1000] = useState(false);
-  const [waivedEng1000, setWaivedEng1000] = useState(false);
+  const [selectedMajors, setSelectedMajors] = useState<string[]>(() => prefill?.majors ?? initialMajors);
+  const [selectedMinors, setSelectedMinors] = useState<string[]>(() => prefill?.minors ?? initialMinors);
+  const [businessConcentration, setBusinessConcentration] = useState<string>(
+    () => prefill?.businessConcentration ?? 'General'
+  );
+  const [economicsIntermediateChoice, setEconomicsIntermediateChoice] = useState<"ECO 3001" | "ECO 3002" | null>(
+    () => prefill?.economicsIntermediateChoice ?? null
+  );
+  const [programOptions, setProgramOptions] = useState<ProgramOptionSelection>(() => ({ ...(prefill?.programOptions ?? {}) }));
+  const [placementWaivers, setPlacementWaivers] = useState<string[]>(() => [...(prefill?.placementWaivers ?? [])]);
+  const [waivedMat1000, setWaivedMat1000] = useState(() => prefill?.waivedMat1000 ?? false);
+  const [waivedEng1000, setWaivedEng1000] = useState(() => prefill?.waivedEng1000 ?? false);
   const [completedCourses, setCompletedCourses] = useState<string[]>([]);
   const [courseQuery, setCourseQuery] = useState('');
   const [courseSearchResults, setCourseSearchResults] = useState<CourseCatalogRecord[]>([]);
   const [courseSearchLoading, setCourseSearchLoading] = useState(false);
   const [courseSearchError, setCourseSearchError] = useState<string | null>(null);
   const [courseLookupByCode, setCourseLookupByCode] = useState<Record<string, CourseCatalogRecord>>({});
-  const [importedCompletedCourses, setImportedCompletedCourses] = useState<string[]>([]);
-  const [importedInProgressCourses, setImportedInProgressCourses] = useState<string[]>([]);
+  // A plan's courses come back here with their exact status, terms and grades, like a transcript's.
+  const [importedCompletedCourses, setImportedCompletedCourses] = useState<string[]>(
+    () => [...(prefill?.completedCourses ?? [])]
+  );
+  const [importedInProgressCourses, setImportedInProgressCourses] = useState<string[]>(
+    () => [...(prefill?.inProgressCourses ?? [])]
+  );
   // Not completed, so the plan schedules them again when a requirement still needs them.
-  const [importedFailedCourses, setImportedFailedCourses] = useState<FailedCourse[]>([]);
-  const [importedCompletedTerms, setImportedCompletedTerms] = useState<Record<string, string>>({});
-  const [importedGrades, setImportedGrades] = useState<GradeMap>({});
-  const [importedInProgressTerms, setImportedInProgressTerms] = useState<Record<string, string>>({});
+  const [importedFailedCourses, setImportedFailedCourses] = useState<FailedCourse[]>(
+    () => (prefill?.failedCourses ?? []).map((entry) => ({ ...entry }))
+  );
+  const [importedCompletedTerms, setImportedCompletedTerms] = useState<Record<string, string>>(
+    () => ({ ...(prefill?.completedOverrides ?? {}) })
+  );
+  const [importedGrades, setImportedGrades] = useState<GradeMap>(() => ({ ...(prefill?.grades ?? {}) }));
+  const [importedInProgressTerms, setImportedInProgressTerms] = useState<Record<string, string>>(
+    () => ({ ...(prefill?.inProgressOverrides ?? {}) })
+  );
   const [transcriptImportPhase, setTranscriptImportPhase] = useState<TranscriptImportPhase>('idle');
   const [transcriptImportError, setTranscriptImportError] = useState<string | null>(null);
   const [transcriptImportWarnings, setTranscriptImportWarnings] = useState<string[]>([]);
@@ -205,7 +245,11 @@ export function AcademicSetupScreen({
   }, []);
 
   // Default to the current term (the last option); earlier options are for continuing students.
-  const [startTermValue, setStartTermValue] = useState(termOptions[termOptions.length - 1]?.value ?? "");
+  const [startTermValue, setStartTermValue] = useState(() => {
+    const planned = prefill ? `${prefill.startTermSeason} ${prefill.startTermYear}` : null;
+    if (planned && termOptions.some((option) => option.value === planned)) return planned;
+    return termOptions[termOptions.length - 1]?.value ?? "";
+  });
   const selectedStartTerm = termOptions.find((t) => t.value === startTermValue) ?? termOptions[0];
   const currentTerm = termOptions[termOptions.length - 1];
   const currentTermLabel = currentTerm?.label ?? null;
@@ -231,11 +275,24 @@ export function AcademicSetupScreen({
   const optionInfo = selectedProgramInfo(selectedMajors, selectedMinors, programInfo, minorInfo);
   const selectedProgramOptions = normalizeProgramOptions(programOptions, selectedPrograms, optionInfo);
   const placementTests = offeredPlacementWaivers(selectedPrograms, optionInfo);
-  const canSubmit =
-    selectedMajors.length > 0
-    && (!economicsMinorSelected || economicsIntermediateChoice !== null)
-    && majorsMissingRequiredOption(selectedPrograms, optionInfo, selectedProgramOptions).length === 0
-    && !marketingImcConflict;
+  const programsMissingOption = majorsMissingRequiredOption(selectedPrograms, optionInfo, selectedProgramOptions);
+  // Why "Build my plan" is disabled, said next to the button.
+  const submitBlockedReason =
+    selectedMajors.length === 0
+      ? 'Choose at least one major.'
+      : programsMissingOption.length > 0
+        ? `Choose ${programsMissingOption
+            .map((program) => {
+              const label = optionInfo[program]?.options?.label ?? 'option';
+              return `a ${label.charAt(0).toLowerCase()}${label.slice(1)} for ${program}`;
+            })
+            .join(' and ')}.`
+        : economicsMinorSelected && economicsIntermediateChoice === null
+          ? 'Choose the intermediate course for the Economics minor.'
+          : marketingImcConflict
+            ? 'Choose another Business concentration or remove the IMC minor (see above).'
+            : null;
+  const canSubmit = submitBlockedReason === null;
 
   const optionCard = (program: string, kind: 'major' | 'minor') => (
     <ProgramOptionCard
@@ -636,7 +693,8 @@ export function AcademicSetupScreen({
       failedCourses: importedFailedCourses.filter(
         (entry) => !completedForPlan.includes(entry.code) && !inProgressCourses.includes(entry.code)
       ),
-      manualCredits: [],
+      // Transfer credits are added on the plan screen; keep the plan's.
+      manualCredits: (prefill?.manualCredits ?? []).map((entry) => ({ ...entry })),
       inProgressOverrides: nextInProgressOverrides,
       completedOverrides: Object.fromEntries(
         Object.entries(importedCompletedTerms).filter(([code]) => completedForPlan.includes(code))
@@ -943,7 +1001,7 @@ export function AcademicSetupScreen({
               {importedCompletedCourses.length > 0 && (
                 <div className="mt-4">
                   <div className="chip-list-label">
-                    Imported completed courses:
+                    Completed courses:
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {importedCompletedCourses.map((code) => (
@@ -988,7 +1046,7 @@ export function AcademicSetupScreen({
               {importedInProgressCourses.length > 0 && (
                 <div className="mt-4">
                   <div className="chip-list-label">
-                    Imported in-progress courses:
+                    In-progress courses:
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {importedInProgressCourses.map((code) => (
@@ -1391,10 +1449,23 @@ export function AcademicSetupScreen({
                 <ArrowLeft aria-hidden="true" />
                 <span>Back</span>
               </button>
-              <button type="button" onClick={handleSubmit} disabled={!canSubmit} className="btn btn-primary btn-lg btn-forward">
-                <span>Build my plan</span>
-                <ArrowRight aria-hidden="true" />
-              </button>
+              <div className="flex items-center gap-3">
+                {submitBlockedReason && (
+                  <p id="build-plan-blocked" className="text-sm muted" role="status">
+                    {submitBlockedReason}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={!canSubmit}
+                  aria-describedby={submitBlockedReason ? 'build-plan-blocked' : undefined}
+                  className="btn btn-primary btn-lg btn-forward"
+                >
+                  <span>Build my plan</span>
+                  <ArrowRight aria-hidden="true" />
+                </button>
+              </div>
             </div>
           </div>
         )}

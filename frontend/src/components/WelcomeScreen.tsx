@@ -21,7 +21,7 @@ export function WelcomeScreen({ onStart, onHowItWorks, isLoading, errorMsg }: We
           <GraduationCap />
         </span>
 
-        <h1 className="welcome-title">AUBG Academic Co-Advisor</h1>
+        <h1 className="welcome-title">AUBG Academic Co&#8209;Advisor</h1>
         <p className="welcome-tagline">
           Build a semester-by-semester degree plan, see what is left for every major and minor, and graduate on time.
         </p>

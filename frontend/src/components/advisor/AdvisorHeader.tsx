@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Copy, FileDown, FileJson, GraduationCap } from 'lucide-react';
+import { ArrowLeft, Check, Copy, FileDown, FileJson, GraduationCap, RotateCw } from 'lucide-react';
 
 interface ShareToken {
   token: string | null;
@@ -6,6 +6,8 @@ interface ShareToken {
   error: string | null;
   copyStatus: 'idle' | 'copied' | 'error';
   onCopy: () => void;
+  /** Try saving again after a failure; absent when the snapshot service is not available at all. */
+  onRetry?: () => void;
 }
 
 interface AdvisorHeaderProps {
@@ -21,12 +23,20 @@ interface AdvisorHeaderProps {
   onDownloadPdf: () => void;
 }
 
-function ShareTokenButton({ token, isLoading, error, copyStatus, onCopy }: ShareToken) {
-  if (!token) {
-    return (
-      <span className="badge badge-neutral" title={error ?? undefined}>
-        {isLoading ? 'Saving share link…' : 'Share link unavailable'}
-      </span>
+function ShareTokenButton({ token, isLoading, error, copyStatus, onCopy, onRetry }: ShareToken) {
+  if (!token && isLoading) {
+    return <span className="badge badge-neutral">Saving share link…</span>;
+  }
+  if (!token || error) {
+    // Without a share link the plan is not saved anywhere: a reload starts over.
+    const title = `${error ?? 'The plan could not be saved.'} Reloading this page loses the plan.`;
+    return onRetry ? (
+      <button type="button" className="btn btn-ghost btn-sm" onClick={onRetry} title={title}>
+        <RotateCw aria-hidden="true" />
+        <span>Plan not saved · Retry</span>
+      </button>
+    ) : (
+      <span className="badge badge-warning" title={title}>Plan not saved</span>
     );
   }
   return (

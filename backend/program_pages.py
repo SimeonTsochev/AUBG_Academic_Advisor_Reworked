@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 from business_concentrations import available_business_concentrations
 from catalog_options import options_offered
 from degree_engine import build_requirement_slots
+from elective_rules import readable_label
 
 PROGRAM_PAGES_ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "frontend" / "seo" / "programs.json"
 
@@ -121,7 +122,7 @@ def _program(catalog: Dict[str, Any], kind: str, name: str) -> Dict[str, Any]:
 
 def _rule_labels(rules: Any) -> List[str]:
     """The planner's elective sub-rules as the catalog states them ("At most three non-COS courses")."""
-    return [r["label"] for r in rules or [] if isinstance(r, dict) and r.get("label")]
+    return [readable_label(r["label"]) for r in rules or [] if isinstance(r, dict) and r.get("label")]
 
 
 def _options(catalog: Dict[str, Any], kind: str, name: str) -> Dict[str, Any] | None:

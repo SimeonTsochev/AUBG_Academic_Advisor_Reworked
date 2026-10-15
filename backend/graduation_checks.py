@@ -15,8 +15,8 @@ from plan_state import PlanState
 from degree_engine import (
     _catalog_courses,
     _course_is_wic,
-    _course_number,
     _enforces_academic_policies,
+    program_sequence_rules,
     select_courses_for_slots,
 )
 
@@ -135,22 +135,14 @@ def sequence_check(
     term_of = {c["code"]: i for i, term in enumerate(semester_plan) for c in term.get("courses") or []}
     errors: List[str] = []
     details: List[Dict] = []
-    for kind, names in (("majors", majors), ("minors", minors)):
-        for name in names:
-            for rule in (catalog.get(kind, {}).get(name) or {}).get("sequence_rules") or []:
-                first = rule.get("before")
-                if not first or first in completed:
-                    continue
-                prefixes = tuple(f"{p} " for p in rule.get("prefixes") or [])
-                limit = term_of.get(first, len(semester_plan))
-                early = sorted(
-                    code for code, index in term_of.items()
-                    if code != first and index <= limit and (not prefixes or code.startswith(prefixes))
-                    and (_course_number(code) or 0) >= int(rule.get("min_level") or 0)
-                )
-                if early:
-                    errors.append(f"{rule.get('label') or first + ' must come first.'} Planned too early: {', '.join(early)}.")
-                    details.append({"program": name, "before": first, "courses": early})
+    for rule in program_sequence_rules(catalog, majors, minors):
+        if rule.first in completed:
+            continue
+        limit = term_of.get(rule.first, len(semester_plan))
+        early = sorted(code for code, index in term_of.items() if index <= limit and rule.applies_to(code))
+        if early:
+            errors.append(f"{rule.label} Planned too early: {', '.join(early)}.")
+            details.append({"program": rule.program, "before": rule.first, "courses": early})
     return errors, details
 
 

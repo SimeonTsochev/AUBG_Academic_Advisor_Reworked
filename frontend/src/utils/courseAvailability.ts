@@ -51,14 +51,22 @@ export function getCourseAvailabilityInfo(
   context: CourseAvailabilityContext
 ): CourseAvailabilityInfo {
   const { mode, isExcelOnly, currentTermLabel, targetTermLabel, scheduleTerms } = context;
-  const shouldEnforceTermAvailability = isExcelOnly === true;
   const offeredTerms = (course?.semester_availability ?? [])
     .filter((term): term is string => typeof term === "string" && term.trim().length > 0)
     .map((term) => term.trim());
+  // Adding to a chosen term follows the planner's rule for every course with a schedule record
+  // (an empty list is a record that no published term lists); the planner refuses anything else.
+  // Other checks only cover Excel-only courses with listed terms.
+  const shouldEnforceTermAvailability =
+    mode === "plan_add" && Boolean(targetTermLabel?.trim())
+      ? Array.isArray(course?.semester_availability)
+      : isExcelOnly === true && offeredTerms.length > 0;
   const publishedTerms = new Set((scheduleTerms ?? []).map(normalizeTermLabel));
+  const offeredTermsLabel =
+    offeredTerms.length > 0 ? `Offered only in: ${offeredTerms.join(", ")}` : "Not listed in any published schedule";
 
   const computeUnavailable = (termToCheck: string | null) => {
-    if (!shouldEnforceTermAvailability || !termToCheck || offeredTerms.length === 0) return false;
+    if (!shouldEnforceTermAvailability || !termToCheck) return false;
     const normalizedTarget = normalizeTermLabel(termToCheck);
     if (!publishedTerms.has(normalizedTarget)) return false;
     return !offeredTerms.some((term) => normalizeTermLabel(term) === normalizedTarget);
@@ -83,7 +91,7 @@ export function getCourseAvailabilityInfo(
       rowShouldBeMuted: false,
       termToCheck: null,
       warningLabel: `Not offered in ${currentTermLabel?.trim() ?? "this term"} (OK if completed earlier)`,
-      detailsLabel: `Offered only in: ${offeredTerms.join(", ")}`,
+      detailsLabel: offeredTermsLabel,
       offeredTerms,
     };
   }
@@ -93,7 +101,7 @@ export function getCourseAvailabilityInfo(
       ? targetTermLabel?.trim() || currentTermLabel?.trim() || null
       : currentTermLabel?.trim() || null;
   const isUnavailable = computeUnavailable(termToCheck);
-  const shouldBlock = mode === "plan_add" && isUnavailable && shouldEnforceTermAvailability;
+  const shouldBlock = mode === "plan_add" && isUnavailable;
 
   if (!isUnavailable) {
     return {
@@ -114,7 +122,7 @@ export function getCourseAvailabilityInfo(
     rowShouldBeMuted: shouldBlock,
     termToCheck,
     warningLabel: `Not offered in ${termLabel}`,
-    detailsLabel: `Offered only in: ${offeredTerms.join(", ")}`,
+    detailsLabel: offeredTermsLabel,
     offeredTerms,
   };
 }

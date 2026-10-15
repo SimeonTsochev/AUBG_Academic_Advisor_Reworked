@@ -307,8 +307,30 @@
   list-style: none;
 }
 
+/* One row: the message and its Cancel button, so the banner covers as little of the plan as possible. */
+.floating-banner-row {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
 /* ---- Small screens --------------------------------------------------------- */
 @media (max-width: 767px) {
+  /* All three tabs stay visible: they wrap instead of scrolling the last one out of view. */
+  .advisor-tabs {
+    flex-wrap: wrap;
+  }
+
+  .advisor-tabs .tab {
+    padding: 0.625rem 0.625rem;
+  }
+
+  .floating-banner {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    width: calc(100vw - 1rem);
+    padding: 0.625rem 0.75rem;
+  }
+
   /* The header wraps to several rows on phones; pinning it would eat a third of the screen. */
   .advisor-header {
     position: static;

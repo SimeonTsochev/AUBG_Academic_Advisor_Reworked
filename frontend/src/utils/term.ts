@@ -26,6 +26,36 @@ export function previousTermLabel(term: string): string | null {
   return `Spring ${year}`;
 }
 
+/**
+ * The start term a student's record proves, when it is earlier than the one they chose: a course
+ * recorded in an earlier semester, or more completed credits than the semesters before the current one
+ * could hold at `maxCreditsPerTerm`. Null when the chosen start fits (a student who is behind, or who
+ * took fewer credits, started when they said they did).
+ */
+export function impliedEarlierStart(params: {
+  chosenStart: string;
+  currentTerm: string;
+  completedCredits: number;
+  recordedTerms: readonly string[];
+  maxCreditsPerTerm: number;
+}): { term: string; reason: "recorded" | "credits" } | null {
+  const { chosenStart, currentTerm, completedCredits, recordedTerms, maxCreditsPerTerm } = params;
+  const chosen = termToNumber(chosenStart);
+  if (chosen === null) return null;
+  let best: { term: string; reason: "recorded" | "credits" } | null = null;
+  const consider = (term: string, reason: "recorded" | "credits") => {
+    const value = termToNumber(term);
+    if (value === null || value >= chosen) return;
+    if (!best || value < (termToNumber(best.term) ?? Infinity)) best = { term, reason };
+  };
+  recordedTerms.forEach((term) => consider(term, "recorded"));
+  const priorTermsNeeded = Math.ceil(Math.max(0, completedCredits) / Math.max(1, maxCreditsPerTerm));
+  let start: string | null = currentTerm;
+  for (let i = 0; i < priorTermsNeeded && start; i += 1) start = previousTermLabel(start);
+  if (start && priorTermsNeeded > 0) consider(start, "credits");
+  return best;
+}
+
 export interface CourseStatusRolloverInput {
   currentTermLabel: string;
   lastRolloverTermApplied?: string;

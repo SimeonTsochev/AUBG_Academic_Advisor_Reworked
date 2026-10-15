@@ -36,6 +36,13 @@ from degree_engine import _course_credits, _course_number, _excel_course_record
 
 # "ENG 3[4-9]NN", "COS L[1-2]NN" (L = level 1-4), "MLL L098", "MLL 10XX"
 _PATTERN_TOKEN = re.compile(r"\[(\d)-(\d)\]|N|X|L|\d|\s+|[A-Z]")
+# A topics range written as a pattern in a rule's label: "POS 4[4-9]NN".
+_RANGE_IN_LABEL = re.compile(r"\b([A-Z]{2,4}) (\d)\[(\d)-(\d)\]NN\b")
+
+
+def readable_label(label: str) -> str:
+    """A rule label as students read it: "POS 4[4-9]NN topics" becomes "POS 4400-4999 topics"."""
+    return _RANGE_IN_LABEL.sub(lambda m: f"{m[1]} {m[2]}{m[3]}00–{m[2]}{m[4]}99", label)
 
 
 def pattern_regex(pattern: str) -> re.Pattern:
@@ -131,7 +138,7 @@ class ElectiveRule:
             courses=CourseSet.parse(spec),
             groups=tuple(CourseSet.parse(g) for g in (spec.get("groups") or {}).values()),
             plus_waived=bool(spec.get("plus_waived")),
-            label=spec.get("label") or "",
+            label=readable_label(spec.get("label") or ""),
         )
 
     def measure(self, codes: Iterable[str], credit: Dict[str, int]) -> int:

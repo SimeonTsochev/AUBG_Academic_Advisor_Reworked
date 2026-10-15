@@ -42,6 +42,7 @@ const TAG_BADGES: Record<string, { label: string; className: string }> = {
   'TRANSFER CREDIT': { label: 'Transfer credit', className: 'badge-navy' },
   Retake: { label: 'Retake', className: 'badge-warning' },
   'Previous Attempt': { label: 'Previous attempt', className: 'badge-danger' },
+  'Retake Planned': { label: 'Retake planned', className: 'badge-warning' },
 };
 // "Planned" is every remaining course; the status icon already says so.
 const HIDDEN_TAGS = new Set(['Planned']);
@@ -174,12 +175,14 @@ export function SemesterPlanView({
     (course.tags ?? []).includes('Previous Attempt');
   const isPreviousAttemptCourse = (course: Course) =>
     (course.tags ?? []).includes('Previous Attempt');
+  // Only a course the student has passed can be retaken; one that is merely planned is not in the record.
   const retakeEligibleCodeSet = useMemo(
     () =>
       new Set(
         courses
           .filter(
             (course) =>
+              course.status === 'completed' &&
               !isTransferCredit(course) &&
               course.courseType !== 'FREE_ELECTIVE' &&
               !isFreeElectivePlaceholderCode(course.code)
@@ -188,6 +191,13 @@ export function SemesterPlanView({
       ),
     [courses]
   );
+  const plannedTermByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    courses.forEach((course) => {
+      if (course.status === 'remaining' && !map.has(course.code)) map.set(course.code, course.semester);
+    });
+    return map;
+  }, [courses]);
 
   const completedCourses = filteredCourses.filter((c) => c.semester === 'Completed');
   const inProgressCourses = filteredCourses.filter((c) => c.semester === 'In Progress');
@@ -404,7 +414,7 @@ export function SemesterPlanView({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search the catalog or your plan (code or title)"
+            placeholder="Search courses (code or title)"
             className="input"
             aria-label="Search courses"
           />
@@ -481,7 +491,11 @@ export function SemesterPlanView({
                     {hasWarning && availability.detailsLabel && <p className="text-xs muted">{availability.detailsLabel}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2 justify-end">
-                    {inPlan && <span className="badge badge-success">In your record</span>}
+                    {inPlan && (plannedTermByCode.has(code) && !retakeEligibleCodeSet.has(code) ? (
+                      <span className="badge badge-neutral">In your plan · {plannedTermByCode.get(code)}</span>
+                    ) : (
+                      <span className="badge badge-success">In your record</span>
+                    ))}
                     {onAddCourse && !inPlan && (
                       <button
                         type="button"
@@ -504,7 +518,7 @@ export function SemesterPlanView({
                         type="button"
                         onClick={() => onAddRetakeCourse(code)}
                         className="btn btn-outline btn-sm"
-                        title="Add as Retake (0 credits)"
+                        title="Plan a retake of this course"
                       >
                         <RefreshCcw aria-hidden="true" />
                         <span>Add as retake</span>
@@ -553,7 +567,10 @@ export function SemesterPlanView({
       <div className="term-grid">
         {visibleTerms.map((semester) => {
           const semesterCourses = sortedGroupedCourses[semester] ?? [];
-          const totalCredits = semesterCourses.reduce((sum, course) => sum + Number(course.credits ?? 0), 0);
+          // The semester's load: transfer credit sits in a semester but is not taken in it.
+          const totalCredits = semesterCourses
+            .filter((course) => !isTransferCredit(course))
+            .reduce((sum, course) => sum + Number(course.credits ?? 0), 0);
           const completionLabel = getTermCompletionLabel(semester);
           const termNumber = boundedTermSequence.indexOf(semester) + 1;
 

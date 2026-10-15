@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from functools import lru_cache, wraps
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, NamedTuple, Set, Tuple
 import datetime
 import logging
 import math
@@ -2120,6 +2120,28 @@ def _normalize_term_label(term: str | None) -> str | None:
     return label
 
 
+# The foundation courses a placement can waive (the request's waived_mat1000 / waived_eng1000).
+PLACEMENT_FOUNDATION_COURSES = ("MAT 1000", "ENG 1000")
+
+
+def _foundation_courses_moved_past(catalog: Dict, taken: Set[str]) -> Set[str]:
+    """Placement foundation courses the student is already past: a course they passed or are taking
+    needs one ("MAT 1000 or equivalent") or is its co-requisite (ENG 1000 goes with ENG 1001), so
+    they were placed above it, and planning it now would come after the course it leads into."""
+    course_meta = catalog.get("course_meta", {}) or {}
+    past: Set[str] = set()
+    for foundation in PLACEMENT_FOUNDATION_COURSES:
+        if foundation in taken:
+            continue
+        coreqs = set((course_meta.get(foundation) or {}).get("coreq_codes") or [])
+        for code in taken:
+            needs_it = any(foundation in _prereq_block_course_codes(block) for block in _course_prereq_blocks(catalog, code))
+            if code in coreqs or foundation in ((course_meta.get(code) or {}).get("coreq_codes") or []) or needs_it:
+                past.add(foundation)
+                break
+    return past
+
+
 def _compute_in_progress_occupied_credits(
     catalog: Dict,
     in_progress_courses: Set[str],
@@ -2775,12 +2797,51 @@ def _course_level(code: str) -> int:
     return int(m.group(1))
 
 
+class SequenceRule(NamedTuple):
+    """A program's rule that one course comes first (`sequence_rules`): the Literature minor's
+    ENG 2010 before any 3000-level ENG course (p.122)."""
+    program: str
+    first: str
+    prefixes: Tuple[str, ...]
+    min_level: int
+    label: str
+
+    def applies_to(self, code: str) -> bool:
+        """Whether `code` has to come after `first`."""
+        return (
+            code != self.first
+            and (not self.prefixes or code.startswith(self.prefixes))
+            and (_course_number(code) or 0) >= self.min_level
+        )
+
+
+def program_sequence_rules(catalog: Dict, majors: List[str], minors: List[str]) -> Tuple[SequenceRule, ...]:
+    """The selected programs' sequence rules: the planner schedules by them and
+    graduation_checks.sequence_check audits the finished plan against them."""
+    rules: List[SequenceRule] = []
+    for kind, names in (("majors", majors), ("minors", minors)):
+        for name in names:
+            for rule in (catalog.get(kind, {}).get(name) or {}).get("sequence_rules") or []:
+                first = rule.get("before")
+                if not isinstance(first, str) or not first:
+                    continue
+                rules.append(SequenceRule(
+                    program=name,
+                    first=first,
+                    prefixes=tuple(f"{p} " for p in rule.get("prefixes") or []),
+                    min_level=int(rule.get("min_level") or 0),
+                    label=rule.get("label") or f"{first} must come first.",
+                ))
+    return tuple(rules)
+
+
 def _eligible_for_term(
     catalog: Dict,
     code: str,
     completed: Set[str],
     completed_gened: Set[str] | None = None,
     earned_credits: int | None = None,
+    sequence_rules: Tuple[SequenceRule, ...] = (),
 ) -> bool:
     """Whether `code` can be taken in a term, given everything completed before that term."""
     if earned_credits is None:
@@ -2789,6 +2850,8 @@ def _eligible_for_term(
     if earned_credits < required_credits:
         return False
     if not _prereqs_satisfied(catalog, code, completed):
+        return False
+    if any(rule.first not in completed and rule.applies_to(code) for rule in sequence_rules):
         return False
     if completed_gened is None:
         completed_gened = _completed_gened_categories(catalog, completed)
@@ -2815,6 +2878,7 @@ def _schedule_courses(
     occupied_credits_by_term: Dict[str, int] | None = None,
     credit_offset: int = 0,
     assumed_min_load: int = 0,
+    sequence_rules: Tuple[SequenceRule, ...] = (),
 ) -> List[Dict]:
     completed_for_skip = set(completed_courses) - set(retake_courses or set())
     remaining = set(selected_courses) - completed_for_skip
@@ -2836,7 +2900,7 @@ def _schedule_courses(
         completed_gened = _completed_gened_categories(catalog, completed)
         available = [
             c for c in remaining
-            if _eligible_for_term(catalog, c, completed, completed_gened, earned_credits)
+            if _eligible_for_term(catalog, c, completed, completed_gened, earned_credits, sequence_rules)
         ]
         available.sort(key=lambda c: (type_order.get(course_types.get(c, "FREE"), 9), _course_level(c), c))
         available_set = set(available)
@@ -2884,6 +2948,7 @@ def balance_term_credits(
     max_credits: int = 16,
     occupied_credits_by_term: Dict[str, int] | None = None,
     credit_offset: int = 0,
+    sequence_rules: Tuple[SequenceRule, ...] = (),
 ) -> List[Dict]:
     used_codes = {
         code
@@ -2937,7 +3002,7 @@ def balance_term_credits(
                         continue
                     # `completed` deliberately excludes courses pulled into this same term, so a
                     # course and its prerequisite never end up side by side.
-                    if not _eligible_for_term(catalog, code, completed, completed_gened, earned_credits):
+                    if not _eligible_for_term(catalog, code, completed, completed_gened, earned_credits, sequence_rules):
                         continue
                     credits = _course_credits(catalog, code)
                     if term["credits"] + credits > available_max:
@@ -2978,6 +3043,7 @@ def generate_semester_plan(
     occupied_credits_by_term: Dict[str, int] | None = None,
     credit_offset: int = 0,
     preferred_courses: Set[str] | None = None,
+    sequence_rules: Tuple[SequenceRule, ...] = (),
 ) -> Dict:
     selection = select_courses_for_slots(
         catalog,
@@ -2998,6 +3064,10 @@ def generate_semester_plan(
     )
     allowed_auto = set(direct_required_pending) | set(prereq_courses)
     selected_courses = sorted(allowed_auto)
+    # A rule whose first course is neither done nor planned would hold its courses back for good.
+    sequence_rules = tuple(
+        rule for rule in sequence_rules if rule.first in allowed_auto or rule.first in selection["completed_courses"]
+    )
     selection["selected_courses"] = selected_courses
     selection["direct_required"] = set(direct_required_pending)
     selection["needed_prereqs"] = set(prereq_courses)
@@ -3036,6 +3106,7 @@ def generate_semester_plan(
         occupied_credits_by_term=occupied_credits_by_term,
         credit_offset=credit_offset,
         assumed_min_load=min_credits if fill_underloaded_terms else 0,
+        sequence_rules=sequence_rules,
     )
     scheduled = {code for term in plan for code in term["courses"]}
     selection["unscheduled_courses"] = sorted(set(selected_courses) - completed_for_skip - scheduled)
@@ -3055,6 +3126,7 @@ def generate_semester_plan(
             max_credits=max_credits,
             occupied_credits_by_term=occupied_credits_by_term,
             credit_offset=credit_offset,
+            sequence_rules=sequence_rules,
         )
 
     return {
@@ -4223,21 +4295,22 @@ def _term_availability_warnings(catalog: Dict, semester_plan: List[Dict]) -> Lis
 
 
 def _annotate_unlocks(catalog: Dict, semester_plan: List[Dict]) -> None:
-    """Set course['unlocks'] to the planned courses that list it as a prerequisite."""
+    """Set course['unlocks'] to the courses planned after it that list it as a prerequisite (one
+    planned earlier met an "A or B" prerequisite another way, so this course does not unlock it)."""
     courses = [
-        course
+        (_term_label_index(term.get("term", "")), course)
         for term in semester_plan
         for course in term.get("courses", []) or []
         if isinstance(course, dict) and isinstance(course.get("code"), str) and not _is_free_elective(course["code"])
     ]
-    dependents: Dict[str, Set[str]] = {}
-    for course in courses:
+    dependents: Dict[str, List[Tuple[int, str]]] = {}
+    for index, course in courses:
         for block in _course_prereq_blocks(catalog, course["code"]):
             for prereq in _prereq_block_course_codes(block):
                 if prereq != course["code"]:
-                    dependents.setdefault(prereq, set()).add(course["code"])
-    for course in courses:
-        course["unlocks"] = sorted(dependents.get(course["code"], set()))
+                    dependents.setdefault(prereq, []).append((index, course["code"]))
+    for index, course in courses:
+        course["unlocks"] = sorted({code for later, code in dependents.get(course["code"], []) if later > index})
 
 
 def _foundation_timing_warnings(
@@ -4274,6 +4347,7 @@ def _rebalance_term_mix(
     max_credits: int,
     occupied_credits_by_term: Dict[str, int] | None = None,
     credit_offset: int = 0,
+    sequence_rules: Tuple[SequenceRule, ...] = (),
 ) -> List[Dict]:
     if not semester_plan:
         return semester_plan
@@ -4329,7 +4403,7 @@ def _rebalance_term_mix(
                 return False
             if _is_free_elective(code):
                 continue
-            if not _eligible_for_term(catalog, code, completed, completed_gened, earned_credits):
+            if not _eligible_for_term(catalog, code, completed, completed_gened, earned_credits, sequence_rules):
                 return False
         return True
 
@@ -4602,7 +4676,8 @@ def validate_plan(
         total_term_credits = calc_credits + occupied_credits
         if total_term_credits > max_credits:
             errors.append(f"{term_label} exceeds max credits ({total_term_credits} > {max_credits}).")
-        if total_term_credits < min_credits and not term_has_only_retakes:
+        # A term with in-progress courses is already registered; its load is no longer a planning choice.
+        if total_term_credits < min_credits and not term_has_only_retakes and not occupied_credits:
             errors.append(f"{term_label} is below the minimum credit load ({total_term_credits} < {min_credits}).")
 
         # Prerequisites and standing are judged against earlier terms only, never the same term.
@@ -5413,6 +5488,12 @@ def generate_plan(
         if code in catalog_courses:
             completed_courses.add(code)
             waived_courses.add(code)
+    # Passing or taking ENG 1001 or "MAT 1000 or equivalent" courses waives ENG 1000 / MAT 1000 as if
+    # the box were ticked, instead of planning the foundation course after them.
+    for code in _foundation_courses_moved_past(catalog, completed_before_waivers | normalized_in_progress):
+        if code in catalog_courses and code not in completed_courses:
+            completed_courses.add(code)
+            waived_courses.add(code)
 
     manual_credit_breakdown = _manual_credit_breakdown(
         manual_credits=manual_credits,
@@ -5443,6 +5524,10 @@ def generate_plan(
     max_credits = max(14, int(max_credits_per_semester))
     min_credits = min(PLANNING_MIN_CREDITS_PER_TERM, max_credits)
     target_credits = min(max_credits, 15)
+    # A term with in-progress courses is one the student has already registered for: the planner
+    # adds nothing to it, not even placeholders. Validation and the audit keep the real credits.
+    registered_terms_full = {term: max(credits, max_credits) for term, credits in occupied_credits_by_term.items()}
+    sequence_rules = program_sequence_rules(catalog, majors, minors)
 
     semester_result = generate_semester_plan(
         catalog=catalog,
@@ -5455,9 +5540,10 @@ def generate_plan(
         target_credits=target_credits,
         max_credits=max_credits,
         fill_underloaded_terms=fill_underloaded_terms,
-        occupied_credits_by_term=occupied_credits_by_term,
+        occupied_credits_by_term=registered_terms_full,
         credit_offset=credit_offset,
         preferred_courses={_normalize_course_code(c) for c in (preferred_courses or []) if isinstance(c, str)},
+        sequence_rules=sequence_rules,
     )
 
     plan = semester_result["plan"]
@@ -5509,8 +5595,9 @@ def generate_plan(
         completed_courses=completed_courses,
         min_credits=min_credits,
         max_credits=max_credits,
-        occupied_credits_by_term=occupied_credits_by_term,
+        occupied_credits_by_term=registered_terms_full,
         credit_offset=credit_offset,
+        sequence_rules=sequence_rules,
     )
 
     # Program requirements alone often total 75-110 credits; top the plan up with free-elective
@@ -5525,7 +5612,7 @@ def generate_plan(
             min_credits=min_credits,
             max_credits=max_credits,
             first_term=f"{base_season} {base_year}",
-            occupied_credits_by_term=occupied_credits_by_term,
+            occupied_credits_by_term=registered_terms_full,
         )
 
     semester_plan = _dedupe_semester_plan(catalog, semester_plan, completed_courses)
@@ -5858,11 +5945,13 @@ def _relieve_overloaded_terms(
                 ) is not None:
                     continue
                 # A full semester can still take the course in place of one of its free-elective
-                # placeholders: the plan's total stays what it was before the student's edit.
+                # placeholders: the plan's total stays what it was before the student's edit. Never a
+                # placeholder the student moved there themselves.
                 placeholder = None
                 if load(target) + credits > max_credits:
                     placeholder = next(
                         (c for c in target["courses"] if _is_free_elective(c.get("code") or "")
+                         and (c.get("code") or "") not in protected_codes
                          and load(target) - _planned_course_credits(catalog, c) + credits <= max_credits),
                         None,
                     )
@@ -6335,9 +6424,9 @@ def _apply_plan_overrides(
                 )
             )
         if total_credits < min_credits:
-            if term_has_only_retakes(term_obj):
+            # A term with in-progress courses is already registered: nothing more goes into it.
+            if term_has_only_retakes(term_obj) or occupied_credits:
                 continue
-            # top up only planned credits budget left after in-progress occupancy.
             if term_obj.get("term") not in suppressed_terms:
                 while term_obj["credits"] < available_min:
                     if not add_filler(term_obj):

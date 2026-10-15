@@ -16,6 +16,7 @@ import {
 import type { FailedCourse, ManualCreditEntry, RetakeEntry } from './types';
 import type { GradeMap } from './utils/grades';
 import { normalizeFailedCourses } from './utils/retakes';
+import { describeRequestError } from './utils/requestErrors';
 
 type Screen = 'welcome' | 'setup' | 'advisor';
 
@@ -50,6 +51,30 @@ interface AcademicSelection {
 }
 
 type SetupResult = AcademicSelection & { grades?: GradeMap };
+
+/** The selection a saved or current plan was made from. */
+const selectionFromSnapshot = (snapshot: ProgramSnapshotPayload): AcademicSelection => ({
+  majors: snapshot.majors,
+  minors: snapshot.minors,
+  businessConcentration: snapshot.businessConcentration,
+  economicsIntermediateChoice: snapshot.economicsIntermediateChoice ?? null,
+  programOptions: snapshot.programOptions ?? {},
+  placementWaivers: snapshot.placementWaivers ?? [],
+  completedCourses: snapshot.completedCourses,
+  inProgressCourses: snapshot.inProgressCourses,
+  failedCourses: snapshot.failedCourses ?? [],
+  manualCredits: snapshot.manualCredits,
+  inProgressOverrides: snapshot.inProgressOverrides,
+  completedOverrides: snapshot.completedOverrides,
+  lastRolloverTermApplied: snapshot.lastRolloverTermApplied,
+  strictPrereqs: snapshot.strict_prereqs,
+  retakeCourses: snapshot.retakeCourses,
+  retakeEntries: snapshot.retakeEntries,
+  startTermSeason: snapshot.start_term_season,
+  startTermYear: snapshot.start_term_year,
+  waivedMat1000: snapshot.waived_mat1000,
+  waivedEng1000: snapshot.waived_eng1000,
+});
 
 const DISCLAIMER_SESSION_KEY = 'disclaimerAccepted';
 
@@ -343,6 +368,9 @@ export default function App() {
   const [restoredSnapshot, setRestoredSnapshot] = useState<ProgramSnapshotPayload | null>(null);
   const [restoredSnapshotToken, setRestoredSnapshotToken] = useState<string | null>(null);
   const [pendingSelection, setPendingSelection] = useState<SetupResult | null>(null);
+  // Back from the advisor: setup opens with the plan's selection, and the plan's edits come back with it.
+  const [setupPrefill, setSetupPrefill] = useState<SetupResult | null>(null);
+  const [carriedPlanEdits, setCarriedPlanEdits] = useState<ProgramSnapshotPayload | null>(null);
   // Grades from the setup transcript import; kept apart from the selection so they never reach a snapshot.
   const [setupGrades, setSetupGrades] = useState<GradeMap>({});
   const [selection, setSelection] = useState<AcademicSelection>({
@@ -420,29 +448,7 @@ export default function App() {
 
         const normalized = normalizeProgramSnapshotPayload(snapshot.payload);
         setCatalog(loadedCatalog);
-        setSelection((prev) => ({
-          ...prev,
-          majors: normalized.majors,
-          minors: normalized.minors,
-          businessConcentration: normalized.businessConcentration,
-          economicsIntermediateChoice: normalized.economicsIntermediateChoice ?? null,
-          programOptions: normalized.programOptions ?? {},
-          placementWaivers: normalized.placementWaivers ?? [],
-          completedCourses: normalized.completedCourses,
-          inProgressCourses: normalized.inProgressCourses,
-          failedCourses: normalized.failedCourses ?? [],
-          manualCredits: normalized.manualCredits,
-          inProgressOverrides: normalized.inProgressOverrides,
-          completedOverrides: normalized.completedOverrides,
-          lastRolloverTermApplied: normalized.lastRolloverTermApplied,
-          strictPrereqs: normalized.strict_prereqs,
-          retakeCourses: normalized.retakeCourses,
-          retakeEntries: normalized.retakeEntries,
-          startTermSeason: normalized.start_term_season,
-          startTermYear: normalized.start_term_year,
-          waivedMat1000: normalized.waived_mat1000,
-          waivedEng1000: normalized.waived_eng1000,
-        }));
+        setSelection((prev) => ({ ...prev, ...selectionFromSnapshot(normalized) }));
         setRestoredSnapshot(normalized);
         setRestoredSnapshotToken(token);
         setCurrentScreen('advisor');
@@ -451,7 +457,7 @@ export default function App() {
         if (loadedCatalog) {
           setCatalog(loadedCatalog);
         }
-        setCatalogError(e?.message ?? 'Failed to load saved program.');
+        setCatalogError(describeRequestError(e, 'The saved plan could not be loaded.'));
       } finally {
         if (!cancelled) {
           setIsCatalogLoading(false);
@@ -479,7 +485,7 @@ export default function App() {
       setCatalog(resp);
       setCurrentScreen('setup');
     } catch (e: any) {
-      setCatalogError(e?.message ?? 'Failed to load catalog.');
+      setCatalogError(describeRequestError(e, 'The course catalog could not be loaded.'));
     } finally {
       setIsCatalogLoading(false);
     }
@@ -487,10 +493,16 @@ export default function App() {
 
   const openAdvisorWithSelection = ({ grades, ...data }: SetupResult) => {
     setSetupGrades(grades ?? {});
-    setRestoredSnapshot(null);
+    setRestoredSnapshot(carriedPlanEdits);
     setRestoredSnapshotToken(null);
     setSelection((prev) => ({ ...prev, ...data }));
     setCurrentScreen('advisor');
+  };
+
+  const handleBackToSetup = ({ snapshot, grades }: { snapshot: ProgramSnapshotPayload; grades: GradeMap }) => {
+    setSetupPrefill({ ...selectionFromSnapshot(snapshot), grades });
+    setCarriedPlanEdits(snapshot);
+    setCurrentScreen('setup');
   };
 
   const handleSetupComplete = (data: SetupResult) => {
@@ -544,6 +556,7 @@ export default function App() {
           onBack={() => setCurrentScreen('welcome')}
           initialMajors={linkedPrograms.majors}
           initialMinors={linkedPrograms.minors}
+          initialSelection={setupPrefill}
         />
       )}
 
@@ -554,7 +567,7 @@ export default function App() {
           initialSnapshot={restoredSnapshot}
           initialSnapshotToken={restoredSnapshotToken}
           initialGrades={setupGrades}
-          onBack={() => setCurrentScreen('setup')}
+          onBack={handleBackToSetup}
         />
       )}
       </Suspense>
@@ -567,7 +580,13 @@ export default function App() {
       )}
 
       {showHowItWorks && (
-        <HowItWorksModal onClose={() => setShowHowItWorks(false)} />
+        <HowItWorksModal
+          onClose={() => setShowHowItWorks(false)}
+          onGetStarted={() => {
+            setShowHowItWorks(false);
+            void handleStart();
+          }}
+        />
       )}
 
       {!studentNoticeAcknowledged && (

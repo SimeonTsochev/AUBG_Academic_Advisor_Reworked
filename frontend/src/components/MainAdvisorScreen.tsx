@@ -5,6 +5,7 @@ import { ElectiveRecommendationPanel } from './ElectiveRecommendationPanel';
 import { PrereqConfirmDialog } from './PrereqConfirmDialog';
 import { AdvisorHeader } from './advisor/AdvisorHeader';
 import { PlanAlerts } from './advisor/PlanAlerts';
+import { SkippedEdits } from './advisor/SkippedEdits';
 import { ProgramOptionPrompt } from './advisor/ProgramOptionPrompt';
 import { DiplomaNote } from './advisor/DiplomaNote';
 import { useProgramOptions } from '../hooks/useProgramOptions';
@@ -29,6 +30,8 @@ import type {
 import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { describeCourseReason } from '../utils/courseReasons';
+import { describeEditWarnings } from '../utils/planWarnings';
+import { describeRequestError } from '../utils/requestErrors';
 import {
   fillSlotWithCourse,
   isAddedInstance,
@@ -39,10 +42,15 @@ import {
   withOverrideRemove,
 } from '../utils/planOverrides';
 import { ordinal, semesterOfStudy, standingRequirement } from '../utils/standing';
-import { applyRolloverIfNeeded, isEarlierTerm, previousTermLabel } from '../utils/term';
+import { applyRolloverIfNeeded, impliedEarlierStart, isEarlierTerm, previousTermLabel } from '../utils/term';
 import { describeFailedAttempt, resolveActiveAttempts } from '../utils/retakes';
 import { summarizeElectiveRequirements } from '../utils/electiveProgress';
-import { MIN_CREDITS_PER_TERM, PLANNING_MIN_CREDITS, STANDARD_MAX_CREDITS } from '../constants/academic';
+import {
+  MAX_TRANSFER_MAJOR_ELECTIVE_CREDITS,
+  MIN_CREDITS_PER_TERM,
+  PLANNING_MIN_CREDITS,
+  STANDARD_MAX_CREDITS,
+} from '../constants/academic';
 
 const SNAPSHOT_STORAGE_DISABLED_SESSION_KEY = 'programSnapshotStorageDisabled';
 
@@ -81,7 +89,8 @@ interface MainAdvisorScreenProps {
   initialSnapshotToken?: string | null;
   /** Grades from the setup transcript import; a restored plan reads this browser's stored grades instead. */
   initialGrades?: GradeMap;
-  onBack: () => void;
+  /** Back to setup with everything the plan has now, so setup and the plan's edits survive the round trip. */
+  onBack: (state: { snapshot: ProgramSnapshotPayload; grades: GradeMap }) => void;
 }
 
 function clonePlanOverrides(value?: PlanOverrides | null): PlanOverrides {
@@ -323,6 +332,8 @@ export function MainAdvisorScreen({
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Bumped by the error box's Retry: asks for the same plan again.
+  const [planRetry, setPlanRetry] = useState(0);
   const [completedCourses, setCompletedCourses] = useState<string[]>(initialCourseStatus.completedCourses);
   const [inProgressCourses, setInProgressCourses] = useState<string[]>(initialCourseStatus.inProgressCourses);
   const [manualCredits, setManualCredits] = useState<ManualCreditEntry[]>(selection.manualCredits ?? []);
@@ -929,9 +940,10 @@ export function MainAdvisorScreen({
     excelOnlyCodeSet.has(courseCode) || catalog.course_meta?.[courseCode]?.is_excel_only === true;
   const getCourseCredits = (courseCode: string) =>
     catalog.course_meta?.[courseCode]?.credits ?? 3;
+  // undefined: no schedule record; []: a record that no published term lists.
   const getCourseSemesterAvailability = (courseCode: string) => {
     const terms = catalog.course_meta?.[courseCode]?.semester_availability;
-    if (!Array.isArray(terms)) return [];
+    if (!Array.isArray(terms)) return undefined;
     return terms.filter((term): term is string => typeof term === "string" && term.trim().length > 0);
   };
   const scheduleTerms = useMemo(
@@ -1388,6 +1400,15 @@ export function MainAdvisorScreen({
     if (!fallbackBlocks.length) return true;
     return fallbackBlocks.every((block) => isPrereqBlockSatisfied(block, availableCodes));
   };
+  // Courses the planner counts as done without the student taking them: placement tests (C++ for
+  // COS 1020) and the foundation courses it waives itself (in the plan's completed_courses).
+  const waivedCodes = useMemo(() => {
+    const own = new Set([...completedCourses, ...inProgressCourses]);
+    return [
+      ...(selection.placementWaivers ?? []),
+      ...(plan?.completed_courses ?? []).filter((code) => !own.has(code)),
+    ];
+  }, [selection.placementWaivers, plan?.completed_courses, completedCourses, inProgressCourses]);
   const buildAvailableCodesBeforeTerm = (
     targetTermIdx: number,
     options?: { removedCode: string; removedTermIdx: number; removedInstanceId?: string | null }
@@ -1405,6 +1426,10 @@ export function MainAdvisorScreen({
         const normalized = normalizeCourseCode(code);
         if (normalized) available.add(normalized);
       }
+    });
+    waivedCodes.forEach((code) => {
+      const normalized = normalizeCourseCode(code);
+      if (normalized) available.add(normalized);
     });
 
     const orderedTerms = [...(plan?.semester_plan ?? [])].sort(
@@ -1461,9 +1486,11 @@ export function MainAdvisorScreen({
   };
   const evaluatePrereqStatus = (
     courseCode: string,
-    satisfied: Set<string>,
+    satisfiedBefore: Set<string>,
     preferredCodes?: Set<string>
   ) => {
+    // Waived courses satisfy prerequisites from the start, as in the planner.
+    const satisfied = new Set([...satisfiedBefore, ...waivedCodes]);
     const blocks = getCoursePrereqBlocks(courseCode);
     if (!blocks.length) {
       return { prereqs: [] as string[], unmet: [] as string[], unmetCodes: [] as string[], satisfied: true };
@@ -1715,435 +1742,25 @@ export function MainAdvisorScreen({
     return warnings;
   }, [plan, effectiveCompleted, effectiveInProgress, removedCourses, removedCodeSet, catalog.course_meta]);
 
-  const creditsDone = useMemo(() => {
-    const unique = new Set([...completedCourses, ...inProgressCourses]);
-    let total = 0;
-    unique.forEach((code) => {
-      total += getCourseCreditsForDisplay(code);
-    });
-    return total;
-  }, [completedCourses, inProgressCourses, catalog.course_meta, selection.waivedMat1000, selection.waivedEng1000]);
-
+  const completedCreditsForStart = useMemo(
+    () => effectiveCompleted.reduce((sum, code) => sum + getCourseCreditsForDisplay(code), 0),
+    [effectiveCompleted, catalog.course_meta, selection.waivedMat1000, selection.waivedEng1000, completedCourses]
+  );
+  // Only an earlier start the record proves; a student who is behind keeps the start they chose.
   const impliedStart = useMemo(() => {
-    const creditsPerTerm = Math.max(1, STANDARD_MAX_CREDITS);
-    const completedTerms = Math.floor(creditsDone / creditsPerTerm);
-    const implied = shiftTerm(selection.startTermSeason, selection.startTermYear, -completedTerms);
-    return {
-      ...implied,
-      completedTerms,
-      creditsPerTerm
-    };
-  }, [creditsDone, selection.startTermSeason, selection.startTermYear]);
-
-  const impliedStartKey = `${impliedStart.season}-${impliedStart.year}-${impliedStart.completedTerms}`;
-
-  const applyHighCreditGenEdDefaults = (resp: GeneratePlanResponse) => {
-    const orderedTerms = [...(resp.semester_plan ?? [])].sort(
-      (a, b) => termIndexFromLabel(a.term) - termIndexFromLabel(b.term)
-    );
-    const responseNeedByCategory = getGenEdNeedByCategory(resp);
-
-    const prereqDependentCodes = new Set<string>();
-    for (const term of orderedTerms) {
-      for (const course of term.courses ?? []) {
-        const prereqs = getCoursePrereqs(course.code);
-        prereqs.forEach((p) => prereqDependentCodes.add(p));
-      }
-    }
-
-    const userAddedInstanceIds = new Set<string>(
-      (overrides.add ?? [])
-        .map((entry) => entry.instance_id)
-        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
-    );
-    const userAddedCodes = new Set<string>(
-      (overrides.add ?? [])
-        .map((entry) => entry.code)
-        .filter((code): code is string => typeof code === "string" && code.trim().length > 0)
-    );
-    const userAddedByTerm = new Map<string, Set<string>>();
-    (overrides.add ?? []).forEach((entry) => {
-      if (!entry.term || typeof entry.term !== "string") return;
-      if (!entry.code || typeof entry.code !== "string") return;
-      if (!userAddedByTerm.has(entry.term)) {
-        userAddedByTerm.set(entry.term, new Set<string>());
-      }
-      userAddedByTerm.get(entry.term)?.add(entry.code);
+    const earlier = impliedEarlierStart({
+      chosenStart: `${startTermSeason} ${startTermYear}`,
+      currentTerm: currentTermLabel,
+      completedCredits: completedCreditsForStart,
+      recordedTerms: Object.values(effectiveCompletedOverrides),
+      maxCreditsPerTerm: STANDARD_MAX_CREDITS,
     });
-    const userRemovedCodes = new Set<string>(
-      (overrides.remove ?? [])
-        .map((entry) => entry.code)
-        .filter((code): code is string => typeof code === "string" && code.trim().length > 0)
-    );
-    const userAddedGenEdCodes = new Set<string>();
-    (overrides.add ?? []).forEach((entry) => {
-      if (!entry.code || typeof entry.code !== "string") return;
-      if (entry.gen_ed_category) {
-        userAddedGenEdCodes.add(entry.code);
-        return;
-      }
-      if (getCourseGenEdTags(entry.code).length > 0) {
-        userAddedGenEdCodes.add(entry.code);
-      }
-    });
+    if (!earlier) return null;
+    const [season, year] = earlier.term.split(' ');
+    return { ...earlier, season, year: Number(year) };
+  }, [startTermSeason, startTermYear, currentTermLabel, completedCreditsForStart, effectiveCompletedOverrides]);
 
-    const blockedCodes = new Set<string>([
-      ...planningCompleted,
-      ...effectiveInProgress,
-      ...userRemovedCodes,
-      ...removedCodeSet
-    ]);
-    const fixedCodes = new Set<string>([...userAddedCodes]);
-    orderedTerms.forEach((term) =>
-      term.courses?.forEach((course) => {
-        if (!course.code) return;
-        if (course.type && course.type !== "GENED") {
-          fixedCodes.add(course.code);
-        }
-      })
-    );
-    const assignedGenEdCodes = new Set<string>([...userAddedGenEdCodes]);
-
-    const electiveCourseCodes = new Set<string>(
-      (resp.elective_course_codes ?? []).filter(
-        (code) => typeof code === "string" && code.trim().length > 0
-      )
-    );
-    const getCourseNumberValue = (code: string) => {
-      const match = code.match(/(\d{3,4})/);
-      return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
-    };
-    const pickBestByCredits = (codes: string[]) =>
-      [...codes].sort((a, b) => {
-        const aCredits = catalog.course_meta?.[a]?.credits ?? 3;
-        const bCredits = catalog.course_meta?.[b]?.credits ?? 3;
-        if (aCredits != bCredits) return bCredits - aCredits;
-        return a.localeCompare(b);
-      })[0];
-    const pickBestByPrereqs = (codes: string[]) =>
-      [...codes].sort((a, b) => {
-        const aCount = getCoursePrereqs(a).length;
-        const bCount = getCoursePrereqs(b).length;
-        if (aCount != bCount) return aCount - bCount;
-        const aCredits = catalog.course_meta?.[a]?.credits ?? 3;
-        const bCredits = catalog.course_meta?.[b]?.credits ?? 3;
-        if (aCredits != bCredits) return aCredits - bCredits;
-        return a.localeCompare(b);
-      })[0];
-    const pickBestByHistoricalResearch = (codes: string[]) =>
-      [...codes].sort((a, b) => {
-        const aLevel = getCourseNumberValue(a);
-        const bLevel = getCourseNumberValue(b);
-        if (aLevel != bLevel) return aLevel - bLevel;
-        const aCount = getCoursePrereqs(a).length;
-        const bCount = getCoursePrereqs(b).length;
-        if (aCount != bCount) return aCount - bCount;
-        const aCredits = catalog.course_meta?.[a]?.credits ?? 3;
-        const bCredits = catalog.course_meta?.[b]?.credits ?? 3;
-        if (aCredits != bCredits) return aCredits - bCredits;
-        return a.localeCompare(b);
-      })[0];
-    const pickBestForCategory = (category: string | undefined | null, codes: string[]) => {
-      const byAffinity = [...codes].sort((a, b) => {
-        const aAffinity = getProgramAffinityScore(a);
-        const bAffinity = getProgramAffinityScore(b);
-        if (aAffinity !== bAffinity) return bAffinity - aAffinity;
-        return a.localeCompare(b);
-      });
-      const strongestAffinity = getProgramAffinityScore(byAffinity[0] ?? "");
-      const preferredCodes =
-        strongestAffinity > 0
-          ? byAffinity.filter((code) => getProgramAffinityScore(code) === strongestAffinity)
-          : codes;
-      if (isSameGenEdCategory(category, "historical research")) {
-        return pickBestByHistoricalResearch(preferredCodes);
-      }
-      return pickBestByCredits(preferredCodes);
-    };
-
-    const updatedTerms = (resp.semester_plan ?? []).map((term) => {
-      const nextCourses = (term.courses ?? []).map((course) => {
-        if (course.type !== "GENED") return course;
-
-        // Respect manual GenEd overrides: never auto-replace a user-confirmed GenEd.
-        const userAddedInTerm = userAddedByTerm.get(term.term);
-        if (course.instance_id && userAddedInstanceIds.has(course.instance_id)) {
-          return course;
-        }
-        if (userAddedInTerm && userAddedInTerm.has(course.code)) {
-          return course;
-        }
-
-        const categories = dedupeGenEdLabels([
-          ...extractGenEdFromSatisfies(course.satisfies),
-          ...getCourseGenEdTags(course.code)
-        ]);
-        const category =
-          pickCategoryByNeed(categories, responseNeedByCategory, true)
-          ?? pickCategoryByNeed(categories, responseNeedByCategory, false);
-        if (!category) return course;
-        if (!categoryHasNeed(category, responseNeedByCategory)) return course;
-
-        const categoryCodes = getGenEdCategoryCourses(category)
-          .filter((code) => code && !blockedCodes.has(code) && isCourseAvailableInTerm(code, term.term));
-        if (categoryCodes.length === 0) return course;
-
-        const pickCandidate = (codes: string[]) => {
-          const avoid = new Set([...fixedCodes, ...assignedGenEdCodes]);
-          const primary = codes.filter((code) => !avoid.has(code));
-          if (primary.length > 0) return pickBestForCategory(category, primary);
-          const secondary = codes.filter((code) => !assignedGenEdCodes.has(code));
-          if (secondary.length > 0) return pickBestForCategory(category, secondary);
-          return pickBestForCategory(category, codes);
-        };
-
-        const importantCandidates = categoryCodes.filter((code) => prereqDependentCodes.has(code));
-        let bestCode: string | undefined;
-        if (importantCandidates.length > 0) {
-          bestCode = pickCandidate(importantCandidates);
-        } else {
-          const electiveCandidates = categoryCodes.filter((code) => electiveCourseCodes.has(code));
-          if (electiveCandidates.length > 0) {
-            bestCode = pickCandidate(electiveCandidates);
-          } else {
-            bestCode = pickCandidate(categoryCodes);
-          }
-        }
-        if (!bestCode) return course;
-
-        assignedGenEdCodes.add(bestCode);
-        if (bestCode === course.code) return course;
-
-        const replacement = buildPlannedCourse(bestCode, category, course.instance_id ?? createInstanceId());
-        return {
-          ...course,
-          ...replacement,
-          instance_id: course.instance_id ?? replacement.instance_id,
-          source_reason: course.source_reason
-        };
-      });
-
-      const credits = nextCourses.reduce((sum, c) => sum + (c.credits ?? 3), 0);
-      return { ...term, courses: nextCourses, credits };
-    });
-
-
-    const termLabels = buildTermLabels(startTermSeason, startTermYear, maxPlanTerms);
-    if (termLabels.length === 0) {
-      return { ...resp, semester_plan: updatedTerms };
-    }
-
-    const termMap = new Map<string, { term: string; courses: PlanCourse[]; credits: number }>();
-    updatedTerms.forEach((term) => {
-      termMap.set(term.term, {
-        ...term,
-        courses: [...(term.courses ?? [])],
-        credits: term.courses?.reduce((sum, c) => sum + (c.credits ?? 3), 0) ?? 0
-      });
-    });
-    termLabels.forEach((label) => {
-      if (!termMap.has(label)) {
-        termMap.set(label, { term: label, courses: [], credits: 0 });
-      }
-    });
-
-    const usedPlaceholderCodes = new Set<string>();
-    let maxIndex = 0;
-    termMap.forEach((term) => {
-      term.courses.forEach((course) => {
-        if (!course.code) return;
-        usedPlaceholderCodes.add(course.code);
-        const match = course.code.toUpperCase().match(/^FREE ELECTIVE\s+(\d+)$/);
-        if (match) {
-          maxIndex = Math.max(maxIndex, Number(match[1]));
-        }
-      });
-    });
-
-    const occupiedInProgressByTerm = new Map<string, number>();
-    for (const code of effectiveInProgress) {
-      if (!code || !code.trim()) continue;
-      const term = inProgressOverrides[code] ?? currentTermLabel;
-      const credits = getCourseCreditsForDisplay(code);
-      occupiedInProgressByTerm.set(term, (occupiedInProgressByTerm.get(term) ?? 0) + credits);
-    }
-
-    const currentIdx = termIndexFromLabel(currentTermLabel);
-    for (const label of termLabels) {
-      const entry = termMap.get(label);
-      if (!entry) continue;
-      let termCredits = entry.courses.reduce((sum, c) => sum + (c.credits ?? 3), 0);
-      if (termIndexFromLabel(label) < currentIdx) {
-        entry.credits = termCredits;
-        continue;
-      }
-
-      const occupiedCredits = occupiedInProgressByTerm.get(label) ?? 0;
-      const availableMin = Math.max(0, minCreditsPerTerm - occupiedCredits);
-      const availableMax = Math.max(0, STANDARD_MAX_CREDITS - occupiedCredits);
-
-      if (termCredits >= availableMin) {
-        entry.credits = termCredits;
-        continue;
-      }
-      while (termCredits < availableMin && termCredits + 3 <= availableMax) {
-        maxIndex += 1;
-        let placeholderCode = `FREE ELECTIVE ${maxIndex}`;
-        while (usedPlaceholderCodes.has(placeholderCode)) {
-          maxIndex += 1;
-          placeholderCode = `FREE ELECTIVE ${maxIndex}`;
-        }
-        usedPlaceholderCodes.add(placeholderCode);
-        entry.courses.push({
-          code: placeholderCode,
-          name: 'Free Elective',
-          credits: 3,
-          tags: ['Planned'],
-          satisfies: [],
-          type: 'FREE_ELECTIVE',
-          instance_id: createInstanceId()
-        });
-        termCredits += 3;
-      }
-      entry.credits = termCredits;
-    }
-
-    // Every term the backend planned, plus the padded labels; a late start term must not cut off later terms.
-    const finalTerms = Array.from(termMap.values()).sort(
-      (a, b) => termIndexFromLabel(a.term) - termIndexFromLabel(b.term)
-    );
-
-    const dedupedTerms: { term: string; courses: PlanCourse[]; credits: number }[] = [];
-    const seenCodes = new Set<string>();
-    for (const term of finalTerms) {
-      const filtered: PlanCourse[] = [];
-      for (const course of term.courses ?? []) {
-        if (!course?.code) continue;
-        if (!seenCodes.has(course.code)) {
-          seenCodes.add(course.code);
-          filtered.push(course);
-          continue;
-        }
-
-        const categories = dedupeGenEdLabels([
-          ...extractGenEdFromSatisfies(course.satisfies),
-          ...getCourseGenEdTags(course.code)
-        ]);
-        const category =
-          pickCategoryByNeed(categories, responseNeedByCategory, true)
-          ?? pickCategoryByNeed(categories, responseNeedByCategory, false);
-        if (!category) {
-          continue;
-        }
-        if (!categoryHasNeed(category, responseNeedByCategory)) {
-          continue;
-        }
-
-        const categoryCodes = getGenEdCategoryCourses(category)
-          .filter((code) => code && !blockedCodes.has(code) && isCourseAvailableInTerm(code, term.term));
-        if (categoryCodes.length == 0) {
-          continue;
-        }
-
-        const avoid = new Set([...seenCodes, ...fixedCodes, ...assignedGenEdCodes]);
-        const candidates = categoryCodes.filter((code) => !avoid.has(code));
-        if (candidates.length == 0) {
-          continue;
-        }
-
-        let replacementCode: string | undefined;
-        const important = candidates.filter((code) => prereqDependentCodes.has(code));
-        if (important.length > 0) {
-          replacementCode = pickBestForCategory(category, important);
-        } else {
-          const elective = candidates.filter((code) => electiveCourseCodes.has(code));
-          if (elective.length > 0) {
-            replacementCode = pickBestForCategory(category, elective);
-          } else {
-            replacementCode = pickBestForCategory(category, candidates);
-          }
-        }
-
-        if (!replacementCode) {
-          continue;
-        }
-
-        assignedGenEdCodes.add(replacementCode);
-        seenCodes.add(replacementCode);
-        const replacement = buildPlannedCourse(
-          replacementCode,
-          category,
-          course.instance_id ?? createInstanceId()
-        );
-        filtered.push({
-          ...course,
-          ...replacement,
-          instance_id: course.instance_id ?? replacement.instance_id,
-          source_reason: course.source_reason
-        });
-      }
-      const credits = filtered.reduce((sum, c) => sum + (c.credits ?? 3), 0);
-      dedupedTerms.push({ ...term, courses: filtered, credits });
-    }
-
-    const requiredCountByCategory: Record<string, number> = {};
-    Object.entries(resp.gen_ed_status ?? {}).forEach(([category, counts]) => {
-      const normalized = normGenEd(category);
-      if (!normalized) return;
-      const required = Math.max(1, Number(counts?.required ?? 0) || 1);
-      requiredCountByCategory[normalized] = Math.max(requiredCountByCategory[normalized] ?? 0, required);
-    });
-
-    const categoryVisibleCounts = new Map<string, number>();
-    const trimmedTerms = dedupedTerms.map((term) => {
-      const filtered = (term.courses ?? []).filter((course) => {
-        if (!course?.code) return false;
-        const categories = dedupeGenEdLabels([
-          ...extractGenEdFromSatisfies(course.satisfies),
-          ...getCourseGenEdTags(course.code)
-        ]);
-        if (categories.length === 0) {
-          return true;
-        }
-
-        const normalizedCategories = categories
-          .map((category) => normGenEd(category))
-          .filter((category): category is string => Boolean(category));
-        if (normalizedCategories.length === 0) {
-          return true;
-        }
-
-        // Program- and foundation-required courses (MAJOR/MINOR/FOUNDATION_REQUIRED) are always kept;
-        // only GenEd picks are trimmed to what each category needs.
-        const isProgramRequired = Boolean(course.source_reason && course.source_reason !== 'GENED_REQUIRED');
-        if (isProgramRequired) {
-          normalizedCategories.forEach((category) => {
-            categoryVisibleCounts.set(category, (categoryVisibleCounts.get(category) ?? 0) + 1);
-          });
-          return true;
-        }
-
-        const fillsNeededCategory = normalizedCategories.some((category) => {
-          const required = Math.max(1, requiredCountByCategory[category] ?? 1);
-          const current = categoryVisibleCounts.get(category) ?? 0;
-          return current < required;
-        });
-        if (!fillsNeededCategory) {
-          return false;
-        }
-
-        normalizedCategories.forEach((category) => {
-          categoryVisibleCounts.set(category, (categoryVisibleCounts.get(category) ?? 0) + 1);
-        });
-        return true;
-      });
-      const credits = filtered.reduce((sum, c) => sum + (c.credits ?? 3), 0);
-      return { ...term, courses: filtered, credits };
-    });
-
-    return { ...resp, semester_plan: trimmedTerms };
-  };
-
+  const impliedStartKey = impliedStart?.term ?? 'none';
 
   useEffect(() => {
     if (appliedImpliedStartKey === impliedStartKey) return;
@@ -2199,8 +1816,14 @@ export function MainAdvisorScreen({
   const tokenCopyResetTimeoutRef = useRef<number | null>(null);
   const [currentSnapshotToken, setCurrentSnapshotToken] = useState<string | null>(initialSnapshotToken);
   const [grades, setGrades] = usePrivateGrades(initialGrades, initialSnapshotToken, currentSnapshotToken);
-  const [isSnapshotTokenLoading, setIsSnapshotTokenLoading] = useState(!initialSnapshotToken);
-  const [snapshotTokenError, setSnapshotTokenError] = useState<string | null>(null);
+  // A save that failed earlier in this session (no snapshot service) is not retried, so nothing is loading.
+  const [isSnapshotTokenLoading, setIsSnapshotTokenLoading] = useState(
+    !initialSnapshotToken && !snapshotStorageUnavailableRef.current
+  );
+  const [snapshotTokenError, setSnapshotTokenError] = useState<string | null>(() =>
+    !initialSnapshotToken && snapshotStorageUnavailableRef.current ? 'Share links are unavailable right now.' : null
+  );
+  const [snapshotRetry, setSnapshotRetry] = useState(0);
   const [tokenCopyStatus, setTokenCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
   const [isSnapshotHydrated, setIsSnapshotHydrated] = useState(false);
 
@@ -2277,7 +1900,20 @@ export function MainAdvisorScreen({
     isSnapshotHydrated,
     snapshotPayload,
     snapshotRelevantStateHash,
+    snapshotRetry,
   ]);
+
+  // Without a saved share link a reload loses the plan and every edit, so ask first.
+  const planNotSaved = !currentSnapshotToken || Boolean(snapshotTokenError) || isSnapshotTokenLoading;
+  useEffect(() => {
+    if (!planNotSaved) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [planNotSaved]);
 
   const copySnapshotToken = async () => {
     if (!currentSnapshotToken) return;
@@ -2409,7 +2045,7 @@ export function MainAdvisorScreen({
           }
           pendingAtomicAddRef.current = null;
         }
-        setPlan(applyHighCreditGenEdDefaults(resp));
+        setPlan(resp);
         setRemovedCourses([]);
         lastRemovedSnapshot.current = [];
         setPendingRemoval(null);
@@ -2434,7 +2070,7 @@ export function MainAdvisorScreen({
         } else {
           setRemovedCourses(lastRemovedSnapshot.current);
         }
-        setError(e?.message ?? 'Failed to generate plan.');
+        setError(describeRequestError(e, 'The plan could not be generated.'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -2444,115 +2080,7 @@ export function MainAdvisorScreen({
     return () => {
       cancelled = true;
     };
-  }, [planRequest, normalizedRetakeEntries]);
-
-  useEffect(() => {
-    if (!plan?.semester_plan?.length) return;
-    const maxCredits = STANDARD_MAX_CREDITS;
-    if (!maxCredits) return;
-
-    const removedInstanceIds = new Set<string>(removedCourses);
-    (overrides.remove ?? []).forEach((entry) => {
-      if (entry.instance_id && entry.instance_id.trim()) {
-        removedInstanceIds.add(entry.instance_id);
-      }
-    });
-
-    const userAddedInstanceIds = new Set<string>(
-      (overrides.add ?? [])
-        .map((entry) => entry.instance_id)
-        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-    );
-    const userAddedByTerm = new Map<string, Set<string>>();
-    (overrides.add ?? []).forEach((entry) => {
-      if (!entry.term || typeof entry.term !== 'string') return;
-      if (!entry.code || typeof entry.code !== 'string') return;
-      if (!userAddedByTerm.has(entry.term)) {
-        userAddedByTerm.set(entry.term, new Set<string>());
-      }
-      userAddedByTerm.get(entry.term)?.add(entry.code);
-    });
-
-    const additions: string[] = [];
-    plan.semester_plan.forEach((term) => {
-      const courses = term.courses ?? [];
-      let termCredits = 0;
-      for (const course of courses) {
-        if (!course?.code) continue;
-        const instanceId = course.instance_id;
-        if (instanceId && removedInstanceIds.has(instanceId)) continue;
-        if (removedCodeSet.has(course.code)) continue;
-        const credits = course.credits ?? catalog.course_meta?.[course.code]?.credits ?? 3;
-        termCredits += credits;
-      }
-
-      if (termCredits <= maxCredits) return;
-
-      const isFreeLike = (course: any) =>
-        course.type === 'FREE' ||
-        course.type === 'FREE_ELECTIVE' ||
-        isFreeElectivePlaceholder(course.code);
-
-      const candidates = courses
-        .filter((course) => {
-          if (!course?.code) return false;
-          if (course.is_retake === true) return false;
-          const instanceId = course.instance_id;
-          if (instanceId && removedInstanceIds.has(instanceId)) return false;
-          if (removedCodeSet.has(course.code)) return false;
-          if (effectiveInProgress.includes(course.code)) return false;
-          if (effectiveCompleted.includes(course.code)) return false;
-          if (instanceId && userAddedInstanceIds.has(instanceId)) return false;
-          const termAdded = userAddedByTerm.get(term.term);
-          if (termAdded && termAdded.has(course.code)) return false;
-          return (
-            isFreeLike(course) ||
-            course.type === 'GENED'
-          );
-        })
-        .sort((a, b) => {
-          const rank = (course: any) => {
-            if (isFreeLike(course)) return 0;
-            if (course.type === 'GENED') return 1;
-            return 99;
-          };
-          const rankDiff = rank(a) - rank(b);
-          if (rankDiff != 0) return rankDiff;
-          const aCredits = a.credits ?? catalog.course_meta?.[a.code]?.credits ?? 3;
-          const bCredits = b.credits ?? catalog.course_meta?.[b.code]?.credits ?? 3;
-          return bCredits - aCredits;
-        });
-
-      for (const course of candidates) {
-        if (termCredits <= maxCredits) break;
-        const credits = course.credits ?? catalog.course_meta?.[course.code]?.credits ?? 3;
-        const instanceId = course.instance_id ?? null;
-        addOverrideRemove(term.term, instanceId, course.code);
-        if (instanceId) {
-          removedInstanceIds.add(instanceId);
-          additions.push(instanceId);
-        }
-        termCredits -= credits;
-      }
-    });
-
-    if (additions.length > 0) {
-      setRemovedCourses((prev) => {
-        const next = new Set(prev);
-        additions.forEach((id) => next.add(id));
-        return Array.from(next);
-      });
-    }
-  }, [
-    plan?.semester_plan,
-    catalog.course_meta,
-    overrides.add,
-    overrides.remove,
-    removedCourses,
-    removedCodeSet,
-    effectiveInProgress,
-    effectiveCompleted
-  ]);
+  }, [planRequest, normalizedRetakeEntries, planRetry]);
 
   const failedCourseByCode = useMemo(
     () => new Map((selection.failedCourses ?? []).map((entry) => [entry.code, entry])),
@@ -2860,6 +2388,12 @@ export function MainAdvisorScreen({
         };
       });
     const attemptResolution = resolveActiveAttempts(attempts);
+    // A passed course keeps the credits it earned until its retake is actually completed.
+    const retakeNotTakenYet = new Set(
+      attempts
+        .filter((attempt) => attemptResolution.activeInstanceIds.has(attempt.instance_id) && attempt.status !== 'COMPLETED')
+        .map((attempt) => normalizeAttemptCode(attempt.code))
+    );
 
     return out.map((course) => {
       if (!isEligibleAttempt(course)) return course;
@@ -2878,6 +2412,11 @@ export function MainAdvisorScreen({
       };
 
       removeTag('Previous Attempt');
+      removeTag('Retake Planned');
+      if (replaced && course.status === 'completed' && retakeNotTakenYet.has(normalizedCode)) {
+        nextTags.push('Retake Planned');
+        return { ...course, tags: nextTags };
+      }
       if (replaced) {
         if (!nextTags.includes('Previous Attempt')) nextTags.push('Previous Attempt');
         return {
@@ -4973,9 +4512,12 @@ export function MainAdvisorScreen({
     URL.revokeObjectURL(url);
   };
 
+  // Eight semesters from the start, plus any later ones the plan runs into.
   const termPickerOptions = useMemo(() => {
-    return buildTermLabels(startTermSeason, startTermYear, 8);
-  }, [startTermSeason, startTermYear]);
+    const terms = new Set(buildTermLabels(startTermSeason, startTermYear, 8));
+    (plan?.semester_plan ?? []).forEach((term) => terms.add(term.term));
+    return Array.from(terms).sort((a, b) => termIndexFromLabel(a) - termIndexFromLabel(b));
+  }, [startTermSeason, startTermYear, plan?.semester_plan]);
 
   const retakeTermOptions = useMemo(() => {
     return Object.keys(freeElectiveSlotsByTerm).sort(
@@ -5161,9 +4703,13 @@ export function MainAdvisorScreen({
   }, [pendingRemoval, courseObjects, termCreditsMap, removedCourses, removedCodeSet]);
 
   const validationErrors = plan?.is_valid === false ? plan.validation_errors ?? [] : [];
-  const remainingTerms = (plan?.semester_plan ?? []).filter(
-    (term) => term.courses.length > 0 && !isEarlierTerm(term.term, currentTermLabel)
-  ).length;
+  const skippedEdits = useMemo(() => describeEditWarnings(plan?.warnings), [plan?.warnings]);
+  // The planner adds nothing to a term with in-progress courses, so count registered terms too.
+  const remainingTerms = new Set(
+    courseObjects
+      .filter((course) => course.status !== 'completed' && !isEarlierTerm(course.semester, currentTermLabel))
+      .map((course) => course.semester)
+  ).size;
   const incompleteElectives = electiveRequirementStatus.filter((entry) => !entry.isComplete).length;
   const tabs: { id: AdvisorTab; label: string; icon: typeof ListChecks; count?: number }[] = [
     { id: 'plan', label: 'Semester plan', icon: CalendarRange, count: validationErrors.length },
@@ -5195,8 +4741,9 @@ export function MainAdvisorScreen({
           error: snapshotTokenError,
           copyStatus: tokenCopyStatus,
           onCopy: copySnapshotToken,
+          onRetry: snapshotStorageUnavailableRef.current ? undefined : () => setSnapshotRetry((n) => n + 1),
         }}
-        onBack={onBack}
+        onBack={() => onBack({ snapshot: snapshotPayload, grades })}
         onDownloadJson={handleDownloadJson}
         onDownloadPdf={handleDownloadPdf}
       />
@@ -5211,6 +4758,8 @@ export function MainAdvisorScreen({
             remainingTerms={remainingTerms}
             issueCount={validationErrors.length}
             onShowIssues={showIssues}
+            electivesToChoose={incompleteElectives}
+            onShowElectives={() => setActiveTab('requirements')}
           />
         )}
 
@@ -5237,17 +4786,15 @@ export function MainAdvisorScreen({
           <div className="advisor-tab-body">
             {activeTab === 'plan' && (
               <div className="tab-panel stack-4" role="tabpanel" id="panel-plan" aria-labelledby="tab-plan">
-                {!dismissedImpliedStart &&
-                  creditsDone > STANDARD_MAX_CREDITS &&
-                  impliedStart.completedTerms >= 1 &&
-                  (impliedStart.season !== startTermSeason || impliedStart.year !== startTermYear) && (
+                {!dismissedImpliedStart && impliedStart && (
                     <div className="alert alert-info advisor-inset">
                       <Info aria-hidden="true" />
                       <div className="flex flex-col gap-3">
                         <div>
                           <div className="alert-title">
-                            Based on your completed/in-progress credits (~{creditsDone} credits), you likely started around{" "}
-                            {impliedStart.season} {impliedStart.year}.
+                            {impliedStart.reason === 'recorded'
+                              ? `You have courses recorded in ${impliedStart.term}, before your start term ${startTermSeason} ${startTermYear}.`
+                              : `Your ${completedCreditsForStart} completed credits need more semesters than ${startTermSeason} ${startTermYear} leaves (17 credits a semester at most), so you likely started by ${impliedStart.term}.`}
                           </div>
                           <p>Adjust the start term?</p>
                         </div>
@@ -5346,8 +4893,11 @@ export function MainAdvisorScreen({
                 {!loading && error && (
                   <div className="alert alert-danger advisor-inset" role="alert">
                     <div>
-                      <p className="alert-title">The plan could not be generated</p>
-                      <p>{error}</p>
+                      <p className="alert-title">The plan could not be updated</p>
+                      <p>{error} Your changes are kept and apply once it works again.</p>
+                      <button type="button" className="btn btn-outline btn-sm mt-2" onClick={() => setPlanRetry((n) => n + 1)}>
+                        Retry
+                      </button>
                     </div>
                   </div>
                 )}
@@ -5375,6 +4925,11 @@ export function MainAdvisorScreen({
                     {validationErrors.length > 0 && (
                       <div className="advisor-inset">
                         <PlanAlerts ref={planAlertsRef} errors={validationErrors} />
+                      </div>
+                    )}
+                    {skippedEdits.length > 0 && (
+                      <div className="advisor-inset">
+                        <SkippedEdits messages={skippedEdits} />
                       </div>
                     )}
                     {pendingElectiveSwap && (
@@ -5660,6 +5215,13 @@ export function MainAdvisorScreen({
                               ))}
                             </select>
                           )}
+                          {manualCreditDraft.credit_type === 'MAJOR_ELECTIVE'
+                            && Number.parseInt(manualCreditDraft.credits, 10) > MAX_TRANSFER_MAJOR_ELECTIVE_CREDITS && (
+                            <p className="text-xs" role="status" style={{ color: 'var(--neutral-dark)' }}>
+                              At most {MAX_TRANSFER_MAJOR_ELECTIVE_CREDITS} transfer credits count toward a major's electives
+                              (catalog p.68); the rest still count toward the degree total.
+                            </p>
+                          )}
 
                           <label className="flex items-center gap-2 text-sm">
                             <input
@@ -5723,7 +5285,9 @@ export function MainAdvisorScreen({
                           <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
                             {pendingRemovalDetails.target.status === 'completed'
                               ? 'This will remove it from your completed courses.'
-                              : `This will remove it from ${pendingRemovalDetails.term ?? 'the plan'} and ask for a replacement if it is GenEd.`}
+                              : pendingRemovalDetails.genEdTags.length > 0
+                                ? `This will remove it from ${pendingRemovalDetails.term ?? 'the plan'} and ask for a replacement GenEd course.`
+                                : `This will remove it from ${pendingRemovalDetails.term ?? 'the plan'}.`}
                           </p>
                         </div>
                         <button
@@ -6044,7 +5608,8 @@ export function MainAdvisorScreen({
                           <h4 className="mb-1">Add as Retake</h4>
                           <p className="text-sm" style={{ color: 'var(--neutral-dark)' }}>
                             {pendingRetakeCourse.code} will be added as a visible retake attempt and will replace one
-                            FREE ELECTIVE placeholder. The latest attempt keeps course credits; earlier attempts become 0-credit previous attempts.
+                            FREE ELECTIVE placeholder. Your earlier attempt keeps its credits until the retake is
+                            completed; after that the course counts once, on the latest attempt (catalog p.67).
                           </p>
                         </div>
                         <button
@@ -6249,7 +5814,10 @@ export function MainAdvisorScreen({
                             className="text-sm p-3 rounded-lg border"
                             style={{ color: 'var(--neutral-dark)', borderColor: 'var(--neutral-border)' }}
                           >
-                            No FREE ELECTIVE slots are available before {pendingPrereqPlacement.targetTerm}.
+                            No FREE ELECTIVE slot is open before {pendingPrereqPlacement.targetTerm}, so{" "}
+                            {pendingPrereqPlacement.prereqs[pendingPrereqPlacement.index]} cannot be taken in time.
+                            Cancel and add {pendingPrereqPlacement.courseCode} to a later semester, or remove a
+                            free elective before {pendingPrereqPlacement.targetTerm} first.
                           </div>
                         )}
                         {prereqTermOptions.map((term) => {
@@ -6495,7 +6063,7 @@ export function MainAdvisorScreen({
                               </div>
                               {!isCurrent && replacementTerm && (
                                 <div className="text-xs mt-1" style={{ color: 'var(--neutral-dark)' }}>
-                                  {effectiveCredits} credits now - {courseCredits} credits added
+                                  {termCredits} credits now, {effectiveCredits + courseCredits} after swap
                                   {willExceed ? ' (over max)' : ''}
                                 </div>
                               )}
@@ -6688,12 +6256,12 @@ export function MainAdvisorScreen({
         </div>
       )}
       {pendingSwapSourceCourse && (
-        <div className="floating-banner" role="status">
+        <div className="floating-banner floating-banner-row" role="status">
           <div className="text-sm">
-            Move course mode: selected <b>{pendingSwapSourceCourse.code}</b> in{" "}
-            <b>{pendingSwapSourceCourse.semester}</b>. Click <b>Move course</b> on another planned course to swap.
+            Moving <b>{pendingSwapSourceCourse.code}</b> ({pendingSwapSourceCourse.semester}): press <b>Move</b> on
+            another planned course to swap them.
           </div>
-          <div className="mt-2">
+          <div>
             <button
               type="button"
               className="btn btn-outline btn-sm"

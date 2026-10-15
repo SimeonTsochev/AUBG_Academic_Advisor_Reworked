@@ -12,7 +12,13 @@ import threading
 from catalog_cache import getCatalogCache
 from catalog_options import options_offered, placement_tests, program_data
 from business_concentrations import classify_business_course
-from degree_engine import STANDARD_MAX_CREDITS_PER_TERM, _current_start_term, generate_plan
+from degree_engine import (
+    STANDARD_MAX_CREDITS_PER_TERM,
+    _course_credits,
+    _course_offered_terms,
+    _current_start_term,
+    generate_plan,
+)
 from pdf_export import plan_to_pdf_bytes
 from models import (
     PlacementWaiverInfo,
@@ -252,14 +258,15 @@ def _catalog_course_meta_for_response(catalog: Dict[str, Any]) -> Dict[str, Dict
         wic = record.get("wic")
         if isinstance(wic, bool):
             entry["wic"] = wic
-
-        semester_availability = record.get("semester_availability")
-        if isinstance(semester_availability, list):
-            cleaned_terms = [term for term in semester_availability if isinstance(term, str)]
-            if cleaned_terms:
-                entry["semester_availability"] = cleaned_terms
     for code, entry in merged.items():
         entry["is_excel_only"] = code in excel_only_codes
+        # The engine's own reading of the schedule, so the app offers only the terms an add will be
+        # accepted for: [] means the course has a schedule record but no published term lists it.
+        offered_terms = _course_offered_terms(catalog, code)
+        if offered_terms is None:
+            entry.pop("semester_availability", None)
+        else:
+            entry["semester_availability"] = offered_terms
     return merged
 
 def _ensure_snapshot_storage_available() -> None:
@@ -464,6 +471,27 @@ def _plan_response_payload(req: GeneratePlanRequest) -> Dict[str, Any]:
 def plan_generate(req: GeneratePlanRequest):
     return GeneratePlanResponse(**_plan_response_payload(req))
 
+def _recorded_courses_for_pdf(catalog: Dict[str, Any], req: GeneratePlanRequest) -> list[Dict[str, Any]]:
+    """The student's completed and in-progress courses, with the term a transcript gave them (else none)."""
+    term_of = {entry.code: entry.term for entry in req.grades if entry.term}
+    in_progress = set(req.in_progress_courses)
+    current = req.current_term_label
+    # The app sends a ticked foundation waiver as a completed course; it was never taken.
+    waived = {code for code, ticked in (("MAT 1000", req.waived_mat1000), ("ENG 1000", req.waived_eng1000)) if ticked}
+    recorded = []
+    for code in dict.fromkeys(list(req.completed_courses) + list(req.in_progress_courses)):
+        if code in waived:
+            continue
+        is_current = code in in_progress
+        recorded.append({
+            "code": code,
+            "term": (req.in_progress_terms.get(code) or current) if is_current else term_of.get(code),
+            "credits": _course_credits(catalog, code),
+            "in_progress": is_current,
+        })
+    return recorded
+
+
 @app.post("/plan/download.pdf")
 def plan_download_pdf(req: GeneratePlanRequest):
     plan = _plan_response_payload(req)
@@ -471,6 +499,7 @@ def plan_download_pdf(req: GeneratePlanRequest):
         "majors": req.majors,
         "minors": req.minors,
         "manual_credits": [entry.model_dump() for entry in req.manual_credits],
+        "recorded_courses": _recorded_courses_for_pdf(_ensure_catalog(req.catalog_id), req),
         **plan,
     })
     return Response(

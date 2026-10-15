@@ -19,16 +19,39 @@ describe("scheduleTermsFromCourseMeta", () => {
 });
 
 describe("getCourseAvailabilityInfo", () => {
-  it("never blocks courses that are not Excel-only", () => {
-    const info = getCourseAvailabilityInfo(fallOnly, {
+  it("blocks adding any course to a published term that does not list it, as the planner does", () => {
+    // Regression: the replacement dialog offered THR 2030 for Fall 2026 and the planner then dropped it.
+    const listedElsewhere = getCourseAvailabilityInfo(fallOnly, {
       mode: "plan_add",
       isExcelOnly: false,
       currentTermLabel: "Fall 2026",
       targetTermLabel: "Spring 2027",
       scheduleTerms: ["Spring 2027"],
     });
-    expect(info.isSelectionBlocked).toBe(false);
-    expect(info.warningLabel).toBeNull();
+    expect(listedElsewhere.isSelectionBlocked).toBe(true);
+    expect(listedElsewhere.warningLabel).toBe("Not offered in Spring 2027");
+
+    const listedNowhere = getCourseAvailabilityInfo(
+      { semester_availability: [] },
+      { mode: "plan_add", isExcelOnly: false, targetTermLabel: "Fall 2026", scheduleTerms }
+    );
+    expect(listedNowhere.isSelectionBlocked).toBe(true);
+    expect(listedNowhere.detailsLabel).toBe("Not listed in any published schedule");
+  });
+
+  it("never blocks a course without a schedule record, or a non-Excel course in search", () => {
+    const noRecord = getCourseAvailabilityInfo(
+      { semester_availability: undefined },
+      { mode: "plan_add", isExcelOnly: false, targetTermLabel: "Fall 2026", scheduleTerms }
+    );
+    expect(noRecord.isSelectionBlocked).toBe(false);
+
+    // Search results have no target term: only Excel-only courses get the current-term badge.
+    const search = getCourseAvailabilityInfo(
+      { semester_availability: [] },
+      { mode: "plan_add", isExcelOnly: false, currentTermLabel: "Fall 2026", scheduleTerms }
+    );
+    expect(search.warningLabel).toBeNull();
   });
 
   it("allows adding an Excel-only course to a term it is listed for", () => {
