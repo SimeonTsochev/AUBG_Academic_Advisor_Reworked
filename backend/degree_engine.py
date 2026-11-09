@@ -1228,7 +1228,7 @@ def _offered_terms_if_unavailable(
 ) -> List[str] | None:
     """The course's offered terms when it is known NOT to run in `term`, otherwise None.
 
-    The schedule data covers single semesters (currently only Fall 2026), so a term without
+    The schedule data covers single semesters (currently Fall 2026 and Spring 2027), so a term without
     published data is unknown rather than unavailable.
     """
     if not isinstance(term, str) or _normalize_term_key(term) not in schedule_term_keys:

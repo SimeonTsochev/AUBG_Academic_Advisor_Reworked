@@ -55,6 +55,25 @@ class ExcelCourseCatalogTests(IsolatedTestCase):
         finally:
             path.unlink(missing_ok=True)
 
+    def test_tags_are_read_from_the_shifted_column_when_area_of_study_is_empty(self):
+        # The 11/09/26 export has an empty "Area of Study" column and the tags under "Fee".
+        path = _write_xlsx(
+            headers=["Department", "Course", "Label", "Course Notes", "Seats", "Area of Study", "Fee", "term"],
+            rows=[
+                ["ENG", "1002", "Composition II", "Credits: 3 CR.", 28, "", "Writing Intensive Course", "Fall 2026"],
+                ["COS", "3060", "Algorithms", "Credits: 3 CR.", 32, "", "COS Major Elective", "Spring 2027"],
+                ["AUB", "1006", "Academic Success", "Credits: 1 CR.", 20, "", "", "Fall 2026"],
+            ],
+        )
+        try:
+            load_course_catalog(path)
+            self.assertTrue(get_course("ENG 1002")["wic"])
+            self.assertEqual(get_course("COS 3060")["tags"], ["COS Major Elective"])
+            self.assertEqual(get_course("COS 3060")["semester_availability"], ["Spring 2027"])
+            self.assertEqual(get_course("AUB 1006")["tags"], [])
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_explicit_zero_credit_note_is_kept_and_missing_credits_stay_unknown(self):
         path = _write_xlsx(
             headers=["Department", "Course", "Label", "Area of Study", "Course Notes", "term"],

@@ -247,6 +247,46 @@ def _header_lookup(headers: List[str]) -> Dict[str, int]:
     return field_to_idx
 
 
+_AREA_TAG_MARKERS = ("major elective", "major required", "gen ed", "writing intensive course", "foundation")
+
+
+def _area_tag_rows(rows: List[List[object]], idx: int) -> int:
+    """How many rows carry Area of Study tags (major elective/required, Gen Ed, WIC) in column `idx`."""
+    count = 0
+    for row in rows:
+        text = _raw_cell(_row_value(row, idx)).lower()
+        if any(marker in text for marker in _AREA_TAG_MARKERS):
+            count += 1
+    return count
+
+
+def _resolve_area_column(headers: List[str], rows: List[List[object]], lookup: Dict[str, int]) -> None:
+    """Point `area_of_study` at the column that actually holds the tags.
+
+    The 11/09/26 export shifted its headers: "Area of Study" is empty and the tags sit under "Fee".
+    When the named column has no tags, take the column whose cells look like Area of Study tags.
+    """
+    current = lookup.get("area_of_study")
+    if current is not None and _area_tag_rows(rows, current) > 0:
+        return
+    taken = {idx for field, idx in lookup.items() if field != "area_of_study"}
+    best_idx, best_count = None, 0
+    for idx in range(len(headers)):
+        if idx in taken:
+            continue
+        count = _area_tag_rows(rows, idx)
+        if count > best_count:
+            best_idx, best_count = idx, count
+    if best_idx is None:
+        return
+    logging.warning(
+        "Excel catalog: the %r column holds no Area of Study tags; reading them from %r instead.",
+        headers[current] if current is not None else "Area of Study",
+        headers[best_idx],
+    )
+    lookup["area_of_study"] = best_idx
+
+
 def _availability_indices(headers: List[str], reserved: set[int]) -> Dict[str, int]:
     indices: Dict[str, int] = {}
     for idx, header in enumerate(headers):
@@ -494,6 +534,7 @@ def build_course_catalog_data(path: Path | str) -> Dict[str, Any]:
         raise RuntimeError("Excel catalog is missing department/code columns.")
     if "course" not in lookup and "code" not in lookup:
         raise RuntimeError("Excel catalog is missing course number/code columns.")
+    _resolve_area_column(headers, rows, lookup)
 
     reserved = set(lookup.values())
     availability_indices = _availability_indices(headers, reserved)
