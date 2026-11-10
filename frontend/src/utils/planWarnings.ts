@@ -54,3 +54,26 @@ export function describeEditWarnings(warnings: readonly PlanWarning[] | null | u
   }
   return sentences;
 }
+
+/**
+ * Why an added course was taken back: the screen undoes an add the planner did not place in the chosen
+ * term (or that left the replaced free-elective slot in place). Uses the planner's own reason when it
+ * gave one for that course, so the student is never left with an add that silently did nothing.
+ */
+export function describeRejectedAdd(
+  code: string,
+  term: string,
+  warnings: readonly PlanWarning[] | null | undefined,
+  placedIn: string | null,
+): string {
+  const normalize = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim().toUpperCase() : "");
+  const reason = (warnings ?? [])
+    .filter((warning) => normalize(warning.course) === normalize(code))
+    .map(describeEditWarning)
+    .find((sentence): sentence is string => Boolean(sentence));
+  if (reason) return `${reason} Your plan was left as it was.`;
+  if (placedIn && placedIn !== term) {
+    return `${code} could not stay in ${term} (the planner moved it to ${placedIn}), so your plan was left as it was. Try another semester.`;
+  }
+  return `${code} could not be added to ${term}, so your plan was left as it was. Try another semester.`;
+}

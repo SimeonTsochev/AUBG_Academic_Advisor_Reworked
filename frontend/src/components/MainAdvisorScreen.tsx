@@ -30,7 +30,7 @@ import type {
 import { createProgramSnapshot, downloadPlanPdf, generatePlan } from '../api';
 import { getCourseAvailabilityInfo, scheduleTermsFromCourseMeta } from '../utils/courseAvailability';
 import { describeCourseReason } from '../utils/courseReasons';
-import { describeEditWarnings } from '../utils/planWarnings';
+import { describeEditWarnings, describeRejectedAdd } from '../utils/planWarnings';
 import { describeRequestError } from '../utils/requestErrors';
 import {
   fillSlotWithCourse,
@@ -452,6 +452,8 @@ export function MainAdvisorScreen({
   );
   // A chosen elective the student is replacing; the next course picked from search takes its slot.
   const [pendingElectiveSwap, setPendingElectiveSwap] = useState<SwappedElectiveRecord | null>(null);
+  // Why the last added course was taken back (see the plan request below); shown until dismissed.
+  const [rejectedAddNotice, setRejectedAddNotice] = useState<string | null>(null);
   const swappableElectiveIds = useMemo(
     () => new Set(swappedElectives.map((entry) => entry.addedCourseInstanceId)),
     [swappedElectives]
@@ -518,6 +520,7 @@ export function MainAdvisorScreen({
     if (pendingAtomicAddRef.current) {
       return false;
     }
+    setRejectedAddNotice(null);
 
     const addedInstanceId = createInstanceId();
     const isRetake = opts?.isRetake === true;
@@ -2027,20 +2030,19 @@ export function MainAdvisorScreen({
                   )
               )
           );
-          if (!addedInExpectedTerm) {
+          if (!addedInExpectedTerm || removedPlaceholderStillPresent) {
+            // The planner did not apply the add as asked: undo it, and say why rather than doing nothing.
+            const placedIn = (resp.semester_plan ?? []).find((term) =>
+              (term.courses ?? []).some((course) => course.instance_id === pendingAtomicAdd.expectedInstanceId)
+            )?.term ?? null;
             pendingAtomicAddRef.current = null;
             setOverrides(pendingAtomicAdd.previousOverrides);
             setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
             setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
             setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
-            return;
-          }
-          if (removedPlaceholderStillPresent) {
-            pendingAtomicAddRef.current = null;
-            setOverrides(pendingAtomicAdd.previousOverrides);
-            setRemovedCourses(pendingAtomicAdd.previousRemovedCourses);
-            setSwappedElectives(pendingAtomicAdd.previousSwappedElectives);
-            setRetakeEntries(pendingAtomicAdd.previousRetakeEntries);
+            setRejectedAddNotice(
+              describeRejectedAdd(pendingAtomicAdd.expectedCode, pendingAtomicAdd.expectedTerm, resp.warnings, placedIn)
+            );
             return;
           }
           pendingAtomicAddRef.current = null;
@@ -3489,6 +3491,7 @@ export function MainAdvisorScreen({
       { mode: "plan_add", isExcelOnly: isExcelOnlyCourse(code), currentTermLabel, targetTermLabel: term, scheduleTerms }
     );
     if (availability.isSelectionBlocked) {
+      setRejectedAddNotice(`${code} cannot replace ${record.addedCourseCode}: it is not offered in ${term}.`);
       return;
     }
     const oldCredits = Number(
@@ -3497,10 +3500,16 @@ export function MainAdvisorScreen({
     );
     const nextCredits = (termCreditsMap[term] ?? 0) - oldCredits + getCourseCredits(code);
     if (nextCredits > allowedMaxCredits) {
+      setRejectedAddNotice(
+        `${code} cannot replace ${record.addedCourseCode}: ${term} would have ${nextCredits} credits, above your limit of ${allowedMaxCredits}.`
+      );
       return;
     }
     const status = getPrereqStatusForTerm(code, term);
     if (status.unmet.length > 0) {
+      setRejectedAddNotice(
+        `${code} cannot replace ${record.addedCourseCode} in ${term}: its prerequisites (${status.unmet.join(', ')}) are not met by then.`
+      );
       return;
     }
     setPendingElectiveSwap(null);
@@ -6252,6 +6261,16 @@ export function MainAdvisorScreen({
             </div>
             <h4 className="plan-update-title">Updating your plan</h4>
             <p className="plan-update-text">Applying changes and revalidating requirements...</p>
+          </div>
+        </div>
+      )}
+      {rejectedAddNotice && !loading && (
+        <div className="floating-banner floating-banner-row" role="alert">
+          <div className="text-sm">{rejectedAddNotice}</div>
+          <div>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setRejectedAddNotice(null)}>
+              OK
+            </button>
           </div>
         </div>
       )}

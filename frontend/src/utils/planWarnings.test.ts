@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeEditWarning, describeEditWarnings } from "./planWarnings";
+import { describeEditWarning, describeEditWarnings, describeRejectedAdd } from "./planWarnings";
 
 describe("describeEditWarning", () => {
   it("explains an add the planner refused because the course is not offered that term", () => {
@@ -42,5 +42,33 @@ describe("describeEditWarnings", () => {
       "ABC 1234 was not added: it is not in the course catalog.",
     ]);
     expect(describeEditWarnings(undefined)).toEqual([]);
+  });
+});
+
+describe("describeRejectedAdd", () => {
+  it("gives the planner's reason for that course", () => {
+    expect(
+      describeRejectedAdd(
+        "ECO 2011",
+        "Spring 2027",
+        [
+          { type: "OVERRIDE_ADD_TERM_UNAVAILABLE", course: "COS 1050", term: "Spring 2027", offered_terms: ["Fall 2026"] },
+          { type: "OVERRIDE_ADD_TERM_UNAVAILABLE", course: "ECO 2011", term: "Spring 2027", offered_terms: ["Fall 2026"] },
+        ],
+        null,
+      ),
+    ).toBe("ECO 2011 was not added to Spring 2027: it is offered in Fall 2026. Your plan was left as it was.");
+  });
+
+  it("says where the planner put the course when it moved it", () => {
+    expect(describeRejectedAdd("COS 2031", "Fall 2027", [], "Spring 2028")).toBe(
+      "COS 2031 could not stay in Fall 2027 (the planner moved it to Spring 2028), so your plan was left as it was. Try another semester.",
+    );
+  });
+
+  it("still explains itself without a reason", () => {
+    expect(describeRejectedAdd("COS 2031", "Fall 2027", undefined, null)).toBe(
+      "COS 2031 could not be added to Fall 2027, so your plan was left as it was. Try another semester.",
+    );
   });
 });
