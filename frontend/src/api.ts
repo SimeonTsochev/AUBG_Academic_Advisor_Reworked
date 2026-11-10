@@ -154,7 +154,14 @@ export interface TranscriptImportResponse {
   unmatched: TranscriptImportCourse[];
   /** Lines that look like course rows but could not be read (usually OCR damage). */
   unread_lines?: TranscriptUnreadLine[];
+  /** Programs the transcript lists as declared, as catalog program names (empty when none were found). */
+  declared_programs?: TranscriptDeclaredPrograms;
   warnings: string[];
+}
+
+export interface TranscriptDeclaredPrograms {
+  majors: string[];
+  minors: string[];
 }
 
 export interface TranscriptUnreadLine {

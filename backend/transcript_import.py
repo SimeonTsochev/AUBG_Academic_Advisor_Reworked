@@ -115,6 +115,7 @@ def import_transcript_document(file_bytes: bytes, filename: str) -> dict[str, An
     response = build_transcript_import_response(parsed_courses)
     response["warnings"] = list(dict.fromkeys([*extraction_warnings, *response["warnings"]]))
     response["unread_lines"] = _unread_lines_payload(lines)
+    response["declared_programs"] = detect_declared_programs(lines)
     return response
 
 
@@ -138,6 +139,7 @@ def import_transcript_text_payload(
 
     response = build_transcript_import_response(parsed_courses)
     response["unread_lines"] = _unread_lines_payload(transcript_lines)
+    response["declared_programs"] = detect_declared_programs(transcript_lines)
     if used_ocr:
         response["warnings"] = list(
             dict.fromkeys(
@@ -278,6 +280,103 @@ def find_unread_course_lines(lines: list[TranscriptLine]) -> list[TranscriptLine
 
 def _unread_lines_payload(lines: list[TranscriptLine]) -> list[dict[str, Any]]:
     return [{"text": line.text, "page_number": line.page_number} for line in find_unread_course_lines(lines)]
+
+
+# The portal transcript prints the declared programs under a "Major Minor Specialize1 Specialize2 Track"
+# header, values in column order on the next line ("Undeclared" when there is no major yet).
+_PROGRAM_HEADER_RE = re.compile(r"\bmajor\b.*\bminor\b", re.IGNORECASE)
+_PROGRAM_VALUES_STOP_RE = re.compile(r"\b(?:course|title|instructor|undergraduate|graduate|student)\b", re.IGNORECASE)
+_MAX_PROGRAM_VALUE_LINES = 3
+_UNDECLARED = "undeclared"
+# Shortened names the portal may print, mapped to the catalog's program name.
+_PROGRAM_ALIASES = {
+    "business admin": "Business Administration",
+    "political science": "Political Science and International Relations",
+    "journalism and mass comm": "Journalism and Mass Communication",
+}
+
+
+def _program_key(text: str) -> str:
+    key = _normalize_text_key(str(text or "").replace("&", " and "))
+    key = re.sub(r"\bint ?l\b", "international", key)
+    return _normalize_space(key)
+
+
+def _catalog_program_names() -> tuple[list[str], list[str]]:
+    try:
+        catalog = getCatalogCache().default_catalog
+    except Exception:
+        return [], []
+    return sorted(catalog.get("majors") or {}), sorted(catalog.get("minors") or {})
+
+
+def detect_declared_programs(
+    lines: list[TranscriptLine],
+    majors: Optional[list[str]] = None,
+    minors: Optional[list[str]] = None,
+) -> dict[str, list[str]]:
+    """The majors and minors the transcript says are declared, as catalog program names.
+
+    Values are read in column order: the first name is the major, later names are minors when a minor of
+    that name exists (otherwise a second major). Nothing is returned when the header is not found.
+    """
+    if majors is None or minors is None:
+        catalog_majors, catalog_minors = _catalog_program_names()
+        majors = catalog_majors if majors is None else majors
+        minors = catalog_minors if minors is None else minors
+    major_set, minor_set = set(majors), set(minors)
+    result: dict[str, list[str]] = {"majors": [], "minors": []}
+
+    texts = [_normalize_space(_normalize_transcript_text(line.text)) for line in lines]
+    header_index = next((i for i, text in enumerate(texts) if _PROGRAM_HEADER_RE.search(text)), None)
+    if header_index is None:
+        return result
+    value_lines: list[str] = []
+    for text in texts[header_index + 1 : header_index + 1 + _MAX_PROGRAM_VALUE_LINES]:
+        if (
+            _COURSE_CODE_RE.search(text)
+            or _extract_term_label(text)
+            or _PROGRAM_VALUES_STOP_RE.search(text)
+            or text.startswith("(")
+        ):
+            break
+        value_lines.append(text)
+    values = f" {_program_key(' '.join(value_lines))} "
+    if not values.strip():
+        return result
+
+    names: dict[str, str] = {_program_key(name): name for name in [*major_set, *minor_set]}
+    for alias, name in _PROGRAM_ALIASES.items():
+        if name in major_set or name in minor_set:
+            names.setdefault(alias, name)
+    names[_UNDECLARED] = _UNDECLARED
+
+    # Longest names first, so "Southeast European Studies" is not also read as "European Studies".
+    taken: list[tuple[int, int]] = []
+    found: list[tuple[int, str]] = []
+    for key in sorted(names, key=len, reverse=True):
+        for match in re.finditer(rf"(?<= ){re.escape(key)}(?= )", values):
+            start, end = match.span()
+            if any(start < taken_end and taken_start < end for taken_start, taken_end in taken):
+                continue
+            taken.append((start, end))
+            found.append((start, names[key]))
+    found.sort()
+
+    for position, (_, name) in enumerate(found):
+        if name == _UNDECLARED:
+            continue
+        is_major, is_minor = name in major_set, name in minor_set
+        if is_major and (position == 0 or not is_minor):
+            target = result["majors"]
+        elif is_minor:
+            target = result["minors"]
+        else:
+            continue
+        if name not in target and len(target) < 2:
+            target.append(name)
+    result["minors"] = [name for name in result["minors"] if name not in result["majors"]]
+    return result
 
 
 def _catalog_search_space() -> list[CatalogSearchRecord]:

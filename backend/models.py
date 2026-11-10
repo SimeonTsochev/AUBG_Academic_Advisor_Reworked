@@ -63,6 +63,12 @@ class TranscriptUnreadLine(BaseModel):
     page_number: int = 1
 
 
+class TranscriptDeclaredPrograms(BaseModel):
+    """Programs the transcript says are declared, as catalog program names (empty when none were found)."""
+    majors: List[str] = Field(default_factory=list)
+    minors: List[str] = Field(default_factory=list)
+
+
 class TranscriptImportResponse(BaseModel):
     completed: List[TranscriptImportCourse] = Field(default_factory=list)
     in_progress: List[TranscriptImportCourse] = Field(default_factory=list)
@@ -71,6 +77,7 @@ class TranscriptImportResponse(BaseModel):
     unmatched: List[TranscriptImportCourse] = Field(default_factory=list)
     # Lines that look like course rows but could not be read (usually OCR damage); shown for manual entry.
     unread_lines: List[TranscriptUnreadLine] = Field(default_factory=list)
+    declared_programs: TranscriptDeclaredPrograms = Field(default_factory=TranscriptDeclaredPrograms)
     warnings: List[str] = Field(default_factory=list)
 
 

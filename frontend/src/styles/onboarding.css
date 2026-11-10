@@ -331,3 +331,55 @@
   border-radius: 999px;
   animation: spin 0.8s linear infinite;
 }
+
+/* ---- Transcript import: how to download it, next to the upload box --------- */
+.transcript-import {
+  display: grid;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .transcript-import {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.transcript-steps {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--navy-dark);
+}
+
+.transcript-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  line-height: 1.45;
+}
+
+.transcript-steps .step-dot {
+  flex: none;
+  border-color: var(--navy-blue);
+  color: var(--navy-blue);
+  font-weight: 600;
+}
+
+.transcript-steps kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.transcript-import .upload-zone {
+  align-self: stretch;
+  align-content: center;
+  cursor: pointer;
+}
+
+.transcript-import .upload-zone:focus-visible {
+  outline: 2px solid var(--navy-blue);
+  outline-offset: 2px;
+}

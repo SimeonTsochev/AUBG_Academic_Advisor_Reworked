@@ -7,6 +7,7 @@ import {
   type CourseCatalogRecord,
   type ProgramInfo,
   type ProgramOptionSelection,
+  type TranscriptDeclaredPrograms,
   type TranscriptImportCourse,
   type TranscriptImportLineInput,
   type TranscriptImportResponse,
@@ -23,6 +24,7 @@ import {
   toggleProgramOption,
 } from '../utils/programOptions';
 import { gradesFromTranscript, type GradeMap } from '../utils/grades';
+import { describeDeclaredPrograms, mergeDeclaredPrograms } from '../utils/declaredPrograms';
 import type { FailedCourse, ManualCreditEntry } from '../types';
 import {
   TranscriptImportReviewDialog,
@@ -46,6 +48,7 @@ type TranscriptImportPhase = 'idle' | 'uploading' | 'extracting' | 'ocr' | 'matc
 const TRANSCRIPT_ACCEPT = '.pdf,.png,.jpg,.jpeg';
 const SUPPORTED_TRANSCRIPT_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg'];
 const IMAGE_TRANSCRIPT_EXTENSIONS = ['.png', '.jpg', '.jpeg'];
+const MAX_TRANSCRIPT_BYTES = 10 * 1024 * 1024;
 
 const buildTranscriptReviewEntries = (response: TranscriptImportResponse): TranscriptImportReviewEntry[] => {
   const toEntry = (course: TranscriptImportCourse, index: number): TranscriptImportReviewEntry => ({
@@ -214,6 +217,9 @@ export function AcademicSetupScreen({
   const [isTranscriptDragging, setIsTranscriptDragging] = useState(false);
   const [transcriptReviewEntries, setTranscriptReviewEntries] = useState<TranscriptImportReviewEntry[]>([]);
   const [isTranscriptReviewOpen, setIsTranscriptReviewOpen] = useState(false);
+  // Programs the uploaded transcript lists as declared: applied when the student confirms the import.
+  const [pendingDeclaredPrograms, setPendingDeclaredPrograms] = useState<TranscriptDeclaredPrograms | null>(null);
+  const [declaredProgramsNote, setDeclaredProgramsNote] = useState<string | null>(null);
   const [programConflictMsg, setProgramConflictMsg] = useState<string | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -577,6 +583,29 @@ export function AcademicSetupScreen({
       }
     });
 
+    const declaredSelection = mergeDeclaredPrograms(
+      { majors: selectedMajors, minors: selectedMinors },
+      pendingDeclaredPrograms,
+      { majors, minors },
+      MAX_PROGRAMS_PER_TYPE,
+    );
+    if (declaredSelection) {
+      if (!declaredSelection.majors.includes('Business Administration')) setBusinessConcentration('General');
+      if (selectedMinors.includes('Economics') && !declaredSelection.minors.includes('Economics')) {
+        setEconomicsIntermediateChoice(null);
+      }
+      setSelectedMajors(declaredSelection.majors);
+      setSelectedMinors(declaredSelection.minors);
+    }
+    const declaredFound = {
+      majors: (pendingDeclaredPrograms?.majors ?? []).filter((name) => majors.includes(name)),
+      minors: (pendingDeclaredPrograms?.minors ?? []).filter((name) => minors.includes(name)),
+    };
+    setDeclaredProgramsNote(
+      declaredFound.majors.length + declaredFound.minors.length > 0 ? describeDeclaredPrograms(declaredFound) : null
+    );
+    setPendingDeclaredPrograms(null);
+
     setImportedGrades((prev) => ({ ...prev, ...gradesFromTranscript(transcriptReviewEntries, normalizeCourseCode) }));
     setImportedCompletedCourses(Array.from(nextCompleted));
     setImportedInProgressCourses(Array.from(nextInProgress));
@@ -595,6 +624,7 @@ export function AcademicSetupScreen({
   };
 
   const handleCancelTranscriptImport = () => {
+    setPendingDeclaredPrograms(null);
     setTranscriptImportWarnings([]);
     setTranscriptUnreadLines([]);
     setTranscriptReviewEntries([]);
@@ -606,6 +636,11 @@ export function AcademicSetupScreen({
     if (!file) return;
     if (!isSupportedTranscriptFile(file)) {
       setTranscriptImportError('Unsupported file type. Please upload a PDF, PNG, JPG, or JPEG transcript.');
+      setTranscriptImportPhase('error');
+      return;
+    }
+    if (file.size > MAX_TRANSCRIPT_BYTES) {
+      setTranscriptImportError('This file is larger than 10 MB. Please upload a smaller transcript PDF.');
       setTranscriptImportPhase('error');
       return;
     }
@@ -644,6 +679,7 @@ export function AcademicSetupScreen({
       }
       setTranscriptImportWarnings(response.warnings ?? []);
       setTranscriptUnreadLines(response.unread_lines ?? []);
+      setPendingDeclaredPrograms(response.declared_programs ?? null);
       setTranscriptReviewEntries(nextEntries);
       setTranscriptImportPhase('ready');
       setIsTranscriptReviewOpen(true);
@@ -944,8 +980,48 @@ export function AcademicSetupScreen({
               <p className="section-subtitle setup-card-intro">
                 Upload your transcript, search the catalog, or use both together. You can review and edit everything before continuing. Starting your first semester? Skip this step.
               </p>
+              <div className="transcript-import">
+              <ol className="transcript-steps" aria-label="How to download your transcript">
+                <li>
+                  <span className="step-dot num" aria-hidden="true">1</span>
+                  <span>Sign in to <strong>Empower</strong> (aubg.empower-xl.com).</span>
+                </li>
+                <li>
+                  <span className="step-dot num" aria-hidden="true">2</span>
+                  <span>Open <strong>Records</strong> → <strong>Unofficial Transcript</strong>.</span>
+                </li>
+                <li>
+                  <span className="step-dot num" aria-hidden="true">3</span>
+                  <span>Click <strong>Generate</strong> and wait for the full transcript to appear.</span>
+                </li>
+                <li>
+                  <span className="step-dot num" aria-hidden="true">4</span>
+                  <span>
+                    Right-click the page and choose <strong>Inspect</strong>, or press <kbd>Ctrl/Cmd + P</kbd>, and{' '}
+                    <strong>print the whole page</strong>.
+                  </span>
+                </li>
+                <li>
+                  <span className="step-dot num" aria-hidden="true">5</span>
+                  <span>Set the destination to <strong>Save as PDF</strong>, keep all pages, and save.</span>
+                </li>
+                <li>
+                  <span className="step-dot num" aria-hidden="true">6</span>
+                  <span>Upload that PDF here.</span>
+                </li>
+              </ol>
               <div
                 className={`upload-zone${isTranscriptDragging ? ' dragging' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-label="Upload your latest transcript PDF"
+                onClick={() => transcriptInputRef.current?.click()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    transcriptInputRef.current?.click();
+                  }
+                }}
                 onDragOver={(event) => {
                   event.preventDefault();
                   setIsTranscriptDragging(true);
@@ -962,28 +1038,22 @@ export function AcademicSetupScreen({
                 }}
               >
                 <span className="upload-zone-icon" aria-hidden="true"><FileUp /></span>
-                <div className="font-semibold">Upload your transcript</div>
+                <div className="font-semibold">Upload your latest transcript PDF</div>
                 <div className="text-sm muted">
-                  PDF, PNG or JPG. Completed, in-progress and not-passed courses are detected for you to review.
+                  Click to choose, or drop the PDF here · max 10 MB
                 </div>
                 <input
                   ref={transcriptInputRef}
                   type="file"
                   accept={TRANSCRIPT_ACCEPT}
                   className="hidden"
+                  onClick={(event) => event.stopPropagation()}
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
                     void handleTranscriptFile(file);
                     event.target.value = '';
                   }}
                 />
-                <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
-                  <button type="button" onClick={() => transcriptInputRef.current?.click()} className="btn btn-accent">
-                    <FileUp aria-hidden="true" />
-                    <span>Choose file</span>
-                  </button>
-                  <span className="text-sm muted">or drop it here</span>
-                </div>
                 {selectedTranscriptName && (
                   <div className="text-sm mt-3 muted">Selected file: {selectedTranscriptName}</div>
                 )}
@@ -997,6 +1067,16 @@ export function AcademicSetupScreen({
                   </div>
                 )}
               </div>
+              </div>
+
+              {declaredProgramsNote && (
+                <div className="alert alert-info mt-4" role="status">
+                  <Info aria-hidden="true" />
+                  <p>
+                    Declared on your transcript: <strong>{declaredProgramsNote}</strong>. They are selected for you in the next step.
+                  </p>
+                </div>
+              )}
 
               {importedCompletedCourses.length > 0 && (
                 <div className="mt-4">
@@ -1279,6 +1359,15 @@ export function AcademicSetupScreen({
 
         {step === 2 && (
           <div className="stack-4">
+            {declaredProgramsNote && (
+              <div className="alert alert-info" role="status">
+                <Info aria-hidden="true" />
+                <p>
+                  Selected from your transcript: <strong>{declaredProgramsNote}</strong>. Change them below if they are wrong, or add a program you plan to declare.
+                </p>
+              </div>
+            )}
+
             {/* Majors */}
             <div className="card card-pad setup-card">
               <h2 className="section-title">Select Major(s)</h2>

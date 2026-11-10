@@ -19,6 +19,7 @@ from transcript_import import (  # noqa: E402
     ParsedTranscriptCourse,
     TranscriptLine,
     build_transcript_import_response,
+    detect_declared_programs,
     _extract_pdf_text_lines,
     _page_may_have_text,
     find_unread_course_lines,
@@ -410,10 +411,6 @@ class PdfTextLayerTests(IsolatedTestCase):
         self.assertIn("BUS-1001 Management in a Global Environment B+ 3 3", [line.text for line in lines])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TranscriptMergeTests(IsolatedTestCase):
     def _course(self, status, term, grade):
         from transcript_import import ParsedTranscriptCourse
@@ -437,3 +434,61 @@ class TranscriptMergeTests(IsolatedTestCase):
         failed = self._course("failed", "Fall 2025", "F")
         current = self._course("in_progress", "Fall 2026", None)
         self.assertIsNone(_merge_parsed_courses(failed, current).grade)
+
+
+def _with_programs(values: list[str]) -> list[TranscriptLine]:
+    """The portal transcript with its program header followed by `values` instead of "Undeclared"."""
+    header = PORTAL_TRANSCRIPT_LINES.index("Major Minor Specialize1 Specialize2 Track")
+    return _lines([*PORTAL_TRANSCRIPT_LINES[: header + 1], *values, *PORTAL_TRANSCRIPT_LINES[header + 2 :]])
+
+
+class DeclaredProgramTests(IsolatedTestCase):
+    excel_index = "real"
+
+    def test_an_undeclared_student_has_no_programs(self):
+        self.assertEqual(detect_declared_programs(_lines(PORTAL_TRANSCRIPT_LINES)), {"majors": [], "minors": []})
+
+    def test_the_major_and_minor_are_read_in_column_order(self):
+        self.assertEqual(
+            detect_declared_programs(_with_programs(["Computer Science Economics"])),
+            {"majors": ["Computer Science"], "minors": ["Economics"]},
+        )
+        self.assertEqual(
+            detect_declared_programs(_with_programs(["Economics Computer Science"])),
+            {"majors": ["Economics"], "minors": ["Computer Science"]},
+        )
+
+    def test_a_name_only_a_major_has_is_a_second_major(self):
+        self.assertEqual(
+            detect_declared_programs(_with_programs(["Business Administration Psychology"])),
+            {"majors": ["Business Administration"], "minors": ["Psychology"]},
+        )
+        self.assertEqual(
+            detect_declared_programs(_with_programs(["Computer Science History and Civilizations"])),
+            {"majors": ["Computer Science", "History and Civilizations"], "minors": []},
+        )
+
+    def test_longer_names_win_and_ampersands_and_wrapped_lines_are_read(self):
+        self.assertEqual(
+            detect_declared_programs(_with_programs(["Political Science &", "Int'l Relations Southeast European Studies"])),
+            {"majors": ["Political Science and International Relations"], "minors": ["Southeast European Studies"]},
+        )
+
+    def test_a_minor_without_a_major(self):
+        self.assertEqual(
+            detect_declared_programs(_with_programs(["Undeclared Finance"])),
+            {"majors": [], "minors": ["Finance"]},
+        )
+
+    def test_the_import_response_includes_the_declared_programs(self):
+        client = TestClient(app)
+        response = client.post(
+            "/transcript/import-text",
+            json={"lines": [{"text": line.text} for line in _with_programs(["Mathematics Philosophy"])]},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["declared_programs"], {"majors": ["Mathematics"], "minors": ["Philosophy"]})
+
+
+if __name__ == "__main__":
+    unittest.main()
